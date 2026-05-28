@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// 协议能力枚举
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +48,18 @@ pub struct ConnectionOptions {
     pub proxy: Option<ProxyConfig>,
     /// 协议特定选项
     pub protocol_options: HashMap<String, String>,
+}
+
+impl Default for ConnectionOptions {
+    fn default() -> Self {
+        Self {
+            timeout_ms: Some(30000),
+            keepalive_interval: None,
+            compression: None,
+            proxy: None,
+            protocol_options: HashMap::new(),
+        }
+    }
 }
 
 /// 代理配置
@@ -130,7 +142,7 @@ pub struct Credential {
 }
 
 /// 连接句柄接口
-pub trait ConnectionHandle: Send + Sync {
+pub trait ConnectionHandle: Send + Sync + std::any::Any {
     fn id(&self) -> Uuid;
     fn protocol(&self) -> &'static str;
     fn is_connected(&self) -> bool;
@@ -138,6 +150,46 @@ pub trait ConnectionHandle: Send + Sync {
 
     /// 获取远程地址
     fn remote_addr(&self) -> (&str, u16);
+
+    /// 类型转换支持（用于 downcast）
+    fn as_any(&self) -> &dyn std::any::Any;
+
+    /// 打开交互式 shell (PTY)
+    fn open_shell(&self, _cols: u32, _rows: u32) -> Result<ShellChannel> {
+        Err(Error::ProtocolError("此协议不支持 shell".to_string()))
+    }
+
+    /// 读取 shell 数据
+    fn read_shell(&self, _shell_id: &Uuid, _buf: &mut [u8]) -> Result<usize> {
+        Err(Error::ProtocolError("此协议不支持 shell".to_string()))
+    }
+
+    /// 写入 shell 数据
+    fn write_shell(&self, _shell_id: &Uuid, _data: &[u8]) -> Result<usize> {
+        Err(Error::ProtocolError("此协议不支持 shell".to_string()))
+    }
+
+    /// 调整 shell 大小
+    fn resize_shell(&self, _shell_id: &Uuid, _cols: u32, _rows: u32) -> Result<()> {
+        Err(Error::ProtocolError("此协议不支持 shell".to_string()))
+    }
+
+    /// 关闭 shell
+    fn close_shell(&self, _shell_id: &Uuid) -> Result<()> {
+        Err(Error::ProtocolError("此协议不支持 shell".to_string()))
+    }
+
+    /// 断开连接（彻底关闭 SSH 会话）
+    fn disconnect(&self) -> Result<()> {
+        Err(Error::ProtocolError("此协议不支持 disconnect".to_string()))
+    }
+}
+
+/// Shell 通道
+#[derive(Debug, Clone)]
+pub struct ShellChannel {
+    pub id: Uuid,
+    pub handle_id: Uuid,
 }
 
 /// 插件注册表
@@ -146,6 +198,11 @@ pub struct PluginRegistry {
 }
 
 pub mod ssh;
+pub mod sftp;
+pub mod rdp;
+pub mod mysql;
+pub mod pgsql;
+pub mod docker;
 
 impl PluginRegistry {
     pub fn new() -> Self {

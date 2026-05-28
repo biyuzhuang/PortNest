@@ -1,0 +1,246 @@
+.right-panel {
+  width: 280px;
+  min-width: 200px;
+  max-width: 450px;
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.right-panel-top {
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Compact FileManager styles within right panel */
+.right-panel-top .file-manager {
+  flex: 1;
+  border-radius: 0;
+  background: var(--bg-primary);
+}
+
+.right-panel-top .file-manager-header {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.right-panel-top .file-manager-header .toolbar {
+  display: none;
+}
+
+.right-panel-top .file-manager-header .path-bar {
+  gap: 4px;
+}
+
+.right-panel-top .file-manager-header .nav-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.right-panel-top .file-manager-header .path-input {
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.right-panel-top .file-list {
+  padding: 4px;
+  flex: 1;
+  overflow: auto;
+}
+
+.right-panel-top .file-row {
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.right-panel-top .file-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.right-panel-top .file-row.selected {
+  background: var(--accent);
+}
+
+.right-panel-top .file-cell.size,
+.right-panel-top .file-cell.date {
+  display: none;
+}
+
+.right-panel-top .file-cell.name {
+  flex: 1;
+}
+
+.right-panel-top .file-body {
+  max-height: calc(100vh - 200px);
+}
+
+.panel-divider {
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.right-panel-bottom {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mini-metrics {
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  height: 100px;
+  gap: 8px;
+}
+
+.mini-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.mini-metric-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mini-metric-bar-container {
+  flex: 1;
+  width: 18px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.mini-metric-bar {
+  width: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: height 0.3s ease;
+  min-height: 2px;
+}
+
+.mini-metric-bar.cpu {
+  background: linear-gradient(to top, var(--accent), #60a5fa);
+}
+
+.mini-metric-bar.memory {
+  background: linear-gradient(to top, #8b5cf6, #a78bfa);
+}
+
+.mini-metric-bar.disk {
+  background: linear-gradient(to top, var(--warning), #fbbf24);
+}
+
+.mini-metric-bar.net-up {
+  background: linear-gradient(to top, var(--success), #34d399);
+}
+
+.mini-metric-bar.net-down {
+  background: linear-gradient(to top, #60a5fa, #93c5fd);
+}
+
+.mini-metric-value {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.mini-metric-value.high {
+  color: var(--error);
+}
+
+.mini-metric-value.medium {
+  color: var(--warning);
+}
+
+/* Resizable splitter */
+.panel-splitter {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.2s;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.panel-splitter:hover,
+.panel-splitter.dragging {
+  background: var(--accent);
+}
+
+.panel-splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 40px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.panel-splitter:hover::after,
+.panel-splitter.dragging::after {
+  opacity: 1;
+}
+
+/* Loading state */
+.right-panel-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Error state */
+.right-panel-error {
+  padding: 12px;
+  color: var(--error);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* No connection state */
+.right-panel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+  gap: 8px;
+}
+
+.right-panel-empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+}

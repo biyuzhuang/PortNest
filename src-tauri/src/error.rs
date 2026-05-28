@@ -36,6 +36,9 @@ pub enum Error {
 
     #[error("数据库错误: {0}")]
     DatabaseError(String),
+
+    #[error("Docker API错误: {0}")]
+    DockerError(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

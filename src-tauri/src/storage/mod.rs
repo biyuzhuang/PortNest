@@ -6,16 +6,18 @@ mod vault;
 
 pub use vault::CredentialVault;
 
+use base64::Engine;
+use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
 
 /// 数据库管理器
 pub struct Database {
-    conn: RwLock<Connection>,
+    conn: Mutex<Connection>,
     vault: Arc<CredentialVault>,
 }
 
@@ -34,22 +36,32 @@ impl Database {
         let vault = Arc::new(CredentialVault::new(&db_path)?);
 
         let db = Self {
-            conn: RwLock::new(conn),
+            conn: Mutex::new(conn),
             vault,
         };
 
         db.init_schema()?;
+        db.seed_demo_data()?;
         Ok(db)
     }
 
     /// 初始化数据库表结构
     fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
 
-        conn.execute_batch(
-            r#"
-            -- 连接配置表
-            CREATE TABLE IF NOT EXISTS connections (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS folders (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                parent_id TEXT,
+                sort_order INTEGER DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 folders 表失败: {}", e)))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS connections (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 protocol TEXT NOT NULL,
@@ -60,14 +72,17 @@ impl Database {
                 options TEXT,
                 tags TEXT,
                 color TEXT,
+                folder_id TEXT,
                 sort_order INTEGER DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 last_connected_at INTEGER
-            );
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 connections 表失败: {}", e)))?;
 
-            -- 凭据表（加密存储）
-            CREATE TABLE IF NOT EXISTS credentials (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS credentials (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 auth_type TEXT NOT NULL,
@@ -75,41 +90,106 @@ impl Database {
                 iv TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
-            );
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 credentials 表失败: {}", e)))?;
 
-            -- 会话历史表
-            CREATE TABLE IF NOT EXISTS sessions (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
                 connection_id TEXT NOT NULL,
                 started_at INTEGER NOT NULL,
                 ended_at INTEGER,
                 commands_executed INTEGER DEFAULT 0,
                 FOREIGN KEY (connection_id) REFERENCES connections(id)
-            );
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 sessions 表失败: {}", e)))?;
 
-            -- 标签表
-            CREATE TABLE IF NOT EXISTS tags (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS tags (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 color TEXT NOT NULL
-            );
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 tags 表失败: {}", e)))?;
 
-            -- 连接-标签关联表
-            CREATE TABLE IF NOT EXISTS connection_tags (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS connection_tags (
                 connection_id TEXT NOT NULL,
                 tag_id TEXT NOT NULL,
                 PRIMARY KEY (connection_id, tag_id),
                 FOREIGN KEY (connection_id) REFERENCES connections(id),
                 FOREIGN KEY (tag_id) REFERENCES tags(id)
-            );
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建 connection_tags 表失败: {}", e)))?;
 
-            -- 创建索引
-            CREATE INDEX IF NOT EXISTS idx_connections_protocol ON connections(protocol);
-            CREATE INDEX IF NOT EXISTS idx_sessions_connection_id ON sessions(connection_id);
-            "#,
-        )
-        .map_err(|e| Error::StorageError(format!("初始化表结构失败: {}", e)))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_connections_protocol ON connections(protocol)", [])
+            .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
 
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_connections_folder_id ON connections(folder_id)", [])
+            .map_err(|e| Error::StorageError(format!("创建 idx_connections_folder_id 索引失败: {}", e)))?;
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_connection_id ON sessions(connection_id)", [])
+            .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)", [])
+            .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 填充演示数据
+    fn seed_demo_data(&self) -> Result<()> {
+        let conn = self.conn.lock();
+
+        let existing: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM connections WHERE id = 'builtin-test-ssh'",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0);
+
+        if existing > 0 {
+            return Ok(());
+        }
+
+        let now = chrono::Utc::now().timestamp();
+
+        let demo_cred_id = "builtin-test-cred";
+        let (encrypted, iv) = self.vault.encrypt(b"root")?;
+        conn.execute(
+            r#"INSERT OR REPLACE INTO credentials (id, name, auth_type, encrypted_data, iv, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
+            params![
+                demo_cred_id,
+                "测试服务器密码",
+                "password",
+                base64::engine::general_purpose::STANDARD.encode(&encrypted),
+                base64::engine::general_purpose::STANDARD.encode(&iv),
+                now,
+                now
+            ],
+        ).map_err(|e| Error::StorageError(format!("创建演示凭据失败: {}", e)))?;
+
+        conn.execute(
+            r#"INSERT OR REPLACE INTO connections (id, name, protocol, host, port, username, credential_id, created_at, updated_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+            params![
+                "builtin-test-ssh",
+                "测试",
+                "ssh",
+                "192.0.2.10",
+                22i32,
+                "root",
+                demo_cred_id,
+                now,
+                now
+            ],
+        ).map_err(|e| Error::StorageError(format!("创建演示连接失败: {}", e)))?;
+
+        tracing::info!("Demo connection created: 测试服务器 (builtin-test-ssh)");
         Ok(())
     }
 
@@ -126,15 +206,16 @@ impl Database {
         options: Option<&str>,
         tags: Option<&str>,
         color: Option<&str>,
+        folder_id: Option<&str>,
     ) -> Result<()> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
             r#"
             INSERT OR REPLACE INTO connections
-            (id, name, protocol, host, port, username, credential_id, options, tags, color, created_at, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            (id, name, protocol, host, port, username, credential_id, options, tags, color, folder_id, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
             "#,
             params![
                 id.to_string(),
@@ -147,6 +228,7 @@ impl Database {
                 options,
                 tags,
                 color,
+                folder_id,
                 now,
                 now
             ],
@@ -158,9 +240,9 @@ impl Database {
 
     /// 获取所有连接
     pub fn get_connections(&self) -> Result<Vec<ConnectionRecord>> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn
-            .prepare("SELECT id, name, protocol, host, port, username, credential_id, options, tags, color, created_at, last_connected_at FROM connections ORDER BY sort_order, name")
+            .prepare("SELECT id, name, protocol, host, port, username, credential_id, options, tags, color, folder_id, sort_order, created_at, last_connected_at FROM connections ORDER BY sort_order, name")
             .map_err(|e| Error::StorageError(e.to_string()))?;
 
         let records = stmt
@@ -176,8 +258,10 @@ impl Database {
                     options: row.get(7)?,
                     tags: row.get(8)?,
                     color: row.get(9)?,
-                    created_at: row.get(10)?,
-                    last_connected_at: row.get(11)?,
+                    folder_id: row.get(10)?,
+                    sort_order: row.get::<_, i32>(11)?,
+                    created_at: row.get(12)?,
+                    last_connected_at: row.get(13)?,
                 })
             })
             .map_err(|e| Error::StorageError(e.to_string()))?
@@ -189,16 +273,92 @@ impl Database {
 
     /// 删除连接
     pub fn delete_connection(&self, id: &str) -> Result<()> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM connections WHERE id = ?1", params![id])
             .map_err(|e| Error::StorageError(format!("删除连接失败: {}", e)))?;
         Ok(())
     }
 
+    /// 保存文件夹
+    pub fn save_folder(&self, id: Uuid, name: &str, parent_id: Option<&str>, sort_order: i32) -> Result<()> {
+        let conn = self.conn.lock();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            r#"
+            INSERT OR REPLACE INTO folders (id, name, parent_id, sort_order, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+            params![
+                id.to_string(),
+                name,
+                parent_id,
+                sort_order,
+                now
+            ],
+        )
+        .map_err(|e| Error::StorageError(format!("保存文件夹失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// 获取所有文件夹
+    pub fn get_folders(&self) -> Result<Vec<FolderRecord>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT id, name, parent_id, sort_order, created_at FROM folders ORDER BY sort_order, name")
+            .map_err(|e| Error::StorageError(e.to_string()))?;
+
+        let records = stmt
+            .query_map([], |row| {
+                Ok(FolderRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    parent_id: row.get(2)?,
+                    sort_order: row.get::<_, i32>(3)?,
+                    created_at: row.get(4)?,
+                })
+            })
+            .map_err(|e| Error::StorageError(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(records)
+    }
+
+    /// 删除文件夹
+    pub fn delete_folder(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        // 先将该文件夹下的连接移出文件夹
+        conn.execute("UPDATE connections SET folder_id = NULL WHERE folder_id = ?1", params![id])
+            .map_err(|e| Error::StorageError(format!("更新连接失败: {}", e)))?;
+        // 删除文件夹
+        conn.execute("DELETE FROM folders WHERE id = ?1", params![id])
+            .map_err(|e| Error::StorageError(format!("删除文件夹失败: {}", e)))?;
+        Ok(())
+    }
+
+    /// 更新连接的文件夹
+    pub fn update_connection_folder(&self, connection_id: &str, folder_id: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE connections SET folder_id = ?1 WHERE id = ?2",
+            params![folder_id, connection_id],
+        )
+        .map_err(|e| Error::StorageError(format!("更新连接文件夹失败: {}", e)))?;
+        Ok(())
+    }
+
     /// 保存凭据
-    pub fn save_credential(&self, id: Uuid, name: &str, auth_type: &str, data: &[u8]) -> Result<()> {
+    pub fn save_credential(
+        &self,
+        id: Uuid,
+        name: &str,
+        auth_type: &str,
+        data: &[u8],
+    ) -> Result<()> {
         let (encrypted, iv) = self.vault.encrypt(data)?;
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -210,8 +370,8 @@ impl Database {
                 id.to_string(),
                 name,
                 auth_type,
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted),
-                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &iv),
+                base64::engine::general_purpose::STANDARD.encode(&encrypted),
+                base64::engine::general_purpose::STANDARD.encode(&iv),
                 now,
                 now
             ],
@@ -223,7 +383,7 @@ impl Database {
 
     /// 获取凭据解密数据
     pub fn get_credential_data(&self, id: &str) -> Result<Vec<u8>> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn
             .prepare("SELECT encrypted_data, iv FROM credentials WHERE id = ?1")
             .map_err(|e| Error::StorageError(e.to_string()))?;
@@ -234,9 +394,11 @@ impl Database {
 
         match result {
             Ok((encrypted_b64, iv_b64)) => {
-                let encrypted = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &encrypted_b64)
+                let encrypted = base64::engine::general_purpose::STANDARD
+                    .decode(&encrypted_b64)
                     .map_err(|e| Error::EncryptionError(e.to_string()))?;
-                let iv = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &iv_b64)
+                let iv = base64::engine::general_purpose::STANDARD
+                    .decode(&iv_b64)
                     .map_err(|e| Error::EncryptionError(e.to_string()))?;
                 self.vault.decrypt(&encrypted, &iv)
             }
@@ -247,7 +409,7 @@ impl Database {
 
     /// 获取凭据记录
     pub fn get_credential(&self, id: &str) -> Result<CredentialRecord> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn
             .prepare("SELECT id, name, auth_type, created_at, updated_at FROM credentials WHERE id = ?1")
             .map_err(|e| Error::StorageError(e.to_string()))?;
@@ -266,7 +428,7 @@ impl Database {
 
     /// 保存会话历史
     pub fn save_session(&self, id: Uuid, connection_id: &str, started_at: i64) -> Result<()> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO sessions (id, connection_id, started_at) VALUES (?1, ?2, ?3)",
             params![id.to_string(), connection_id, started_at],
@@ -277,7 +439,7 @@ impl Database {
 
     /// 更新会话结束时间
     pub fn end_session(&self, id: &str) -> Result<()> {
-        let conn = self.conn.read().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().timestamp();
         conn.execute(
             "UPDATE sessions SET ended_at = ?1 WHERE id = ?2",
@@ -301,8 +463,20 @@ pub struct ConnectionRecord {
     pub options: Option<String>,
     pub tags: Option<String>,
     pub color: Option<String>,
+    pub folder_id: Option<String>,
+    pub sort_order: i32,
     pub created_at: i64,
     pub last_connected_at: Option<i64>,
+}
+
+/// 文件夹记录
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FolderRecord {
+    pub id: String,
+    pub name: String,
+    pub parent_id: Option<String>,
+    pub sort_order: i32,
+    pub created_at: i64,
 }
 
 /// 凭据记录
