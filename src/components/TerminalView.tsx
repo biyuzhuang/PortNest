@@ -72,29 +72,39 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   };
 
   const initTerminal = () => {
-    if (!containerRef || !props.shellId || !props.sessionKey) return;
+    if (!containerRef || !props.shellId || !props.sessionKey) {
+      console.log("[TerminalView] initTerminal skipped: missing params");
+      return;
+    }
 
     const sessionKey = props.sessionKey;
     const shellId = props.shellId;
 
-    console.log("[TerminalView] initTerminal:", sessionKey, "shellId:", shellId);
+    console.log("[TerminalView] initTerminal:", sessionKey, "shellId:", shellId, "hasContainer:", !!containerRef);
 
     const existingState = terminalStates.get(sessionKey);
 
-    if (existingState && existingState.terminal.element?.isConnected && existingState.shellId === shellId && existingState.contentWritten) {
-      console.log("[TerminalView] Terminal exists and connected, just fit:", sessionKey);
-      doFit(existingState);
-      return;
-    }
-
-    if (existingState && existingState.terminal.element?.isConnected) {
-      console.log("[TerminalView] Disposing old terminal:", sessionKey);
-      try {
-        existingState.terminal.dispose();
-      } catch (_) {}
-    }
-
     if (existingState) {
+      console.log("[TerminalView] Existing state:", {
+        elementConnected: existingState.terminal.element?.isConnected,
+        shellId: existingState.shellId,
+        contentWritten: existingState.contentWritten,
+        currentShellId: shellId
+      });
+
+      if (existingState.terminal.element?.isConnected && existingState.shellId === shellId && existingState.contentWritten) {
+        console.log("[TerminalView] Reusing existing terminal:", sessionKey);
+        doFit(existingState);
+        return;
+      }
+
+      if (existingState.terminal.element?.isConnected) {
+        console.log("[TerminalView] Disposing old terminal:", sessionKey);
+        try {
+          existingState.terminal.dispose();
+        } catch (_) {}
+      }
+
       if (existingState.resizeObserver) {
         existingState.resizeObserver.disconnect();
         existingState.resizeObserver = null;
@@ -205,6 +215,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     };
 
     terminalStates.set(sessionKey, state);
+    console.log("[TerminalView] Created new terminal state for:", sessionKey);
 
     setTimeout(() => {
       try {
@@ -213,7 +224,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }, 50);
   };
 
-  createEffect(on(() => [props.shellId, props.visible, props.sessionKey] as const, () => {
+  createEffect(on(() => [props.shellId, isVisible(), props.sessionKey] as const, () => {
     const vis = isVisible();
     const shellId = props.shellId;
     const sessionKey = props.sessionKey;
@@ -221,6 +232,12 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     console.log("[TerminalView] createEffect:", sessionKey, "vis:", vis, "shellId:", shellId);
 
     if (vis && shellId && sessionKey && containerRef) {
+      const existingState = terminalStates.get(sessionKey);
+      if (existingState && existingState.terminal.element?.isConnected && existingState.shellId === shellId && existingState.contentWritten) {
+        console.log("[TerminalView] createEffect: terminal exists, skipping init");
+        return;
+      }
+      console.log("[TerminalView] createEffect: calling initTerminal");
       initTerminal();
     }
   }, { defer: true }));

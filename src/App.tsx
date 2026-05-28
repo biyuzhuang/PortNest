@@ -1,10 +1,10 @@
-import { Component, createSignal, onMount, Show, For, createEffect, on } from "solid-js";
+import { Component, createSignal, onMount, Show, For, createEffect, on, createMemo } from "solid-js";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { QueryEditor } from "./components/QueryEditor";
 import { AIChat } from "./components/AIChat";
-import { TerminalView } from "./components/TerminalView";
+import { TerminalView, getTerminalState } from "./components/TerminalView";
 import { FileManager } from "./components/FileManager";
 import { SettingsModal } from "./components/SettingsModal";
 import { DockerDashboard } from "./components/DockerDashboard";
@@ -49,6 +49,8 @@ const App: Component = () => {
     const session = activeSession();
     return session?.connection.protocol === "ssh";
   };
+
+  const isSessionActive = (sessionId: string) => createMemo(() => activeSessionId() === sessionId);
 
   const renderSessionContent = () => {
     const session = activeSession();
@@ -225,8 +227,12 @@ const App: Component = () => {
   };
 
   const handleCloseSession = async (sessionId: string) => {
+    console.log("[App] handleCloseSession:", sessionId);
+    console.log("[App] Current sessions:", sessions().map(s => s.id));
+
     const currentSessions = sessions();
     const session = currentSessions.find(s => s.id === sessionId);
+    const closingActive = activeSessionId() === sessionId;
 
     if (session) {
       if (session.shellId) {
@@ -246,18 +252,25 @@ const App: Component = () => {
     }
 
     const newSessions = currentSessions.filter(s => s.id !== sessionId);
-    const shouldSwitchActive = activeSessionId() === sessionId;
 
     setSessions(newSessions);
 
-    if (shouldSwitchActive) {
-      if (newSessions.length > 0) {
-        const lastSession = newSessions[newSessions.length - 1];
-        setActiveSessionId(lastSession.id);
-      } else {
-        setActiveSessionId(null);
+    setTimeout(() => {
+      console.log("[App] After close - sessions:", sessions().map(s => s.id));
+      console.log("[App] After close - active:", activeSessionId());
+      console.log("[App] After close - terminal states:", Array.from(getTerminalState(sessionId) ? [sessionId] : []).map(id => `session ${id} has terminal: ${!!getTerminalState(id)}`));
+
+      if (closingActive) {
+        if (newSessions.length > 0) {
+          const lastSession = newSessions[newSessions.length - 1];
+          console.log("[App] Switching to:", lastSession.id);
+          setActiveSessionId(lastSession.id);
+        } else {
+          console.log("[App] No more sessions");
+          setActiveSessionId(null);
+        }
       }
-    }
+    }, 50);
   };
 
   const handleSwitchSession = (sessionId: string) => {
@@ -552,41 +565,44 @@ const App: Component = () => {
 
           <div class="content-body" style={{ position: "relative", flex: 1, overflow: "hidden" }}>
             <For each={sessions()}>
-              {(session) => (
-                <div
-                  key={session.id}
-                  class="session-content-wrapper"
-                  style={{
-                    display: activeSessionId() === session.id ? "flex" : "none",
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%"
-                  }}
-                >
-                  {session.connection.protocol === "ssh" && session.viewMode === "terminal" && (
-                    <TerminalView
-                      sessionKey={session.id}
-                      connection={session.connection}
-                      visible={activeSessionId() === session.id}
-                      shellId={session.shellId}
-                    />
-                  )}
-                  {session.connection.protocol === "ssh" && session.viewMode === "files" && (
-                    <FileManager
-                      sessionKey={session.id}
-                      connection={session.connection}
-                      sftpId={session.sftpId}
-                    />
-                  )}
-                  {(session.connection.protocol === "mysql" || session.connection.protocol === "postgresql") && (
-                    <QueryEditor connection={session.connection} />
-                  )}
-                  {session.connection.protocol === "docker" && (
-                    <DockerDashboard connectionId={session.id} />
-                  )}
-                </div>
-              )}
+              {(session) => {
+                const sessionActive = createMemo(() => activeSessionId() === session.id);
+                return (
+                  <div
+                    key={session.id}
+                    class="session-content-wrapper"
+                    style={{
+                      display: sessionActive() ? "flex" : "none",
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%"
+                    }}
+                  >
+                    {session.connection.protocol === "ssh" && session.viewMode === "terminal" && (
+                      <TerminalView
+                        sessionKey={session.id}
+                        connection={session.connection}
+                        visible={sessionActive}
+                        shellId={session.shellId}
+                      />
+                    )}
+                    {session.connection.protocol === "ssh" && session.viewMode === "files" && (
+                      <FileManager
+                        sessionKey={session.id}
+                        connection={session.connection}
+                        sftpId={session.sftpId}
+                      />
+                    )}
+                    {(session.connection.protocol === "mysql" || session.connection.protocol === "postgresql") && (
+                      <QueryEditor connection={session.connection} />
+                    )}
+                    {session.connection.protocol === "docker" && (
+                      <DockerDashboard connectionId={session.id} />
+                    )}
+                  </div>
+                );
+              }}
             </For>
           </div>
         </main>
