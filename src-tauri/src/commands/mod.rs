@@ -82,6 +82,10 @@ impl SftpManager {
         self.sessions.read().get(sftp_id).map(|s| s.handle.clone())
     }
 
+    fn get_ssh_handle(&self, sftp_id: &str) -> Option<Arc<dyn ConnectionHandle>> {
+        self.sessions.read().get(sftp_id).map(|s| s.ssh_handle.clone())
+    }
+
     fn remove(&self, sftp_id: &str) {
         self.sessions.write().remove(sftp_id);
     }
@@ -847,6 +851,41 @@ pub async fn open_sftp(
     Ok(SftpOpenResponse { sftp_id })
 }
 
+/// 通过已有 Shell 会话打开 SFTP（复用 SSH 连接，不创建新连接）
+#[tauri::command]
+pub async fn open_sftp_for_shell(
+    state: tauri::State<'_, AppState>,
+    shell_id: String,
+) -> Result<SftpOpenResponse, String> {
+    let ssh_handle = state
+        .shell_manager
+        .get(&shell_id)
+        .ok_or_else(|| "Shell 会话未找到".to_string())?;
+
+    let ssh_conn = ssh_handle
+        .as_any()
+        .downcast_ref::<crate::protocol::ssh::SshConnectionHandle>()
+        .ok_or_else(|| "此连接不支持 SFTP".to_string())?;
+
+    let sftp_handle = crate::protocol::sftp::SftpConnectionHandle::from_ssh(ssh_conn)
+        .map_err(|e| e.to_string())?;
+
+    // 恢复非阻塞模式，避免影响 Shell 读写
+    ssh_conn.session().set_blocking(false);
+
+    let sftp_id = Uuid::new_v4().to_string();
+
+    // 共享 Shell 的 SSH 句柄，不独立持有
+    state.sftp_manager.insert(
+        sftp_id.clone(),
+        String::new(),
+        Arc::new(sftp_handle),
+        ssh_handle.clone(),
+    );
+
+    Ok(SftpOpenResponse { sftp_id })
+}
+
 /// 列出 SFTP 目录
 #[tauri::command]
 pub async fn list_sftp_dir(
@@ -994,12 +1033,27 @@ pub async fn sftp_rename(
     .map_err(|e| e.to_string())
 }
 
-/// 关闭 SFTP 会话
+/// 关闭 SFTP 会话（不主动断开 SSH，因为可能被 shell 共享）
 #[tauri::command]
 pub async fn close_sftp(
     state: tauri::State<'_, AppState>,
     sftp_id: String,
 ) -> Result<(), String> {
+    state.sftp_manager.remove(&sftp_id);
+    Ok(())
+}
+
+/// 关闭独立 SFTP 连接（旧版兼容，会断开 SSH）
+#[tauri::command]
+pub async fn close_sftp_independent(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+) -> Result<(), String> {
+    if let Some(ssh_handle) = state.sftp_manager.get_ssh_handle(&sftp_id) {
+        let _ = tokio::task::spawn_blocking(move || {
+            ssh_handle.disconnect()
+        }).await;
+    }
     state.sftp_manager.remove(&sftp_id);
     Ok(())
 }

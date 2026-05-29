@@ -76,6 +76,7 @@ pub fn run() {
             commands::chat_with_ai,
             // SFTP commands
             commands::open_sftp,
+            commands::open_sftp_for_shell,
             commands::list_sftp_dir,
             commands::sftp_download,
             commands::sftp_upload,
@@ -84,6 +85,7 @@ pub fn run() {
             commands::sftp_delete_dir,
             commands::sftp_rename,
             commands::close_sftp,
+            commands::close_sftp_independent,
             // Folder commands
             commands::get_folders,
             commands::save_folder,

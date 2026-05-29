@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { api, ConnectionRecord } from "../utils/api";
-import { getTerminalThemeConfig } from "../stores/themeStore";
+import { getTerminalThemeConfig, getTerminalSettings } from "../stores/themeStore";
 
 interface TerminalViewProps {
   connection: ConnectionRecord;
@@ -191,6 +191,37 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       }
     });
 
+    // Ctrl+C: 有选中文本时复制，否则发送到远程
+    terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        const selection = terminal.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+          return false;
+        }
+        // No selection: xterm sends \x03 to onData
+        return true;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        navigator.clipboard.readText().then(text => {
+          if (text) api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
+        }).catch(() => {});
+        return false;
+      }
+      return true;
+    });
+
+    // 左键选中自动复制
+    const settings = getTerminalSettings();
+    if (settings.copyOnSelect) {
+      terminal.onSelectionChange(() => {
+        const selection = terminal.getSelection();
+        if (selection) {
+          navigator.clipboard.writeText(selection).catch(() => {});
+        }
+      });
+    }
+
     terminal.element?.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
       try {
@@ -255,6 +286,26 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
   onCleanup(() => {
     console.log("[TerminalView] onCleanup:", props.sessionKey);
+    if (props.sessionKey) {
+      const state = terminalStates.get(props.sessionKey);
+      if (state) {
+        if (state.readInterval) {
+          clearInterval(state.readInterval);
+          state.readInterval = null;
+        }
+        if (state.resizeObserver) {
+          state.resizeObserver.disconnect();
+          state.resizeObserver = null;
+        }
+        if (state.terminal.element?.isConnected) {
+          try {
+            state.terminal.dispose();
+          } catch (_) {}
+        }
+        terminalStates.delete(props.sessionKey);
+        console.log("[TerminalView] Cleaned up terminal state for:", props.sessionKey);
+      }
+    }
   });
 
   return (

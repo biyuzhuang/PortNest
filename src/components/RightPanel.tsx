@@ -7,6 +7,7 @@ interface RightPanelProps {
   connection: ConnectionRecord | undefined;
   style?: any;
   sessionId?: string;
+  shellId?: string;
 }
 
 interface MetricsData {
@@ -110,14 +111,14 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
         netTx = Math.min(100, Math.round((tx2 - tx1) / 1024 / intervalSec));
       }
 
-      await api.closeShell(metricsShellId);
+      await api.disconnectShell(metricsShellId);
 
       setMetrics({ cpu: cpuPercent, memory, disk, networkRx: netRx, networkTx: netTx });
       setError(null);
     } catch (e) {
       if (metricsShellId) {
         try {
-          await api.closeShell(metricsShellId);
+          await api.disconnectShell(metricsShellId);
         } catch (_) {}
       }
       setError("无法获取指标");
@@ -125,8 +126,10 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
     }
   };
 
-  const openSftpForConnection = async (conn: ConnectionRecord) => {
-    if (conn.id === currentConnectionId && currentSftpId) {
+  const openSftpForConnection = async () => {
+    if (!props.shellId) return;
+
+    if (currentSftpId && currentConnectionId === props.connection?.id) {
       setSftpId(currentSftpId);
       return;
     }
@@ -138,9 +141,9 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
     }
 
     try {
-      const response = await api.openSftp(conn.id);
+      const response = await api.openSftpForShell(props.shellId);
       currentSftpId = response.sftp_id;
-      currentConnectionId = conn.id;
+      currentConnectionId = props.connection?.id ?? null;
       setSftpId(response.sftp_id);
     } catch (e) {
       console.error("SFTP open error:", e);
@@ -151,7 +154,7 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
     const conn = props.connection;
     if (conn && conn.protocol === "ssh") {
       setIsLoading(true);
-      openSftpForConnection(conn).then(() => {
+      openSftpForConnection().then(() => {
         fetchMetrics(conn);
         setIsLoading(false);
       });

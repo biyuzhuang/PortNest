@@ -157,6 +157,10 @@ export const api = {
     return invoke("open_sftp", { connectionId });
   },
 
+  async openSftpForShell(shellId: string): Promise<{ sftp_id: string }> {
+    return invoke("open_sftp_for_shell", { shellId });
+  },
+
   async listSftpDir(sftpId: string, path: string): Promise<FileInfo[]> {
     return invoke("list_sftp_dir", { sftpId, path });
   },

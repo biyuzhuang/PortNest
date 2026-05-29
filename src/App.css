@@ -37,15 +37,101 @@ body {
 
 .app-container {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
+}
+
+/* Custom titlebar */
+.app-titlebar {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 8px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 8px;
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.titlebar-spacer {
+  flex: 1;
+  cursor: default;
+}
+
+.titlebar-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.titlebar-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 6px;
+}
+
+.titlebar-btn-win {
+  min-width: 34px;
+  font-size: 12px;
+  border-radius: 0;
+  height: 26px;
+}
+
+.titlebar-btn-win:hover {
+  background: var(--bg-tertiary);
+}
+
+.titlebar-btn-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
 }
 
 /* Sidebar */
 .sidebar {
   width: 240px;
   min-width: 240px;
-  height: 100vh;
+  height: 100%;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -965,4 +1051,46 @@ body {
 .tab-btn.active {
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+/* Three-dot app menu */
+.app-menu-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.app-menu-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--text-primary);
+}
+
+.app-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.app-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 999;
 }

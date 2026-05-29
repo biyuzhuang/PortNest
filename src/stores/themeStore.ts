@@ -283,3 +283,22 @@ export function setTerminalTheme(name: string) {
 export function getTerminalThemeConfig(): TerminalTheme {
   return terminalThemes[getTerminalTheme()] || terminalThemes.vscode_dark;
 }
+
+// Terminal behavior settings
+const TERMINAL_SETTINGS_KEY = "portnest-terminal-settings";
+
+export interface TerminalSettings {
+  copyOnSelect: boolean;
+}
+
+export function getTerminalSettings(): TerminalSettings {
+  try {
+    const stored = localStorage.getItem(TERMINAL_SETTINGS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return { copyOnSelect: false };
+}
+
+export function setTerminalSettings(settings: TerminalSettings) {
+  localStorage.setItem(TERMINAL_SETTINGS_KEY, JSON.stringify(settings));
+}

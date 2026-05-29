@@ -5,6 +5,12 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "shell:default",
+    "dialog:default",
+    "fs:default",
+    "notification:default",
+    "clipboard-manager:default",
+    "core:window:default"
   ]
 }

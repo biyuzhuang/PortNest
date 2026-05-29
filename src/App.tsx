@@ -1,10 +1,11 @@
 import { Component, createSignal, onMount, Show, For, createEffect, on, createMemo } from "solid-js";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { QueryEditor } from "./components/QueryEditor";
 import { AIChat } from "./components/AIChat";
-import { TerminalView, getTerminalState } from "./components/TerminalView";
+import { TerminalView } from "./components/TerminalView";
 import { FileManager } from "./components/FileManager";
 import { SettingsModal } from "./components/SettingsModal";
 import { DockerDashboard } from "./components/DockerDashboard";
@@ -32,6 +33,7 @@ type ContextMenuState = {
 } | null;
 
 const App: Component = () => {
+  const appWindow = getCurrentWindow();
   const [showForm, setShowForm] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
@@ -43,6 +45,8 @@ const App: Component = () => {
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null);
   const [rightPanelWidth, setRightPanelWidth] = createSignal(280);
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
+  const [showAppMenu, setShowAppMenu] = createSignal(false);
+  const [showAbout, setShowAbout] = createSignal(false);
 
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
   const showRightPanel = () => {
@@ -102,7 +106,8 @@ const App: Component = () => {
   };
 
   const generateDisplayName = (conn: ConnectionRecord) => {
-    return `${conn.name}`;
+    const existingCount = sessions().filter(s => s.connection.id === conn.id).length;
+    return existingCount > 0 ? `${conn.name}(${existingCount + 1})` : conn.name;
   };
 
   onMount(async () => {
@@ -168,25 +173,42 @@ const App: Component = () => {
     return sessionId;
   };
 
-  const openShellAndSftp = async (sessionId: string, conn: ConnectionRecord) => {
+  const openShellForSession = async (sessionId: string, conn: ConnectionRecord) => {
     const cols = 120;
     const rows = 30;
 
-    console.log("[openShellAndSftp] Opening shell for:", conn.name, conn.id);
+    console.log("[openShell] Opening shell for:", conn.name, conn.id);
     const response = await api.openShell(conn.id, cols, rows);
-    console.log("[openShellAndSftp] Shell opened:", response.shell_id);
+    console.log("[openShell] Shell opened:", response.shell_id);
+
+    if (!sessions().some(s => s.id === sessionId)) {
+      console.log("[openShell] Session closed during openShell, disconnecting");
+      await api.disconnectShell(response.shell_id);
+      return;
+    }
 
     setSessions(prev => prev.map(s =>
       s.id === sessionId ? { ...s, shellId: response.shell_id } : s
     ));
+  };
 
-    console.log("[openShellAndSftp] Opening SFTP for:", conn.name);
-    const sftpResponse = await api.openSftp(conn.id);
-    console.log("[openShellAndSftp] SFTP opened:", sftpResponse.sftp_id);
+  const openSftpForSession = async (sessionId: string) => {
+    const session = sessions().find(s => s.id === sessionId);
+    if (!session || session.sftpId || !session.shellId) return;
 
-    setSessions(prev => prev.map(s =>
-      s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
-    ));
+    console.log("[openSftp] Opening SFTP via shell:", sessionId);
+    try {
+      const sftpResponse = await api.openSftpForShell(session.shellId);
+      if (!sessions().some(s => s.id === sessionId)) {
+        await api.closeSftp(sftpResponse.sftp_id);
+        return;
+      }
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
+      ));
+    } catch (e) {
+      console.error("Failed to open SFTP:", e);
+    }
   };
 
   const handleConnect = async (conn: ConnectionRecord) => {
@@ -207,7 +229,7 @@ const App: Component = () => {
 
       (async () => {
         try {
-          await openShellAndSftp(sessionId, conn);
+          await openShellForSession(sessionId, conn);
         } catch (e) {
           console.error("SSH connection failed:", e);
           const currentSessions = sessions();
@@ -253,24 +275,17 @@ const App: Component = () => {
 
     const newSessions = currentSessions.filter(s => s.id !== sessionId);
 
-    setSessions(newSessions);
-
-    setTimeout(() => {
-      console.log("[App] After close - sessions:", sessions().map(s => s.id));
-      console.log("[App] After close - active:", activeSessionId());
-      console.log("[App] After close - terminal states:", Array.from(getTerminalState(sessionId) ? [sessionId] : []).map(id => `session ${id} has terminal: ${!!getTerminalState(id)}`));
-
-      if (closingActive) {
-        if (newSessions.length > 0) {
-          const lastSession = newSessions[newSessions.length - 1];
-          console.log("[App] Switching to:", lastSession.id);
-          setActiveSessionId(lastSession.id);
-        } else {
-          console.log("[App] No more sessions");
-          setActiveSessionId(null);
-        }
+    // 先切换活跃会话，再更新 sessions 列表，避免短暂的无活跃会话状态
+    if (closingActive) {
+      if (newSessions.length > 0) {
+        const lastSession = newSessions[newSessions.length - 1];
+        setActiveSessionId(lastSession.id);
+      } else {
+        setActiveSessionId(null);
       }
-    }, 50);
+    }
+
+    setSessions(newSessions);
   };
 
   const handleSwitchSession = (sessionId: string) => {
@@ -295,22 +310,7 @@ const App: Component = () => {
     setTabContextMenu(null);
 
     if (session.connection.protocol === "ssh") {
-      (async () => {
-        try {
-          const cols = 120;
-          const rows = 30;
-          const shellResponse = await api.openShell(session.connection.id, cols, rows);
-          setSessions(prev => prev.map(s =>
-            s.id === newSessionId ? { ...s, shellId: shellResponse.shell_id } : s
-          ));
-          const sftpResponse = await api.openSftp(session.connection.id);
-          setSessions(prev => prev.map(s =>
-            s.id === newSessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
-          ));
-        } catch (e) {
-          console.error("Failed to create shell/sftp for duplicated session:", e);
-        }
-      })();
+      openShellForSession(newSessionId, session.connection);
     }
   };
 
@@ -327,7 +327,12 @@ const App: Component = () => {
   };
 
   const switchSessionViewMode = (sessionId: string, mode: ViewMode) => {
+    const session = sessions().find(s => s.id === sessionId);
     setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, viewMode: mode } : s));
+    // 切换到文件视图时按需打开 SFTP
+    if (mode === "files" && session?.connection.protocol === "ssh") {
+      openSftpForSession(sessionId);
+    }
   };
 
   const handleNewConnection = (folderId?: string) => {
@@ -398,20 +403,28 @@ const App: Component = () => {
     const existingSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "files");
     if (existingSession) {
       setActiveSessionId(existingSession.id);
-    } else {
+      return;
+    }
+    // 如果有当前连接的终端会话，复用其 SSH 连接打开 SFTP
+    const terminalSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "terminal" && s.shellId);
+    if (terminalSession) {
       const sessionId = createSession(conn, "files");
-      if (conn.protocol === "ssh") {
-        (async () => {
-          try {
-            const sftpResponse = await api.openSftp(conn.id);
-            setSessions(prev => prev.map(s =>
-              s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
-            ));
-          } catch (e) {
-            console.error("Failed to open SFTP:", e);
-          }
-        })();
-      }
+      openSftpForSession(sessionId);
+      return;
+    }
+    // 否则独立打开 SFTP
+    const sessionId = createSession(conn, "files");
+    if (conn.protocol === "ssh") {
+      (async () => {
+        try {
+          const sftpResponse = await api.openSftp(conn.id);
+          setSessions(prev => prev.map(s =>
+            s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
+          ));
+        } catch (e) {
+          console.error("Failed to open SFTP:", e);
+        }
+      })();
     }
   };
 
@@ -441,24 +454,82 @@ const App: Component = () => {
 
   return (
     <div class="app-container">
-      <Sidebar
-        onConnect={handleConnect}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onOpenAI={(conn) => {
-          const existingSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "ai");
-          if (existingSession) {
-            setActiveSessionId(existingSession.id);
-          } else {
-            const sessionId = createSession(conn, "ai");
-            const session = sessions().find(s => s.id === sessionId);
-            if (session) {
-              session.viewMode = "ai";
-              setSessions([...sessions()]);
+      <div class="app-titlebar">
+        <span class="titlebar-title" data-tauri-drag-region>PortNest</span>
+        <div class="titlebar-spacer" data-tauri-drag-region />
+        <div class="titlebar-controls">
+          <Show when={activeSession()}>
+            <Show when={activeSession()?.connection.protocol === "ssh"}>
+              <button class="titlebar-btn" onClick={() => {
+                const s = activeSession();
+                if (s) switchSessionViewMode(s.id, s.viewMode === "terminal" ? "files" : "terminal");
+              }}>
+                {activeSession()?.viewMode === "terminal" ? "📂" : "🖥️"}
+              </button>
+            </Show>
+          </Show>
+          <div class="app-menu-container">
+            <button class="titlebar-btn" onClick={() => setShowAppMenu(!showAppMenu())}>
+              ⋮
+            </button>
+            <Show when={showAppMenu()}>
+              <div class="app-menu-dropdown">
+                <Show when={activeSession()?.connection.protocol === "ssh"}>
+                  <div class="app-menu-item" onClick={() => {
+                    const s = activeSession();
+                    if (s) switchSessionViewMode(s.id, s.viewMode === "terminal" ? "files" : "terminal");
+                    setShowAppMenu(false);
+                  }}>
+                    {activeSession()?.viewMode === "terminal" ? "📂 切换到文件视图" : "🖥️ 切换到终端视图"}
+                  </div>
+                </Show>
+                <Show when={activeSession()}>
+                  <div class="app-menu-item" onClick={() => { handleBack(); setShowAppMenu(false); }}>
+                    ← 关闭当前标签
+                  </div>
+                </Show>
+                <div class="app-menu-item" onClick={() => { setShowSettings(true); setShowAppMenu(false); }}>
+                  ⚙️ 设置
+                </div>
+                <div class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
+                  ℹ️ 关于
+                </div>
+              </div>
+              <div class="app-menu-overlay" onClick={() => setShowAppMenu(false)} />
+            </Show>
+          </div>
+          <div class="titlebar-window-controls">
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => appWindow.minimize()} title="最小化">
+              ─
+            </button>
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => appWindow.toggleMaximize()} title="最大化">
+              □
+            </button>
+            <button class="titlebar-btn titlebar-btn-win titlebar-btn-close" onClick={() => appWindow.close()} title="关闭">
+              ✕
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="app-body">
+        <Sidebar
+          onConnect={handleConnect}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onOpenAI={(conn) => {
+            const existingSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "ai");
+            if (existingSession) {
+              setActiveSessionId(existingSession.id);
+            } else {
+              const sessionId = createSession(conn, "ai");
+              const session = sessions().find(s => s.id === sessionId);
+              if (session) {
+                session.viewMode = "ai";
+                setSessions([...sessions()]);
+              }
             }
-          }
-        }}
-        onOpenFiles={handleOpenFiles}
+          }}
+          onOpenFiles={handleOpenFiles}
         onOpenSettings={() => setShowSettings(true)}
         onNewConnection={handleNewConnection}
         onNewFolder={() => setShowNewFolderDialog(true)}
@@ -479,12 +550,9 @@ const App: Component = () => {
                 <li>右键连接可以编辑、删除、复制或进行 AI 诊断</li>
                 <li>数据库连接支持 SQL 查询功能</li>
                 <li>SSH 连接支持终端交互和文件传输</li>
-                <li>点击右上角 ⚙️ 打开设置界面</li>
+                <li>点击右上角 ⋮ 打开菜单</li>
               </ul>
             </div>
-            <button class="btn-settings" onClick={() => setShowSettings(true)}>
-              ⚙️ 设置
-            </button>
           </div>
         </main>
       </Show>
@@ -518,7 +586,6 @@ const App: Component = () => {
                 }}
               </For>
             </div>
-            <button class="btn-back" onClick={handleBack}>← 关闭当前</button>
           </div>
 
           <Show when={tabContextMenu()}>
@@ -539,29 +606,6 @@ const App: Component = () => {
             </div>
             <div class="tab-context-menu-overlay" onClick={() => setTabContextMenu(null)} />
           </Show>
-
-          <div class="content-header">
-            <div class="content-title">
-              <span class="conn-name">{activeSession()?.displayName || activeSession()?.connection.name}</span>
-              <span class="conn-host">{activeSession()?.connection.host}:{activeSession()?.connection.port}</span>
-            </div>
-            <div class="header-actions">
-              <Show when={activeSession()?.connection.protocol === "ssh"}>
-                <button
-                  class={`btn-files ${activeSession()?.viewMode === "files" ? "active" : ""}`}
-                  onClick={() => switchSessionViewMode(activeSession()!.id, "files")}
-                >
-                  📂 文件
-                </button>
-                <button
-                  class={`btn-terminal ${activeSession()?.viewMode === "terminal" ? "active" : ""}`}
-                  onClick={() => switchSessionViewMode(activeSession()!.id, "terminal")}
-                >
-                  🖥️ 终端
-                </button>
-              </Show>
-            </div>
-          </div>
 
           <div class="content-body" style={{ position: "relative", flex: 1, overflow: "hidden" }}>
             <For each={sessions()}>
@@ -608,7 +652,7 @@ const App: Component = () => {
         </main>
         <Show when={showRightPanel()}>
           <div class="panel-splitter" onMouseDown={startResize} />
-          <RightPanel connection={activeSession()?.connection} style={{ width: `${rightPanelWidth()}px` }} />
+          <RightPanel connection={activeSession()?.connection} shellId={activeSession()?.shellId} style={{ width: `${rightPanelWidth()}px` }} />
         </Show>
       </Show>
 
@@ -646,6 +690,25 @@ const App: Component = () => {
           </div>
         </div>
       </Show>
+
+      <Show when={showAbout()}>
+        <div class="modal-overlay" onClick={() => setShowAbout(false)}>
+          <div class="modal-content" onClick={(e) => e.stopPropagation()} style={{ "max-width": "360px" }}>
+            <h2>PortNest</h2>
+            <p style={{ color: "var(--text-secondary)", "margin-bottom": "12px" }}>一站式开发运维中枢</p>
+            <p style={{ color: "var(--text-muted)", "font-size": "13px", "margin-bottom": "8px" }}>
+              版本 0.1.0 · 基于 Tauri 2.0 + SolidJS
+            </p>
+            <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
+              支持 SSH · SFTP · MySQL · PostgreSQL · Docker · RDP
+            </p>
+            <div class="form-actions" style={{ "margin-top": "20px" }}>
+              <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      </Show>
+      </div>
     </div>
   );
 };

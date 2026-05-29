@@ -1,5 +1,5 @@
 import { Component, createSignal, For, Show } from "solid-js";
-import { themeMode, effectiveTheme, setThemeMode, ThemeMode, terminalThemes, getTerminalTheme, setTerminalTheme } from "../stores/themeStore";
+import { themeMode, effectiveTheme, setThemeMode, ThemeMode, terminalThemes, getTerminalTheme, setTerminalTheme, getTerminalSettings, setTerminalSettings } from "../stores/themeStore";
 import "./SettingsModal.css";
 
 interface SettingsModalProps {
@@ -9,6 +9,8 @@ interface SettingsModalProps {
 export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<"general" | "terminal" | "appearance">("general");
   const [currentTerminalTheme, setCurrentTerminalTheme] = createSignal(getTerminalTheme());
+  const terminalSettings = getTerminalSettings();
+  const [copyOnSelect, setCopyOnSelect] = createSignal(terminalSettings.copyOnSelect);
 
   const handleThemeChange = (mode: ThemeMode) => {
     setThemeMode(mode);
@@ -98,20 +100,36 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>终端选项</h3>
               <div class="setting-item">
                 <label>
-                  <input type="checkbox" defaultChecked />
-                  <span>启用 Ctrl+C 复制选中内容</span>
+                  <input type="checkbox" checked disabled />
+                  <span>Ctrl+C 有选中时复制，无选中时发送中断</span>
                 </label>
               </div>
               <div class="setting-item">
                 <label>
-                  <input type="checkbox" defaultChecked />
-                  <span>启用右键粘贴</span>
+                  <input type="checkbox" checked disabled />
+                  <span>Ctrl+V 粘贴系统剪贴板</span>
                 </label>
               </div>
               <div class="setting-item">
                 <label>
-                  <input type="checkbox" defaultChecked />
-                  <span>光标闪烁</span>
+                  <input type="checkbox" checked disabled />
+                  <span>右键粘贴系统剪贴板</span>
+                </label>
+              </div>
+              <div class="setting-item">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={copyOnSelect()}
+                    onChange={(e) => {
+                      const checked = e.currentTarget.checked;
+                      setCopyOnSelect(checked);
+                      const s = getTerminalSettings();
+                      s.copyOnSelect = checked;
+                      setTerminalSettings(s);
+                    }}
+                  />
+                  <span>左键选中文本时自动复制到剪贴板</span>
                 </label>
               </div>
             </div>
