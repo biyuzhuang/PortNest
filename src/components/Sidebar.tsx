@@ -86,22 +86,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     setShowFolderMenu(true);
   };
 
-  const BUILTIN_CONNECTIONS: ConnectionRecord[] = [
-    {
-      id: "builtin-test-ssh",
-      name: "测试",
-      protocol: "ssh",
-      host: "192.0.2.10",
-      port: 22,
-      username: "root",
-      password: "",
-      auth_type: "password",
-      folder_id: undefined,
-      created_at: 0,
-      updated_at: 0,
-    }
-  ];
-
   return (
     <div class="sidebar" onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
       <div class="sidebar-header">
@@ -137,25 +121,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       </div>
 
       <div class="sidebar-nav" onContextMenu={handleSidebarContextMenu}>
-        <div class="nav-section">
-          <div class="nav-section-title">
-            <span>快速连接</span>
-            <span class="conn-count">{BUILTIN_CONNECTIONS.length}</span>
-          </div>
-
-          <For each={BUILTIN_CONNECTIONS}>
-            {(conn) => (
-              <ConnectionItem
-                conn={conn}
-                selected={props.selectedId === conn.id}
-                onConnect={props.onConnect}
-                onContextMenu={handleContextMenu}
-                builtin={true}
-              />
-            )}
-          </For>
-        </div>
-
         <div class="nav-section">
           <div class="nav-section-title">
             <span>连接列表</span>

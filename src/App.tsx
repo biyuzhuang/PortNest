@@ -112,6 +112,10 @@ const App: Component = () => {
 
   onMount(async () => {
     initTheme();
+
+    // Load connections from database first
+    await connectionStore.loadConnections();
+
     try {
       const supportedProtocols = await api.getProtocols();
       setProtocols(supportedProtocols);
@@ -119,11 +123,11 @@ const App: Component = () => {
       console.error("Failed to get protocols:", e);
     }
 
-    // Create built-in SSH test connection if not exists
-    try {
-      const connections = await api.getConnections();
-      const hasTestConnection = connections.some(c => c.name === "测试" && c.host === "192.0.2.10");
-      if (!hasTestConnection) {
+    // Ensure built-in SSH test connection exists in database
+    const connections = connectionStore.state.connections;
+    const hasTestConnection = connections.some(c => c.name === "测试" && c.host === "192.0.2.10");
+    if (!hasTestConnection) {
+      try {
         await api.saveConnection({
           name: "测试",
           protocol: "ssh",
@@ -134,27 +138,11 @@ const App: Component = () => {
           password: "",
         });
         await connectionStore.loadConnections();
+      } catch (e) {
+        console.error("Failed to create test connection:", e);
       }
-    } catch (e) {
-      console.error("Failed to create test connection:", e);
     }
   });
-
-  const BUILTIN_CONNECTIONS = [
-    {
-      id: "builtin-test-ssh",
-      name: "测试",
-      protocol: "ssh",
-      host: "192.0.2.10",
-      port: 22,
-      username: "root",
-      password: "",
-      auth_type: "password",
-      folder_id: undefined,
-      created_at: 0,
-      updated_at: 0,
-    }
-  ];
 
   const isBuiltinConnection = (connId: string) => connId.startsWith("builtin-");
 
