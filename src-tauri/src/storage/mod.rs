@@ -1,6 +1,6 @@
-//! 存储层模块
+﻿//! 存储层模块
 //!
-//! 负责 SQLite 数据库操作和凭据加密
+//! 负责 SQLite 数据库操作和凭证加密
 
 mod vault;
 
@@ -14,6 +14,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
+
+/// 凭证数据结构（用于 JSON 序列化）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CredentialData {
+    pub auth_type: String,
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub passphrase: Option<String>,
+}
 
 /// 数据库管理器
 pub struct Database {
@@ -130,7 +139,7 @@ impl Database {
             .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_connections_folder_id ON connections(folder_id)", [])
-            .map_err(|e| Error::StorageError(format!("创建 idx_connections_folder_id 索引失败: {}", e)))?;
+            .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
 
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_connection_id ON sessions(connection_id)", [])
             .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
@@ -158,7 +167,17 @@ impl Database {
         let now = chrono::Utc::now().timestamp();
 
         let demo_cred_id = "builtin-test-cred";
-        let (encrypted, iv) = self.vault.encrypt(b"root")?;
+        
+        // 使用结构化 JSON 存储凭证
+        let cred_data = CredentialData {
+            auth_type: "password".to_string(),
+            password: Some("root".to_string()),
+            private_key: None,
+            passphrase: None,
+        };
+        let cred_json = serde_json::to_string(&cred_data).unwrap();
+        let (encrypted, iv) = self.vault.encrypt(cred_json.as_bytes())?;
+        
         conn.execute(
             r#"INSERT OR REPLACE INTO credentials (id, name, auth_type, encrypted_data, iv, created_at, updated_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
@@ -171,7 +190,7 @@ impl Database {
                 now,
                 now
             ],
-        ).map_err(|e| Error::StorageError(format!("创建演示凭据失败: {}", e)))?;
+        ).map_err(|e| Error::StorageError(format!("创建演示凭证失败: {}", e)))?;
 
         conn.execute(
             r#"INSERT OR REPLACE INTO connections (id, name, protocol, host, port, username, credential_id, created_at, updated_at)
@@ -189,7 +208,7 @@ impl Database {
             ],
         ).map_err(|e| Error::StorageError(format!("创建演示连接失败: {}", e)))?;
 
-        tracing::info!("Demo connection created: 测试服务器 (builtin-test-ssh)");
+        tracing::info!("Demo connection created: 测试服务器(builtin-test-ssh)");
         Ok(())
     }
 
@@ -329,7 +348,7 @@ impl Database {
     /// 删除文件夹
     pub fn delete_folder(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock();
-        // 先将该文件夹下的连接移出文件夹
+        // 先将文件夹下的连接移出文件夹夹
         conn.execute("UPDATE connections SET folder_id = NULL WHERE folder_id = ?1", params![id])
             .map_err(|e| Error::StorageError(format!("更新连接失败: {}", e)))?;
         // 删除文件夹
@@ -349,8 +368,21 @@ impl Database {
         Ok(())
     }
 
-    /// 保存凭据
-    pub fn save_credential(
+    /// 保存凭证（使用 JSON 结构化存储）
+    pub fn save_credential_structured(
+        &self,
+        id: Uuid,
+        name: &str,
+        auth_type: &str,
+        cred_data: &CredentialData,
+    ) -> Result<()> {
+        let json = serde_json::to_string(cred_data)
+            .map_err(|e| Error::StorageError(format!("序列化凭证失败: {}", e)))?;
+        self.save_credential_raw(id, name, auth_type, json.as_bytes())
+    }
+
+    /// 保存凭证（原始字节）
+    pub fn save_credential_raw(
         &self,
         id: Uuid,
         name: &str,
@@ -376,12 +408,19 @@ impl Database {
                 now
             ],
         )
-        .map_err(|e| Error::StorageError(format!("保存凭据失败: {}", e)))?;
+        .map_err(|e| Error::StorageError(format!("保存凭证失败: {}", e)))?;
 
         Ok(())
     }
 
-    /// 获取凭据解密数据
+    /// 获取凭证解密数据（返回 JSON 格式的 CredentialData）
+    pub fn get_credential_structured(&self, id: &str) -> Result<CredentialData> {
+        let data = self.get_credential_data(id)?;
+        serde_json::from_slice(&data)
+            .map_err(|e| Error::StorageError(format!("解析凭证数据失败: {}", e)))
+    }
+
+    /// 获取凭证解密数据（原始字节）
     pub fn get_credential_data(&self, id: &str) -> Result<Vec<u8>> {
         let conn = self.conn.lock();
         let mut stmt = conn
@@ -402,12 +441,12 @@ impl Database {
                     .map_err(|e| Error::EncryptionError(e.to_string()))?;
                 self.vault.decrypt(&encrypted, &iv)
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Error::StorageError("凭据未找到".to_string())),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(Error::StorageError("凭证未找到".to_string())),
             Err(e) => Err(Error::StorageError(e.to_string())),
         }
     }
 
-    /// 获取凭据记录
+    /// 获取凭证记录
     pub fn get_credential(&self, id: &str) -> Result<CredentialRecord> {
         let conn = self.conn.lock();
         let mut stmt = conn
@@ -423,7 +462,7 @@ impl Database {
                 updated_at: row.get(4)?,
             })
         })
-        .map_err(|e| Error::StorageError(format!("获取凭据失败: {}", e)))
+        .map_err(|e| Error::StorageError(format!("获取凭证失败: {}", e)))
     }
 
     /// 保存会话历史
@@ -479,7 +518,7 @@ pub struct FolderRecord {
     pub created_at: i64,
 }
 
-/// 凭据记录
+/// 凭证记录
 #[derive(Debug, Clone)]
 pub struct CredentialRecord {
     pub id: String,

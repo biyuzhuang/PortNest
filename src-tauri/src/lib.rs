@@ -1,4 +1,4 @@
-//! PortNest - 一站式开发运维中枢
+﻿//! PortNest - 一站式开发运维中心
 
 pub mod protocol;
 pub mod connection;
@@ -10,16 +10,20 @@ pub mod error;
 pub use error::{Error, Result};
 
 use std::path::PathBuf;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-fn init_tracing(app_dir: &PathBuf) {
+/// 日志 Guard - 保持日志写入线程存活直到应用结束
+pub struct LogGuard {
+    _guard: WorkerGuard,
+}
+
+fn init_tracing(app_dir: &PathBuf) -> LogGuard {
     let log_dir = app_dir.join("logs");
     std::fs::create_dir_all(&log_dir).ok();
 
     let file_appender = tracing_appender::rolling::daily(&log_dir, "portnest.log");
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-    std::mem::forget(_guard);
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()
         .with(
@@ -28,12 +32,15 @@ fn init_tracing(app_dir: &PathBuf) {
                 .with_ansi(false),
         )
         .init();
+
+    LogGuard { _guard: guard }
 }
 
-fn init_app_state(app_dir: PathBuf) -> Result<commands::AppState> {
-    init_tracing(&app_dir);
+fn init_app_state(app_dir: PathBuf) -> Result<(commands::AppState, LogGuard)> {
+    let log_guard = init_tracing(&app_dir);
     tracing::info!("PortNest 启动中...");
-    commands::AppState::new(app_dir)
+    let state = commands::AppState::new(app_dir)?;
+    Ok((state, log_guard))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -44,8 +51,8 @@ pub fn run() {
 
     std::fs::create_dir_all(&app_dir).ok();
 
-    let app_state = match init_app_state(app_dir.clone()) {
-        Ok(state) => state,
+    let (app_state, _log_guard) = match init_app_state(app_dir.clone()) {
+        Ok((state, _log_guard)) => (state, _log_guard),
         Err(e) => {
             eprintln!("初始化应用状态失败: {}", e);
             std::process::exit(1);

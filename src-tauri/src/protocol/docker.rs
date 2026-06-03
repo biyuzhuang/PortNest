@@ -1,7 +1,7 @@
-//! Docker 协议插件
+﻿//! Docker 协议插件
 
 use async_trait::async_trait;
-use bollard::Docker;
+use bollard::{ClientVersion, Docker};
 use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
     RemoveContainerOptions, RestartContainerOptions, StartContainerOptions, StopContainerOptions,
@@ -158,7 +158,7 @@ impl DockerConnectionHandle {
         Ok(())
     }
 
-    /// 杀死容器
+    /// 终止容器
     pub async fn kill_container(&self, container_id: &str, signal: Option<&str>) -> Result<()> {
         let sig = signal.unwrap_or("SIGKILL").to_string();
         let opts = bollard::container::KillContainerOptions { signal: sig };
@@ -472,12 +472,20 @@ impl ProtocolPlugin for DockerPlugin {
             .map(std::time::Duration::from_millis)
             .unwrap_or(std::time::Duration::from_secs(30));
 
+        let addr = format!("{}:{}", host, port);
+        // bollard 0.17.1 的 ClientVersion 字段名是 major_version / minor_version
+        let client_version = ClientVersion {
+            major_version: 1,
+            minor_version: 40,
+        };
+
         let docker = tokio::time::timeout(timeout, async {
-            Docker::connect_with_local_defaults()
+            // 支持远程 Docker daemon 连接 (HTTP/HTTPS)
+            Docker::connect_with_http(addr.as_str(), 30, &client_version)
         })
         .await
-        .map_err(|_| Error::Timeout(format!("连接 Docker daemon 超时")))?
-        .map_err(|e| Error::ConnectionFailed(format!("连接 Docker 失败: {}", e)))?;
+        .map_err(|_| Error::Timeout(format!("连接 Docker daemon {} 超时", addr)))?
+        .map_err(|e| Error::ConnectionFailed(format!("连接 Docker {} 失败: {}", addr, e)))?;
 
         let id = Uuid::new_v4();
         Ok(Box::new(DockerConnectionHandle::new(

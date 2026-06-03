@@ -1,7 +1,6 @@
-//! MySQL 数据库协议插件
-
+﻿//! MySQL 数据库协议插件
 use async_trait::async_trait;
-use mysql_async::{Opts, Pool, prelude::Queryable, Row};
+use mysql_async::{OptsBuilder, Pool, prelude::Queryable, Row};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -107,18 +106,17 @@ impl ProtocolPlugin for MysqlPlugin {
         credential: &Credential,
         _options: &ConnectionOptions,
     ) -> Result<Box<dyn ConnectionHandle>> {
-        let _password = match &credential.credential_type {
+        let password = match &credential.credential_type {
             CredentialType::Password => credential.password.clone(),
             _ => None,
         };
 
-        let url = format!("mysql://{}@{}:{}/",
-            username,
-            host,
-            port);
-
-        let opts = Opts::from_url(&url)
-            .map_err(|e| Error::DatabaseError(format!("构建连接选项失败: {}", e)))?;
+        // OptsBuilder 实现了 TryFrom<Opts>，Pool::new 可以直接接收
+        let opts = OptsBuilder::default()
+            .ip_or_hostname(host)
+            .tcp_port(port)
+            .user(Some(username))
+            .pass(password);
 
         let pool = Pool::new(opts);
         let id = Uuid::new_v4();

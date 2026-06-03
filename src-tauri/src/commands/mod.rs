@@ -14,7 +14,7 @@ use crate::protocol::docker::{
     ContainerInfo, DockerContainerCreateConfig, DockerSystemInfo, ImageInfo, NetworkInfo,
     VolumeInfo, ContainerStats,
 };
-use crate::storage::{ConnectionRecord, Database};
+use crate::storage::{ConnectionRecord, Database, CredentialData};
 
 /// Shell 会话信息
 struct ShellSessionInfo {
@@ -210,25 +210,18 @@ pub async fn save_connection(
     let credential_id = Uuid::new_v4();
 
     let auth_type = config.auth_type.as_str();
-    let mut credential_data = Vec::new();
-
-    match auth_type {
-        "password" => {
-            credential_data.extend_from_slice(config.password.as_ref().unwrap().as_bytes());
-        }
-        "key" | "key_with_passphrase" => {
-            credential_data.extend_from_slice(config.private_key.as_ref().unwrap().as_bytes());
-            if let Some(pass) = &config.passphrase {
-                credential_data.extend_from_slice(b"\0");
-                credential_data.extend_from_slice(pass.as_bytes());
-            }
-        }
-        _ => {}
-    }
+    
+    // 使用结构化 JSON 格式存储凭证
+    let cred_data = CredentialData {
+        auth_type: auth_type.to_string(),
+        password: config.password.clone(),
+        private_key: config.private_key.clone(),
+        passphrase: config.passphrase.clone(),
+    };
 
     state
         .db
-        .save_credential(credential_id, &config.name, auth_type, &credential_data)
+        .save_credential_structured(credential_id, &config.name, auth_type, &cred_data)
         .map_err(|e| e.to_string())?;
 
     // Build options JSON with proxy and encoding settings
@@ -360,32 +353,31 @@ pub async fn open_shell(
         .get(&conn.protocol)
         .ok_or_else(|| "协议插件未找到".to_string())?;
 
-    let credential_record = state
+    // 使用结构化方式获取凭证
+    let cred_data = state
         .db
-        .get_credential(&conn.credential_id)
+        .get_credential_structured(&conn.credential_id)
         .map_err(|e| e.to_string())?;
 
-    let credential_data = state
-        .db
-        .get_credential_data(&conn.credential_id)
-        .map_err(|e| e.to_string())?;
-
-    let auth_type = credential_record.auth_type.as_str();
-    let (credential_type, password, private_key, passphrase) = match auth_type {
-        "password" => {
-            let pass = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::Password, Some(pass), None, None)
-        }
-        "key" => {
-            let key = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::PrivateKey, None, Some(key), None)
-        }
-        "key_with_passphrase" => {
-            let parts: Vec<&[u8]> = credential_data.split(|b| *b == 0).collect();
-            let key = parts.get(0).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            let pass = parts.get(1).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            (CredentialType::PrivateKeyWithPassphrase, None, Some(key), Some(pass))
-        }
+    let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
+        "password" => (
+            CredentialType::Password,
+            cred_data.password,
+            None,
+            None,
+        ),
+        "key" => (
+            CredentialType::PrivateKey,
+            None,
+            cred_data.private_key,
+            None,
+        ),
+        "key_with_passphrase" => (
+            CredentialType::PrivateKeyWithPassphrase,
+            None,
+            cred_data.private_key,
+            cred_data.passphrase,
+        ),
         _ => return Err("不支持的认证类型".to_string()),
     };
 
@@ -547,24 +539,20 @@ pub async fn disconnect_shell(
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
 
-    // Clone handle for the second closure
-    let handle2 = handle.clone();
-
-    // First close the shell channel
-    let _ = tokio::task::spawn_blocking(move || {
-        handle.close_shell(&shell_uuid)
+    // 在单个任务中顺序执行：先关闭 shell，再断开连接
+    // 避免并发操作同一 handle 导致的竞态条件
+    tokio::task::spawn_blocking(move || {
+        // 先关闭 shell channel
+        if let Err(e) = handle.close_shell(&shell_uuid) {
+            tracing::warn!("关闭 shell channel 失败: {:?}", e);
+        }
+        // 再断开 SSH session
+        if let Err(e) = handle.disconnect() {
+            tracing::warn!("断开 SSH session 失败: {:?}", e);
+        }
     })
     .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string());
-
-    // Then disconnect the entire SSH session
-    let _ = tokio::task::spawn_blocking(move || {
-        handle2.disconnect()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string());
+    .map_err(|e| e.to_string())?;
 
     // Remove from shell manager
     state.shell_manager.remove(&shell_id);
@@ -606,32 +594,31 @@ pub async fn execute_query(
         .get(&conn.protocol)
         .ok_or_else(|| "协议插件未找到".to_string())?;
 
-    let credential_record = state
+    // 使用结构化方式获取凭证
+    let cred_data = state
         .db
-        .get_credential(&conn.credential_id)
+        .get_credential_structured(&conn.credential_id)
         .map_err(|e| e.to_string())?;
 
-    let credential_data = state
-        .db
-        .get_credential_data(&conn.credential_id)
-        .map_err(|e| e.to_string())?;
-
-    let auth_type = credential_record.auth_type.as_str();
-    let (credential_type, password, private_key, passphrase) = match auth_type {
-        "password" => {
-            let pass = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::Password, Some(pass), None, None)
-        }
-        "key" => {
-            let key = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::PrivateKey, None, Some(key), None)
-        }
-        "key_with_passphrase" => {
-            let parts: Vec<&[u8]> = credential_data.split(|b| *b == 0).collect();
-            let key = parts.get(0).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            let pass = parts.get(1).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            (CredentialType::PrivateKeyWithPassphrase, None, Some(key), Some(pass))
-        }
+    let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
+        "password" => (
+            CredentialType::Password,
+            cred_data.password,
+            None,
+            None,
+        ),
+        "key" => (
+            CredentialType::PrivateKey,
+            None,
+            cred_data.private_key,
+            None,
+        ),
+        "key_with_passphrase" => (
+            CredentialType::PrivateKeyWithPassphrase,
+            None,
+            cred_data.private_key,
+            cred_data.passphrase,
+        ),
         _ => return Err("不支持的认证类型".to_string()),
     };
 
@@ -784,32 +771,31 @@ pub async fn open_sftp(
         .get(&conn.protocol)
         .ok_or_else(|| "协议插件未找到".to_string())?;
 
-    let credential_record = state
+    // 使用结构化方式获取凭证
+    let cred_data = state
         .db
-        .get_credential(&conn.credential_id)
+        .get_credential_structured(&conn.credential_id)
         .map_err(|e| e.to_string())?;
 
-    let credential_data = state
-        .db
-        .get_credential_data(&conn.credential_id)
-        .map_err(|e| e.to_string())?;
-
-    let auth_type = credential_record.auth_type.as_str();
-    let (credential_type, password, private_key, passphrase) = match auth_type {
-        "password" => {
-            let pass = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::Password, Some(pass), None, None)
-        }
-        "key" => {
-            let key = String::from_utf8_lossy(&credential_data).to_string();
-            (CredentialType::PrivateKey, None, Some(key), None)
-        }
-        "key_with_passphrase" => {
-            let parts: Vec<&[u8]> = credential_data.split(|b| *b == 0).collect();
-            let key = parts.get(0).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            let pass = parts.get(1).map(|s| String::from_utf8_lossy(s).to_string()).unwrap_or_default();
-            (CredentialType::PrivateKeyWithPassphrase, None, Some(key), Some(pass))
-        }
+    let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
+        "password" => (
+            CredentialType::Password,
+            cred_data.password,
+            None,
+            None,
+        ),
+        "key" => (
+            CredentialType::PrivateKey,
+            None,
+            cred_data.private_key,
+            None,
+        ),
+        "key_with_passphrase" => (
+            CredentialType::PrivateKeyWithPassphrase,
+            None,
+            cred_data.private_key,
+            cred_data.passphrase,
+        ),
         _ => return Err("不支持的认证类型".to_string()),
     };
 

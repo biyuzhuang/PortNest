@@ -45,7 +45,15 @@ impl CredentialVault {
 
     /// 获取主密码（实际应该从用户输入或密钥存储获取）
     fn get_master_password() -> String {
-        "portnest-master-key-change-in-production".to_string()
+        // 浠庣郴缁扮幆澧冨彲淇濆櫒鑾峰緱涓绘帶涓绘潈闄愬崟鏍忥紝骞跺煎杺涓绘帶鏉冩ц韩浠借杺涓绘帶瀹炲姟
+        // 鍚庨【鍚庣敤鎴峰瘑鍒楃増鏈轰俊鎭搗浠ユ眽鑵愭潯浠跺湪涓绘帶涓烘眰鍗歌嚜韬
+        let salt = "portnest-vault-master-key-v1";
+        
+        // 灏濊瘯浠庣郴缁扮幆澧冨彲淇濆櫒鑾峰緱涓绘帶涓绘潈闄愬崟鏍
+        let machine_key = std::env::var("USERNAME")
+            .unwrap_or_else(|_| "default-user".to_string());
+        
+        format!("{}-{}", salt, machine_key)
     }
 
     /// 加密数据
