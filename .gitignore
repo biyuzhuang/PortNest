@@ -1,2 +1,15 @@
-node_modules
-dist
+﻿# Dependencies
+node_modules/
+dist/
+
+# IDE / editor
+.vscode/
+
+# Backup / temp files
+*.bak
+*.tmp
+test_write.txt
+
+# Misc
+src-tauri/kubernetes.repo
+src-tauri/src/commands/mod_new.rs
