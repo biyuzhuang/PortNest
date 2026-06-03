@@ -1,1 +1,58 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 166 155.3"><path d="M163 35S110-4 69 5l-3 1c-6 2-11 5-14 9l-2 3-15 26 26 5c11 7 25 10 38 7l46 9 18-30z" fill="#76b3e1"/><linearGradient id="a" gradientUnits="userSpaceOnUse" x1="27.5" y1="3" x2="152" y2="63.5"><stop offset=".1" stop-color="#76b3e1"/><stop offset=".3" stop-color="#dcf2fd"/><stop offset="1" stop-color="#76b3e1"/></linearGradient><path d="M163 35S110-4 69 5l-3 1c-6 2-11 5-14 9l-2 3-15 26 26 5c11 7 25 10 38 7l46 9 18-30z" opacity=".3" fill="url(#a)"/><path d="M52 35l-4 1c-17 5-22 21-13 35 10 13 31 20 48 15l62-21S92 26 52 35z" fill="#518ac8"/><linearGradient id="b" gradientUnits="userSpaceOnUse" x1="95.8" y1="32.6" x2="74" y2="105.2"><stop offset="0" stop-color="#76b3e1"/><stop offset=".5" stop-color="#4377bb"/><stop offset="1" stop-color="#1f3b77"/></linearGradient><path d="M52 35l-4 1c-17 5-22 21-13 35 10 13 31 20 48 15l62-21S92 26 52 35z" opacity=".3" fill="url(#b)"/><linearGradient id="c" gradientUnits="userSpaceOnUse" x1="18.4" y1="64.2" x2="144.3" y2="149.8"><stop offset="0" stop-color="#315aa9"/><stop offset=".5" stop-color="#518ac8"/><stop offset="1" stop-color="#315aa9"/></linearGradient><path d="M134 80a45 45 0 00-48-15L24 85 4 120l112 19 20-36c4-7 3-15-2-23z" fill="url(#c)"/><linearGradient id="d" gradientUnits="userSpaceOnUse" x1="75.2" y1="74.5" x2="24.4" y2="260.8"><stop offset="0" stop-color="#4377bb"/><stop offset=".5" stop-color="#1a336b"/><stop offset="1" stop-color="#1a336b"/></linearGradient><path d="M114 115a45 45 0 00-48-15L4 120s53 40 94 30l3-1c17-5 23-21 13-34z" fill="url(#d)"/></svg>
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a0e1a"/>
+      <stop offset="1" stop-color="#131a2e"/>
+    </linearGradient>
+    <radialGradient id="promptGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#4ade80" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4ade80" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dotGrid" x="0" y="0" width="56" height="56" patternUnits="userSpaceOnUse">
+      <circle cx="0" cy="0" r="1.5" fill="#ffffff" fill-opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <!-- Rounded square background with dot grid overlay -->
+  <rect x="0" y="0" width="1024" height="1024" rx="192" ry="192" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="192" ry="192" fill="url(#dotGrid)"/>
+
+  <!-- Terminal window frame -->
+  <rect x="144" y="144" width="736" height="736" rx="96" ry="96"
+        fill="#1f2937" stroke="#2d3748" stroke-width="4"/>
+
+  <!-- Top bar (rounded top corners only) -->
+  <path d="M 144 240 Q 144 144 240 144 L 784 144 Q 880 144 880 240 L 880 254 L 144 254 Z"
+        fill="#1a1f2e"/>
+
+  <!-- Separator -->
+  <line x1="144" y1="254" x2="880" y2="254" stroke="#2d3748" stroke-width="2"/>
+
+  <!-- Traffic-light dots -->
+  <circle cx="256" cy="199" r="18" fill="#ef4444"/>
+  <circle cx="344" cy="199" r="18" fill="#eab308"/>
+  <circle cx="432" cy="199" r="18" fill="#22c55e"/>
+
+  <!-- Prompt glow -->
+  <ellipse cx="512" cy="560" rx="280" ry="160" fill="url(#promptGlow)"/>
+
+  <!-- ">" chevron -->
+  <polyline points="400,460 540,560 400,660"
+            fill="none" stroke="#4ade80" stroke-width="36"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cursor block -->
+  <rect x="610" y="464" width="70" height="192" rx="8" ry="8" fill="#4ade80"/>
+
+  <!-- Hub indicator (3 connected nodes) -->
+  <g stroke="#1e5f82" stroke-width="3" fill="none">
+    <line x1="778" y1="772" x2="810" y2="808"/>
+    <line x1="810" y1="808" x2="746" y2="808"/>
+    <line x1="746" y1="808" x2="778" y2="772"/>
+  </g>
+  <circle cx="778" cy="772" r="10" fill="#38bdf8"/>
+  <circle cx="810" cy="808" r="10" fill="#38bdf8"/>
+  <circle cx="746" cy="808" r="10" fill="#38bdf8"/>
+  <circle cx="778" cy="796" r="10" fill="#4ade80"/>
+</svg>

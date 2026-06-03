@@ -3,7 +3,6 @@
   flex-direction: column;
   height: 100%;
   background: var(--bg-secondary);
-  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -176,10 +175,7 @@
   text-overflow: ellipsis;
 }
 
-.file-body {
-  max-height: calc(100vh - 300px);
-  overflow-y: auto;
-}
+
 
 .context-menu-overlay {
   position: fixed;

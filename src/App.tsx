@@ -6,15 +6,15 @@ import { ConnectionForm } from "./components/ConnectionForm";
 import { QueryEditor } from "./components/QueryEditor";
 import { AIChat } from "./components/AIChat";
 import { TerminalView } from "./components/TerminalView";
-import { FileManager } from "./components/FileManager";
 import { SettingsModal } from "./components/SettingsModal";
 import { DockerDashboard } from "./components/DockerDashboard";
 import { connectionStore, ConnectionRecord, ConnectionConfig } from "./stores/connectionStore";
 import { initTheme } from "./stores/themeStore";
+import { uiStore } from "./stores/uiStore";
 import { api, dockerApi, ProtocolInfo } from "./utils/api";
 import "./App.css";
 
-type ViewMode = "terminal" | "query" | "ai" | "files" | "docker";
+type ViewMode = "terminal" | "query" | "ai" | "docker";
 
 type SessionTab = {
   id: string;
@@ -23,7 +23,6 @@ type SessionTab = {
   activeTab: "query" | "structure" | "security" | "monitor" | "ai";
   displayName?: string;
   shellId?: string;
-  sftpId?: string;
 };
 
 type ContextMenuState = {
@@ -70,15 +69,6 @@ const App: Component = () => {
       />
     );
 
-    const renderFileManager = () => (
-      <FileManager
-        key={session.id + "-files"}
-        sessionKey={session.id}
-        connection={session.connection}
-        sftpId={session.sftpId}
-      />
-    );
-
     const renderQueryEditor = () => (
       <QueryEditor key={session.id} connection={session.connection} />
     );
@@ -88,9 +78,6 @@ const App: Component = () => {
     );
 
     if (session.connection.protocol === "ssh") {
-      if (session.viewMode === "files") {
-        return renderFileManager();
-      }
       return renderTerminal();
     }
 
@@ -180,25 +167,6 @@ const App: Component = () => {
     ));
   };
 
-  const openSftpForSession = async (sessionId: string) => {
-    const session = sessions().find(s => s.id === sessionId);
-    if (!session || session.sftpId || !session.shellId) return;
-
-    console.log("[openSftp] Opening SFTP via shell:", sessionId);
-    try {
-      const sftpResponse = await api.openSftpForShell(session.shellId);
-      if (!sessions().some(s => s.id === sessionId)) {
-        await api.closeSftp(sftpResponse.sftp_id);
-        return;
-      }
-      setSessions(prev => prev.map(s =>
-        s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
-      ));
-    } catch (e) {
-      console.error("Failed to open SFTP:", e);
-    }
-  };
-
   const handleConnect = async (conn: ConnectionRecord) => {
     console.log("[handleConnect] Starting connection:", conn.name, conn.id, "builtin:", isBuiltinConnection(conn.id));
 
@@ -250,13 +218,6 @@ const App: Component = () => {
           await api.disconnectShell(session.shellId);
         } catch (e) {
           console.error("Failed to disconnect shell:", e);
-        }
-      }
-      if (session.sftpId) {
-        try {
-          await api.closeSftp(session.sftpId);
-        } catch (e) {
-          console.error("Failed to close SFTP:", e);
         }
       }
     }
@@ -314,15 +275,6 @@ const App: Component = () => {
     }
   };
 
-  const switchSessionViewMode = (sessionId: string, mode: ViewMode) => {
-    const session = sessions().find(s => s.id === sessionId);
-    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, viewMode: mode } : s));
-    // 切换到文件视图时按需打开 SFTP
-    if (mode === "files" && session?.connection.protocol === "ssh") {
-      openSftpForSession(sessionId);
-    }
-  };
-
   const handleNewConnection = (folderId?: string) => {
     setNewConnectionDefaultFolderId(folderId);
     setEditingConnection(null);
@@ -377,42 +329,12 @@ const App: Component = () => {
     const name = newFolderName().trim();
     if (!name) return;
     try {
-      const folder = await api.createFolder(name);
-      connectionStore.addFolder(folder);
+      await connectionStore.addFolder(name);
       setShowNewFolderDialog(false);
       setNewFolderName("");
     } catch (e) {
       console.error("Create folder error:", e);
       alert("创建文件夹失败: " + e);
-    }
-  };
-
-  const handleOpenFiles = (conn: ConnectionRecord) => {
-    const existingSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "files");
-    if (existingSession) {
-      setActiveSessionId(existingSession.id);
-      return;
-    }
-    // 如果有当前连接的终端会话，复用其 SSH 连接打开 SFTP
-    const terminalSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "terminal" && s.shellId);
-    if (terminalSession) {
-      const sessionId = createSession(conn, "files");
-      openSftpForSession(sessionId);
-      return;
-    }
-    // 否则独立打开 SFTP
-    const sessionId = createSession(conn, "files");
-    if (conn.protocol === "ssh") {
-      (async () => {
-        try {
-          const sftpResponse = await api.openSftp(conn.id);
-          setSessions(prev => prev.map(s =>
-            s.id === sessionId ? { ...s, sftpId: sftpResponse.sftp_id } : s
-          ));
-        } catch (e) {
-          console.error("Failed to open SFTP:", e);
-        }
-      })();
     }
   };
 
@@ -446,31 +368,12 @@ const App: Component = () => {
         <span class="titlebar-title" data-tauri-drag-region>PortNest</span>
         <div class="titlebar-spacer" data-tauri-drag-region />
         <div class="titlebar-controls">
-          <Show when={activeSession()}>
-            <Show when={activeSession()?.connection.protocol === "ssh"}>
-              <button class="titlebar-btn" onClick={() => {
-                const s = activeSession();
-                if (s) switchSessionViewMode(s.id, s.viewMode === "terminal" ? "files" : "terminal");
-              }}>
-                {activeSession()?.viewMode === "terminal" ? "📂" : "🖥️"}
-              </button>
-            </Show>
-          </Show>
           <div class="app-menu-container">
             <button class="titlebar-btn" onClick={() => setShowAppMenu(!showAppMenu())}>
               ⋮
             </button>
             <Show when={showAppMenu()}>
               <div class="app-menu-dropdown">
-                <Show when={activeSession()?.connection.protocol === "ssh"}>
-                  <div class="app-menu-item" onClick={() => {
-                    const s = activeSession();
-                    if (s) switchSessionViewMode(s.id, s.viewMode === "terminal" ? "files" : "terminal");
-                    setShowAppMenu(false);
-                  }}>
-                    {activeSession()?.viewMode === "terminal" ? "📂 切换到文件视图" : "🖥️ 切换到终端视图"}
-                  </div>
-                </Show>
                 <Show when={activeSession()}>
                   <div class="app-menu-item" onClick={() => { handleBack(); setShowAppMenu(false); }}>
                     ← 关闭当前标签
@@ -517,7 +420,6 @@ const App: Component = () => {
               }
             }
           }}
-          onOpenFiles={handleOpenFiles}
         onOpenSettings={() => setShowSettings(true)}
         onNewConnection={handleNewConnection}
         onNewFolder={() => setShowNewFolderDialog(true)}
@@ -619,13 +521,6 @@ const App: Component = () => {
                         shellId={session.shellId}
                       />
                     )}
-                    {session.connection.protocol === "ssh" && session.viewMode === "files" && (
-                      <FileManager
-                        sessionKey={session.id}
-                        connection={session.connection}
-                        sftpId={session.sftpId}
-                      />
-                    )}
                     {(session.connection.protocol === "mysql" || session.connection.protocol === "postgresql") && (
                       <QueryEditor connection={session.connection} />
                     )}
@@ -639,8 +534,19 @@ const App: Component = () => {
           </div>
         </main>
         <Show when={showRightPanel()}>
-          <div class="panel-splitter" onMouseDown={startResize} />
+          <div class="panel-splitter" onMouseDown={startResize} hidden={uiStore.filesCollapsed()} />
           <RightPanel connection={activeSession()?.connection} shellId={activeSession()?.shellId} style={{ width: `${rightPanelWidth()}px` }} />
+          <Show when={uiStore.filesCollapsed()}>
+            <button
+              class="right-panel-expand-tab"
+              onClick={() => uiStore.setFilesCollapsed(false)}
+              title="展开文件面板"
+              aria-label="展开文件面板"
+            >
+              <span class="right-panel-expand-tab-icon">📂</span>
+              <span class="right-panel-expand-tab-arrow">‹</span>
+            </button>
+          </Show>
         </Show>
       </Show>
 

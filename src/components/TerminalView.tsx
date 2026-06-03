@@ -66,7 +66,19 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   const doFit = (state: TerminalState) => {
     try {
       if (state.terminal.element?.isConnected && containerRef?.offsetWidth > 0 && containerRef?.offsetHeight > 0) {
+        const prevCols = state.terminal.cols;
+        const prevRows = state.terminal.rows;
         state.fitAddon.fit();
+        const cols = state.terminal.cols;
+        const rows = state.terminal.rows;
+        if (cols !== prevCols || rows !== prevRows) {
+          // Keep the remote PTY in sync with the rendered grid so programs
+          //  that query TIOCGWINSZ (top, htop, vim, less, ...) position their
+          //  cursor correctly.
+          api.resizeShell(state.shellId, cols, rows).catch((e) => {
+            console.warn("[TerminalView] resizeShell failed:", e);
+          });
+        }
       }
     } catch (_) {}
   };
@@ -169,13 +181,29 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       } catch (_) {}
     }, 50) as unknown as number;
 
+    let sessionLastHeight = 0;
+    let sessionLastWidth = 0;
+    let fitTimer: number | null = null;
+
     const resizeObserver = new ResizeObserver(() => {
-      const currentState = terminalStates.get(sessionKey);
-      if (currentState && containerRef?.offsetWidth > 0 && containerRef?.offsetHeight > 0) {
-        try {
-          currentState.fitAddon.fit();
-        } catch (_) {}
+      // Fit + resizeShell on ANY dimension change. The right-panel toggle and
+      // the splitter drag both change the rendered cols/rows of the terminal,
+      // and TUI programs need TIOCGWINSZ to match the actual grid.
+      const currentHeight = containerRef?.offsetHeight || 0;
+      const currentWidth = containerRef?.offsetWidth || 0;
+
+      if (currentWidth > 0 && currentHeight > 0 &&
+          (currentHeight !== sessionLastHeight || currentWidth !== sessionLastWidth)) {
+        if (fitTimer !== null) clearTimeout(fitTimer);
+        fitTimer = window.setTimeout(() => {
+          const currentState = terminalStates.get(sessionKey);
+          if (currentState) {
+            doFit(currentState);
+          }
+        }, 100);
       }
+      sessionLastHeight = currentHeight;
+      sessionLastWidth = currentWidth;
     });
     resizeObserver.observe(containerRef);
 
@@ -249,9 +277,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     console.log("[TerminalView] Created new terminal state for:", sessionKey);
 
     setTimeout(() => {
-      try {
-        fitAddon.fit();
-      } catch (_) {}
+      doFit(state);
     }, 50);
   };
 

@@ -8,6 +8,48 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: relative;
+}
+
+.right-panel[hidden] {
+  display: none;
+}
+
+.panel-splitter[hidden] {
+  display: none;
+}
+
+/* Collapse button: floats on the left-middle inside of the panel */
+.right-panel-collapse-btn {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 36px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, width 0.15s;
+}
+
+.right-panel-collapse-btn:hover {
+  background: var(--accent);
+  color: white;
+  width: 22px;
+}
+
+.right-panel-collapse-btn:active {
+  background: var(--accent-hover, var(--accent));
 }
 
 .right-panel-top {
@@ -16,9 +58,9 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
-/* Compact FileManager styles within right panel */
 .right-panel-top .file-manager {
   flex: 1;
   border-radius: 0;
@@ -82,151 +124,7 @@
   flex: 1;
 }
 
-.right-panel-top .file-body {
-  max-height: calc(100vh - 200px);
-}
 
-.panel-divider {
-  height: 1px;
-  background: var(--border);
-  flex-shrink: 0;
-}
-
-.right-panel-bottom {
-  padding: 12px;
-  background: var(--bg-tertiary);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.mini-metrics {
-  display: flex;
-  justify-content: space-around;
-  align-items: flex-end;
-  height: 100px;
-  gap: 8px;
-}
-
-.mini-metric {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  height: 100%;
-}
-
-.mini-metric-label {
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.mini-metric-bar-container {
-  flex: 1;
-  width: 18px;
-  background: var(--bg-primary);
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  align-items: flex-end;
-}
-
-.mini-metric-bar {
-  width: 100%;
-  background: var(--accent);
-  border-radius: 4px;
-  transition: height 0.3s ease;
-  min-height: 2px;
-}
-
-.mini-metric-bar.cpu {
-  background: linear-gradient(to top, var(--accent), #60a5fa);
-}
-
-.mini-metric-bar.memory {
-  background: linear-gradient(to top, #8b5cf6, #a78bfa);
-}
-
-.mini-metric-bar.disk {
-  background: linear-gradient(to top, var(--warning), #fbbf24);
-}
-
-.mini-metric-bar.net-up {
-  background: linear-gradient(to top, var(--success), #34d399);
-}
-
-.mini-metric-bar.net-down {
-  background: linear-gradient(to top, #60a5fa, #93c5fd);
-}
-
-.mini-metric-value {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-align: center;
-}
-
-.mini-metric-value.high {
-  color: var(--error);
-}
-
-.mini-metric-value.medium {
-  color: var(--warning);
-}
-
-/* Resizable splitter */
-.panel-splitter {
-  width: 4px;
-  cursor: col-resize;
-  background: var(--border);
-  transition: background 0.2s;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.panel-splitter:hover,
-.panel-splitter.dragging {
-  background: var(--accent);
-}
-
-.panel-splitter::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  background: var(--text-muted);
-  border-radius: 1px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.panel-splitter:hover::after,
-.panel-splitter.dragging::after {
-  opacity: 1;
-}
-
-/* Loading state */
-.right-panel-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-/* Error state */
-.right-panel-error {
-  padding: 12px;
-  color: var(--error);
-  font-size: 12px;
-  text-align: center;
-}
 
 /* No connection state */
 .right-panel-empty {
@@ -243,4 +141,41 @@
 .right-panel-empty-icon {
   font-size: 32px;
   opacity: 0.5;
+}
+
+/* Expand tab shown on the right edge when panel is collapsed */
+.right-panel-expand-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.right-panel-expand-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.right-panel-expand-tab-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.right-panel-expand-tab-arrow {
+  font-size: 14px;
+  line-height: 1;
 }

@@ -192,6 +192,9 @@ export const api = {
   async closeSftp(sftpId: string): Promise<void> {
     return invoke("close_sftp", { sftpId });
   },
+  async closeSftpIndependent(sftpId: string): Promise<void> {
+    return invoke("close_sftp_independent", { sftpId });
+  },
 
   // Folder operations
   async getFolders(): Promise<FolderRecord[]> {
