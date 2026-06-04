@@ -202,7 +202,7 @@ export const api = {
   },
 
   async saveFolder(id: string, name: string, parentId?: string): Promise<void> {
-    return invoke("save_folder", { id, name, parent_id: parentId ?? null });
+    return invoke("save_folder", { id, name, parentId: parentId ?? null });
   },
 
   async deleteFolder(id: string): Promise<void> {
@@ -210,7 +210,7 @@ export const api = {
   },
 
   async moveConnectionToFolder(connectionId: string, folderId?: string): Promise<void> {
-    return invoke("move_connection_to_folder", { connection_id: connectionId, folder_id: folderId ?? null });
+    return invoke("move_connection_to_folder", { connectionId, folderId: folderId ?? null });
   },
 
   // Test connection

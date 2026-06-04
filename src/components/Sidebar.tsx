@@ -38,7 +38,10 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
 
   const filteredConnections = createMemo(() => {
     const query = searchQuery().toLowerCase();
-    if (!query) return state.connections;
+    // 根目录区块只显示不在任何文件夹里的连接；已经在文件夹里的连接由
+    // 对应 folder 的子列表渲染，否则同一条连接会同时出现在根目录和文件夹里，
+    // 看上去像"移动后存在两份"。搜索时仍全表搜，便于按名字找到文件夹里的连接。
+    if (!query) return state.connections.filter(c => !c.folder_id);
     return state.connections.filter(
       (c) => c.name.toLowerCase().includes(query) || c.host.toLowerCase().includes(query)
     );
@@ -218,20 +221,32 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
                     class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""}`}
                     onClick={() => toggleFolder(folder.id)}
                     onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                      setDragOverFolderId(folder.id);
-                    }}
-                    onDragLeave={() => setDragOverFolderId(null)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const connId = e.dataTransfer?.getData("connectionId");
-                      if (connId) {
-                        connectionStore.moveConnectionToFolder(connId, folder.id);
-                      }
-                      setDragOverFolderId(null);
-                      setDragOverRoot(false);
+                    ref={(el) => {
+                      if (!el) return;
+                      const onOver = (e: DragEvent) => {
+                        e.preventDefault();
+                        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                        setDragOverFolderId(folder.id);
+                      };
+                      const onLeave = () => setDragOverFolderId(null);
+                      const onDrop = (e: DragEvent) => {
+                        e.preventDefault();
+                        const connId = e.dataTransfer?.getData("connectionId")
+                          || e.dataTransfer?.getData("text/plain");
+                        if (connId) {
+                          connectionStore.moveConnectionToFolder(connId, folder.id);
+                        }
+                        setDragOverFolderId(null);
+                        setDragOverRoot(false);
+                      };
+                      el.addEventListener("dragover", onOver);
+                      el.addEventListener("dragleave", onLeave);
+                      el.addEventListener("drop", onDrop);
+                      onCleanup(() => {
+                        el.removeEventListener("dragover", onOver);
+                        el.removeEventListener("dragleave", onLeave);
+                        el.removeEventListener("drop", onDrop);
+                      });
                     }}
                   >
                     <span class="folder-icon">
@@ -245,27 +260,39 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
                   <Show when={expandedFolders().has(folder.id)}>
                     <div
                       class="folder-children"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                        setDragOverFolderId(folder.id);
-                      }}
-                      onDragLeave={(e) => {
-                        // 只有真正离开整个 folder 才清空（鼠标移到 folder-children 内
-                        // 的子连接上时不该清）。用 relatedTarget 判断是否还在 folder 范围内。
-                        const folderEl = e.currentTarget.closest(".folder-item");
-                        if (folderEl && !folderEl.contains(e.relatedTarget as Node | null)) {
+                      ref={(el) => {
+                        if (!el) return;
+                        const onOver = (e: DragEvent) => {
+                          e.preventDefault();
+                          if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                          setDragOverFolderId(folder.id);
+                        };
+                        const onLeave = (e: DragEvent) => {
+                          // 只有真正离开整个 folder 才清空（鼠标移到 folder-children 内
+                          // 的子连接上时不该清）。用 relatedTarget 判断是否还在 folder 范围内。
+                          const folderEl = el.closest(".folder-item");
+                          if (folderEl && !folderEl.contains(e.relatedTarget as Node | null)) {
+                            setDragOverFolderId(null);
+                          }
+                        };
+                        const onDrop = (e: DragEvent) => {
+                          e.preventDefault();
+                          const connId = e.dataTransfer?.getData("connectionId")
+                            || e.dataTransfer?.getData("text/plain");
+                          if (connId) {
+                            connectionStore.moveConnectionToFolder(connId, folder.id);
+                          }
                           setDragOverFolderId(null);
-                        }
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const connId = e.dataTransfer?.getData("connectionId");
-                        if (connId) {
-                          connectionStore.moveConnectionToFolder(connId, folder.id);
-                        }
-                        setDragOverFolderId(null);
-                        setDragOverRoot(false);
+                          setDragOverRoot(false);
+                        };
+                        el.addEventListener("dragover", onOver);
+                        el.addEventListener("dragleave", onLeave);
+                        el.addEventListener("drop", onDrop);
+                        onCleanup(() => {
+                          el.removeEventListener("dragover", onOver);
+                          el.removeEventListener("dragleave", onLeave);
+                          el.removeEventListener("drop", onDrop);
+                        });
                       }}
                     >
                       <For each={state.connections.filter(c => c.folder_id === folder.id)}>
@@ -287,22 +314,31 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
 
           <div
             class={`connection-list ${dragOverRoot() ? "drag-over" : ""}`}
-            onDragOver={(e) => {
-              // 始终接收 drop；用 data 校验在 onDrop 里做。
-              // 之前用 types.includes() 做条件判定在 DOMStringList 环境下会失效，导致
-              // 光标变 "红圈带斜杠"。
-              e.preventDefault();
-              if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-              if (!dragOverRoot()) setDragOverRoot(true);
-            }}
-            onDragLeave={() => setDragOverRoot(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              const connId = e.dataTransfer?.getData("connectionId");
-              if (connId) {
-                connectionStore.moveConnectionToFolder(connId, null);
-              }
-              setDragOverRoot(false);
+            ref={(el) => {
+              if (!el) return;
+              const onOver = (e: DragEvent) => {
+                e.preventDefault();
+                if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+                if (!dragOverRoot()) setDragOverRoot(true);
+              };
+              const onLeave = () => setDragOverRoot(false);
+              const onDrop = (e: DragEvent) => {
+                e.preventDefault();
+                const connId = e.dataTransfer?.getData("connectionId")
+                  || e.dataTransfer?.getData("text/plain");
+                if (connId) {
+                  connectionStore.moveConnectionToFolder(connId, null);
+                }
+                setDragOverRoot(false);
+              };
+              el.addEventListener("dragover", onOver);
+              el.addEventListener("dragleave", onLeave);
+              el.addEventListener("drop", onDrop);
+              onCleanup(() => {
+                el.removeEventListener("dragover", onOver);
+                el.removeEventListener("dragleave", onLeave);
+                el.removeEventListener("drop", onDrop);
+              });
             }}
           >
             <For each={filteredConnections()}>
@@ -490,22 +526,25 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
 
   const handleDragStart = (e: DragEvent) => {
     if (e.dataTransfer) {
+      // 同时写 connectionId 和 text/plain 两种 MIME，
+      // 避免部分浏览器/WKWebView 只接受 text/plain 导致 dropEffect 失效。
+      // effectAllowed 设为 all 以兼容更多场景。
       e.dataTransfer.setData("connectionId", props.conn.id);
-      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", props.conn.id);
+      e.dataTransfer.effectAllowed = "all";
     }
   };
 
   const handleDragEnd = (_e: DragEvent) => {
-    // 拖拽结束：通知父组件清理 drag-over 高亮。
-    // 这里只做局部兜底（父组件的 onDragLeave/onDrop 也会清）。
+    // 拖拽结束。
   };
 
   return (
     <div
       class={`connection-item ${props.selected ? "selected" : ""} ${props.builtin ? "builtin" : ""}`}
-      attr:draggable="true"
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      draggable={true}
+      on:dragstart={handleDragStart}
+      on:dragend={handleDragEnd}
       onDblClick={() => props.onConnect(props.conn)}
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >

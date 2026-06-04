@@ -110,14 +110,14 @@ export const connectionStore = {
   },
 
   toggleFolder(folderId: string) {
-    setState("folders", folderId, "expanded", (prev) => !prev);
+    setState("folders", (f) => f.id === folderId, "expanded", (prev) => !prev);
   },
 
   async moveConnectionToFolder(connectionId: string, folderId: string | null) {
     try {
       await api.moveConnectionToFolder(connectionId, folderId ?? undefined);
       // Update local state
-      setState("connections", connectionId, "folder_id", folderId);
+      setState("connections", (c) => c.id === connectionId, "folder_id", folderId ?? undefined);
     } catch (e) {
       setState("error", String(e));
       throw e;
