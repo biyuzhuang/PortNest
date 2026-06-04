@@ -99,9 +99,12 @@ export const connectionStore = {
     }
   },
 
-  async removeFolder(folderId: string) {
+  async deleteFolder(folderId: string) {
     try {
       await api.deleteFolder(folderId);
+      // 后端会把 folder 里所有连接的 folder_id 置为 NULL（移到根目录），
+      // 同步更新本地 store；否则这些连接会变成"既不在根目录、原文件夹又没了"的孤儿。
+      setState("connections", (c) => c.folder_id === folderId, "folder_id", undefined);
       setState("folders", state.folders.filter(f => f.id !== folderId));
     } catch (e) {
       setState("error", String(e));
