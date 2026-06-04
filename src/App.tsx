@@ -23,6 +23,7 @@ type SessionTab = {
   activeTab: "query" | "structure" | "security" | "monitor" | "ai";
   displayName?: string;
   shellId?: string;
+  sftpId?: string;
 };
 
 type ContextMenuState = {
@@ -204,25 +205,48 @@ const App: Component = () => {
     }
   };
 
+  // Release any remote resources owned by session before it is dropped from state.
+  // Called from handleCloseSession. remainingSessions is the post-close snapshot so we
+  // can decide whether this session was the last tab of a given connection (relevant for
+  // docker, which uses a single per-connection session).
+  const closeSessionResources = async (session: SessionTab, remainingSessions: SessionTab[]) => {
+    if (session.shellId) {
+      try {
+        await api.disconnectShell(session.shellId);
+      } catch (e) {
+        console.error("[closeSessionResources] disconnectShell failed:", session.id, e);
+      }
+    }
+
+    // SFTP is currently connection-scoped and owned by RightPanel (its onCleanup closes
+    // the sftp channel when no SSH session is active). The sftpId field is reserved for
+    // the future per-session ownership refactor (see P2-9). No action here for now.
+
+    if (session.connection.protocol === "docker") {
+      const stillOpen = remainingSessions.some(
+        s => s.connection.id === session.connection.id && s.connection.protocol === "docker"
+      );
+      if (!stillOpen) {
+        try {
+          await dockerApi.disconnect(session.connection.id);
+        } catch (e) {
+          console.error("[closeSessionResources] docker disconnect failed:", session.id, e);
+        }
+      }
+    }
+  };
+
   const handleCloseSession = async (sessionId: string) => {
     console.log("[App] handleCloseSession:", sessionId);
-    console.log("[App] Current sessions:", sessions().map(s => s.id));
 
     const currentSessions = sessions();
     const session = currentSessions.find(s => s.id === sessionId);
     const closingActive = activeSessionId() === sessionId;
+    const newSessions = currentSessions.filter(s => s.id !== sessionId);
 
     if (session) {
-      if (session.shellId) {
-        try {
-          await api.disconnectShell(session.shellId);
-        } catch (e) {
-          console.error("Failed to disconnect shell:", e);
-        }
-      }
+      await closeSessionResources(session, newSessions);
     }
-
-    const newSessions = currentSessions.filter(s => s.id !== sessionId);
 
     // 先切换活跃会话，再更新 sessions 列表，避免短暂的无活跃会话状态
     if (closingActive) {
