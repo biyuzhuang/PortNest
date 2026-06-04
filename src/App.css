@@ -687,6 +687,15 @@ body {
   flex-shrink: 0;
 }
 
+/* P1-4: pin indicator on the left of pinned tabs. Small, low-key, theme-neutral. */
+.session-tab-pin {
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0.85;
+  user-select: none;
+}
+
 .session-tab-protocol {
   font-size: 10px;
   padding: 2px 6px;

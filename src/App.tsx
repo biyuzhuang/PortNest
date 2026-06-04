@@ -24,6 +24,7 @@ type SessionTab = {
   displayName?: string;
   shellId?: string;
   sftpId?: string;
+  pinned?: boolean;
 };
 
 type ContextMenuState = {
@@ -110,6 +111,14 @@ const App: Component = () => {
       result.set(s.id, { index: idx, total: totalByConn.get(s.connection.id) ?? 1 });
     }
     return result;
+  });
+
+  // P1-4: resolve the session the right-click menu currently targets, so the menu
+  // JSX can check protocol / pinned without re-deriving it inline.
+  const tabContextMenuTarget = createMemo(() => {
+    const m = tabContextMenu();
+    if (!m) return undefined;
+    return sessions().find(s => s.id === m.sessionId);
   });
 
   onMount(async () => {
@@ -302,6 +311,107 @@ const App: Component = () => {
     setSessions(newSessions);
   };
 
+  // P1-4: batched close helper used by the "close others / right / all" actions.
+  // Releases resources for each id, then commits the remaining set in a single
+  // setSessions call to avoid intermediate flicker. Falls back active to the first
+  // remaining tab (or null) if the active tab was among the closed ones.
+  const closeSessions = async (idsToClose: string[]) => {
+    if (idsToClose.length === 0) return;
+    const current = sessions();
+    const idSet = new Set(idsToClose);
+    const remaining = current.filter(s => !idSet.has(s.id));
+    for (const id of idsToClose) {
+      const s = current.find(x => x.id === id);
+      if (s) await closeSessionResources(s, remaining);
+    }
+    setSessions(remaining);
+    if (!remaining.some(s => s.id === activeSessionId())) {
+      setActiveSessionId(remaining[0]?.id ?? null);
+    }
+  };
+
+  // P1-4: SSH reconnect — close the existing shell and reopen a fresh one.
+  // SFTP is owned by RightPanel on a separate SSH session, so it stays open and
+  // does not need to be re-handled here.
+  const handleReconnect = async (sessionId: string) => {
+    const session = sessions().find(s => s.id === sessionId);
+    setTabContextMenu(null);
+    if (!session || session.connection.protocol !== "ssh") return;
+    if (session.shellId) {
+      try { await api.disconnectShell(session.shellId); } catch (e) { console.error("[handleReconnect] disconnectShell failed:", e); }
+    }
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, shellId: undefined } : s));
+    try {
+      await openShellForSession(sessionId, session.connection);
+    } catch (e) {
+      console.error("[handleReconnect] openShell failed:", e);
+    }
+  };
+
+  // P1-4: rename tab. P0-3 keeps displayName as the override slot, so writing
+  // here takes effect on the tab label immediately.
+  const handleRename = (sessionId: string) => {
+    const session = sessions().find(s => s.id === sessionId);
+    if (!session) return;
+    const currentName = session.displayName || session.connection.name;
+    const next = window.prompt("重命名标签", currentName);
+    setTabContextMenu(null);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (trimmed === currentName) return;
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, displayName: trimmed || undefined } : s));
+  };
+
+  // P1-4: copy "host:port (username)" to clipboard.
+  const handleCopyConnectionInfo = async (sessionId: string) => {
+    const session = sessions().find(s => s.id === sessionId);
+    setTabContextMenu(null);
+    if (!session) return;
+    const c = session.connection;
+    const userPart = c.username ? ` (${c.username})` : "";
+    const text = `${c.host}:${c.port}${userPart}`;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.error("[handleCopyConnectionInfo] clipboard write failed:", e);
+    }
+  };
+
+  // P1-4: pin / unpin a tab. Pinned tabs survive "close others" and "close all".
+  const handleTogglePin = (sessionId: string) => {
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, pinned: !s.pinned } : s));
+    setTabContextMenu(null);
+  };
+
+  // P1-4: close every non-pinned tab except the target (which is preserved even
+  // if it is not pinned, since it is the tab the user right-clicked on).
+  const handleCloseOthers = (sessionId: string) => {
+    setTabContextMenu(null);
+    const idsToClose = sessions()
+      .filter(s => s.id !== sessionId && !s.pinned)
+      .map(s => s.id);
+    void closeSessions(idsToClose);
+  };
+
+  // P1-4: close every tab strictly to the right of the target, including pinned
+  // ones — per the spec, "close right" affects fixed tabs as well.
+  const handleCloseRight = (sessionId: string) => {
+    setTabContextMenu(null);
+    const current = sessions();
+    const idx = current.findIndex(s => s.id === sessionId);
+    if (idx < 0) return;
+    const idsToClose = current.slice(idx + 1).map(s => s.id);
+    void closeSessions(idsToClose);
+  };
+
+  // P1-4: close every non-pinned tab. Pinned tabs (including the right-clicked
+  // one if it happens to be pinned) stay open.
+  const handleCloseAll = (sessionId: string) => {
+    setTabContextMenu(null);
+    const idsToClose = sessions().filter(s => !s.pinned).map(s => s.id);
+    void closeSessions(idsToClose);
+  };
+
   const handleSwitchSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
   };
@@ -328,7 +438,13 @@ const App: Component = () => {
 
   const handleTabContextMenu = (e: MouseEvent, sessionId: string) => {
     e.preventDefault();
-    setTabContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+    // P1-4: clamp menu origin to viewport so the menu never overflows the right
+    // or bottom edge. 200x280 are the expected menu footprint for the new items.
+    const menuW = 200;
+    const menuH = 280;
+    const x = Math.max(0, Math.min(e.clientX, window.innerWidth - menuW));
+    const y = Math.max(0, Math.min(e.clientY, window.innerHeight - menuH));
+    setTabContextMenu({ x, y, sessionId });
   };
 
   const handleBack = () => {
@@ -523,6 +639,9 @@ const App: Component = () => {
                       onClick={() => handleSwitchSession(session.id)}
                       onContextMenu={(e) => handleTabContextMenu(e, session.id)}
                     >
+                      <Show when={session.pinned}>
+                        <span class="session-tab-pin" title="已固定">📌</span>
+                      </Show>
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
                       <Show when={(tabPosition().get(session.id)?.index ?? 0) > 1}>
                         <span class="session-tab-badge">{tabPosition().get(session.id)?.index}</span>
@@ -549,8 +668,34 @@ const App: Component = () => {
               class="tab-context-menu"
               style={{ left: tabContextMenu()!.x + "px", top: tabContextMenu()!.y + "px" }}
             >
+              <Show when={tabContextMenuTarget()?.connection.protocol === "ssh"}>
+                <div class="tab-context-menu-item" onClick={() => handleReconnect(tabContextMenu()!.sessionId)}>
+                  断开重连
+                </div>
+                <div class="tab-context-menu-divider" />
+              </Show>
+              <div class="tab-context-menu-item" onClick={() => handleRename(tabContextMenu()!.sessionId)}>
+                重命名
+              </div>
+              <div class="tab-context-menu-item" onClick={() => handleCopyConnectionInfo(tabContextMenu()!.sessionId)}>
+                复制连接信息
+              </div>
               <div class="tab-context-menu-item" onClick={() => handleDuplicateSession(tabContextMenu()!.sessionId)}>
                 复制标签页
+              </div>
+              <div class="tab-context-menu-divider" />
+              <div class="tab-context-menu-item" onClick={() => handleCloseOthers(tabContextMenu()!.sessionId)}>
+                关闭其他
+              </div>
+              <div class="tab-context-menu-item" onClick={() => handleCloseRight(tabContextMenu()!.sessionId)}>
+                关闭右侧
+              </div>
+              <div class="tab-context-menu-item" onClick={() => handleCloseAll(tabContextMenu()!.sessionId)}>
+                关闭全部
+              </div>
+              <div class="tab-context-menu-divider" />
+              <div class="tab-context-menu-item" onClick={() => handleTogglePin(tabContextMenu()!.sessionId)}>
+                {tabContextMenuTarget()?.pinned ? "取消固定" : "固定标签"}
               </div>
               <div class="tab-context-menu-divider" />
               <div class="tab-context-menu-item" onClick={() => {
