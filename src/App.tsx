@@ -93,10 +93,24 @@ const App: Component = () => {
     return null;
   };
 
-  const generateDisplayName = (conn: ConnectionRecord) => {
-    const existingCount = sessions().filter(s => s.connection.id === conn.id).length;
-    return existingCount > 0 ? `${conn.name}(${existingCount + 1})` : conn.name;
-  };
+  // P0-3: derive the 1-based position of a session among its siblings for the
+  // same connection, and the total sibling count. The badge is shown only when
+  // total > 1. Closing a middle tab re-numbers the remaining ones in insertion
+  // order, so the badge never collides with a freshly created tab.
+  const tabPosition = createMemo(() => {
+    const totalByConn = new Map<string, number>();
+    for (const s of sessions()) {
+      totalByConn.set(s.connection.id, (totalByConn.get(s.connection.id) ?? 0) + 1);
+    }
+    const result = new Map<string, { index: number; total: number }>();
+    const seen = new Map<string, number>();
+    for (const s of sessions()) {
+      const idx = (seen.get(s.connection.id) ?? 0) + 1;
+      seen.set(s.connection.id, idx);
+      result.set(s.id, { index: idx, total: totalByConn.get(s.connection.id) ?? 1 });
+    }
+    return result;
+  });
 
   onMount(async () => {
     initTheme();
@@ -136,13 +150,11 @@ const App: Component = () => {
 
   const createSession = (conn: ConnectionRecord, viewMode: ViewMode = "terminal") => {
     const sessionId = `${conn.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const displayName = generateDisplayName(conn);
     const newSession: SessionTab = {
       id: sessionId,
       connection: conn,
       viewMode,
       activeTab: "query",
-      displayName,
     };
     setSessions(prev => [...prev, newSession]);
     setActiveSessionId(sessionId);
@@ -299,13 +311,11 @@ const App: Component = () => {
     if (!session || !session.connection?.id) return;
 
     const newSessionId = `${session.connection.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const displayName = generateDisplayName(session.connection);
     const newSession: SessionTab = {
       id: newSessionId,
       connection: { ...session.connection },
       viewMode: session.viewMode,
       activeTab: session.activeTab,
-      displayName,
     };
     setSessions(prev => [...prev, newSession]);
     setActiveSessionId(newSessionId);
@@ -514,6 +524,9 @@ const App: Component = () => {
                       onContextMenu={(e) => handleTabContextMenu(e, session.id)}
                     >
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
+                      <Show when={(tabPosition().get(session.id)?.index ?? 0) > 1}>
+                        <span class="session-tab-badge">{tabPosition().get(session.id)?.index}</span>
+                      </Show>
                       <span class="session-tab-protocol">{session.connection.protocol.toUpperCase()}</span>
                       <button
                         class="session-tab-close"

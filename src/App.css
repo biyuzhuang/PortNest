@@ -674,6 +674,19 @@ body {
   flex: 1;
 }
 
+/* P0-3: small numeric badge for the 2nd, 3rd, ... tab of the same connection.
+   Light grey on top of bg-hover keeps it readable in both light and dark themes. */
+.session-tab-badge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .session-tab-protocol {
   font-size: 10px;
   padding: 2px 6px;
