@@ -236,6 +236,35 @@ const App: Component = () => {
     }
   };
 
+  // P0-2: keep session tabs in sync with the connection store. If a connection
+  // record is removed (e.g. user deletes it in Sidebar), any open session for
+  // that connection becomes an orphan; close it and release its resources.
+  // First run sees an empty sessions list and early-returns, so the optional
+  // defer workaround mentioned in the task spec is not needed here.
+  createEffect(() => {
+    const validIds = new Set(connectionStore.state.connections.map(c => c.id));
+    const current = sessions();
+    const orphans = current.filter(s => !validIds.has(s.connection.id));
+    if (orphans.length === 0) return;
+
+    const remaining = current.filter(s => validIds.has(s.connection.id));
+    const closingActive = orphans.some(s => s.id === activeSessionId());
+
+    void (async () => {
+      try {
+        for (const s of orphans) {
+          await closeSessionResources(s, remaining);
+        }
+        setSessions(remaining);
+        if (closingActive) {
+          setActiveSessionId(remaining[0]?.id ?? null);
+        }
+      } catch (e) {
+        console.error("[orphanCleanup] failed:", e);
+      }
+    })();
+  });
+
   const handleCloseSession = async (sessionId: string) => {
     console.log("[App] handleCloseSession:", sessionId);
 
