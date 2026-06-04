@@ -13,3 +13,12 @@ test_write.txt
 # Misc
 src-tauri/kubernetes.repo
 src-tauri/src/commands/mod_new.rs
+
+# Databases (local-only data, may contain credentials, never commit)
+*.db
+*.db3
+*.s3db
+*.sl3
+*.sqlite
+*.sqlite3
+*.sqlitedb
