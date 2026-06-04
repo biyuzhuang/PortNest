@@ -96,24 +96,62 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
     setShowFolderMenu(true);
   };
 
-  // 把一个 fixed 定位的菜单调整为不超出视口。
-  // 如果元素已经因为内容过长而超出底部/右侧，则把 left/top 重新写回元素 style，
-  // 使菜单整体可见。margin 是离视口边缘的最小留白。
+  // 命令式地把一个 fixed 定位的菜单调整到不超出视口。
+  // 溢出时把菜单的【左下角】贴近鼠标位置（contextMenuPos），
+  // 让菜单向【右上】展开——鼠标正好压在菜单最底部那一项（"移动此会话"），
+  // 用户不用移动鼠标就能看到所有菜单项。如果贴近鼠标后仍会超出顶/右边缘，
+  // 再做最后夹取。
   const clampMenuToViewport = (el: HTMLElement, margin = 4) => {
     const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     const winH = window.innerHeight;
     const winW = window.innerWidth;
-    // 高度超出视口时直接贴顶（很少见；菜单项有 max-height 限制）。
-    if (rect.height > winH - margin * 2) {
-      el.style.top = margin + "px";
-    } else if (rect.bottom > winH) {
-      el.style.top = Math.max(margin, winH - rect.height - margin) + "px";
+    const overflowsBottom = rect.bottom > winH;
+    const overflowsRight = rect.right > winW;
+    if (!overflowsBottom && !overflowsRight) return;
+
+    // 菜单的左下角贴近鼠标位置。
+    const pos = contextMenuPos();
+    // menuLeft = mouseX
+    // menuTop  = mouseY - menuHeight  (即 menuBottom = mouseY)
+    let newLeft = pos.x;
+    let newTop = pos.y - rect.height;
+
+    // 防止菜单超出上边缘：菜单高度 > mouseY 时上提。
+    if (newTop < margin) {
+      newTop = margin;
     }
-    if (rect.width > winW - margin * 2) {
-      el.style.left = margin + "px";
-    } else if (rect.right > winW) {
-      el.style.left = Math.max(margin, winW - rect.width - margin) + "px";
+    // 防止菜单超出右边缘：菜单向右延伸到 mouseX + menuWidth，
+    // 如果超出视口右边，把 left 夹到合适位置。
+    if (newLeft + rect.width > winW - margin) {
+      newLeft = Math.max(margin, winW - rect.width - margin);
     }
+    // 防止菜单超出左边缘（兜底）。
+    if (newLeft < margin) {
+      newLeft = margin;
+    }
+
+    el.style.left = newLeft + "px";
+    el.style.top = newTop + "px";
+    el.style.right = "auto";
+  };
+
+  // 共用的右键菜单挂载回调：
+  // 1. 立即把 element 定位到 cursor 位置（覆盖响应式 style 绑定），并先隐藏避免闪屏；
+  // 2. 用 requestAnimationFrame 等到下一帧布局稳定后，调用 clampMenuToViewport 调整位置；
+  // 3. 调整完成后显示菜单。
+  const attachContextMenuRef = (el: HTMLElement) => {
+    if (!el) return;
+    const pos = contextMenuPos();
+    el.style.position = "fixed";
+    el.style.left = pos.x + "px";
+    el.style.top = pos.y + "px";
+    el.style.visibility = "hidden";
+    requestAnimationFrame(() => {
+      if (!el.isConnected) return;
+      clampMenuToViewport(el);
+      el.style.visibility = "visible";
+    });
   };
 
   // 整个窗口任意位置点击都应能关闭这两个右键菜单（仅在点击落在菜单外部时关闭）。
@@ -284,8 +322,7 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
       <Show when={showContextMenu() && contextMenuConn()}>
         <div
           class="context-menu"
-          ref={(el) => { if (el) clampMenuToViewport(el); }}
-          style={{ left: contextMenuPos().x + "px", top: contextMenuPos().y + "px" }}
+          ref={attachContextMenuRef}
           onClick={(e) => e.stopPropagation()}
         >
           <div class="context-menu-item" onClick={() => { props.onConnect(contextMenuConn()!); setShowContextMenu(false); }}>
@@ -301,26 +338,34 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
               class="context-submenu"
               ref={(el) => {
                 if (!el) return;
-                const rect = el.getBoundingClientRect();
-                const winH = window.innerHeight;
-                const winW = window.innerWidth;
-                const parent = el.parentElement as HTMLElement | null;
-                // 子菜单默认在父项的右侧（left: 100%）；如果右侧溢出，
-                // 翻转到父项的左侧。
-                if (rect.right > winW) {
-                  el.style.left = "auto";
-                  el.style.right = "100%";
-                }
-                // 顶部/底部溢出：在父项范围内上下夹取。
-                if (rect.bottom > winH && parent) {
-                  const parentRect = parent.getBoundingClientRect();
-                  const overflow = rect.bottom - winH;
-                  const newTop = -4 - overflow;
-                  el.style.top = Math.min(-4, Math.max(-(rect.height - parentRect.height), newTop)) + "px";
-                }
-                if (rect.top < 0) {
-                  el.style.top = "-4px";
-                }
+                // 子菜单初始是 display: none，ref 首次执行时尺寸是 0。
+                // 用 ResizeObserver 在子菜单变为可见（hover）时重新计算位置，
+                // 避免子菜单溢出屏幕。observer 在元素卸载时会被 GC。
+                const clampSubmenu = () => {
+                  const rect = el.getBoundingClientRect();
+                  if (rect.width === 0 || rect.height === 0) return;
+                  const winH = window.innerHeight;
+                  const winW = window.innerWidth;
+                  const parent = el.parentElement as HTMLElement | null;
+                  // 默认右侧展开；如果右侧溢出，翻转到父项的左侧。
+                  if (rect.right > winW) {
+                    el.style.left = "auto";
+                    el.style.right = "100%";
+                  }
+                  // 底部溢出：在父项范围内向上夹取。
+                  if (rect.bottom > winH && parent) {
+                    const parentRect = parent.getBoundingClientRect();
+                    const overflow = rect.bottom - winH;
+                    const newTop = -4 - overflow;
+                    el.style.top = Math.min(-4, Math.max(-(rect.height - parentRect.height), newTop)) + "px";
+                  }
+                  if (rect.top < 0) {
+                    el.style.top = "-4px";
+                  }
+                };
+                clampSubmenu();
+                const observer = new ResizeObserver(() => clampSubmenu());
+                observer.observe(el);
               }}
             >
               <div
@@ -369,8 +414,7 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
       <Show when={showFolderMenu()}>
         <div
           class="context-menu"
-          ref={(el) => { if (el) clampMenuToViewport(el); }}
-          style={{ left: contextMenuPos().x + "px", top: contextMenuPos().y + "px" }}
+          ref={attachContextMenuRef}
           onClick={(e) => e.stopPropagation()}
         >
           <Show when={contextMenuFolder()}>
