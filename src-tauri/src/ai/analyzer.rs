@@ -41,7 +41,9 @@ impl AIAnalyzer {
             }
             prompt.push('\n');
         }
-        prompt.push_str("请分析以上连接信息，提供:\n1. 健康评分 (0-100)\n2. 发现的问题列表\n3. 优化建议\n");
+        prompt.push_str(
+            "请分析以上连接信息，提供:\n1. 健康评分 (0-100)\n2. 发现的问题列表\n3. 优化建议\n",
+        );
         prompt
     }
 
@@ -61,7 +63,10 @@ impl AIAnalyzer {
             super::AIProvider::Custom { endpoint, .. } => endpoint.as_str(),
         };
 
-        let api_key = self.config.api_key.as_ref()
+        let api_key = self
+            .config
+            .api_key
+            .as_ref()
             .ok_or_else(|| crate::error::Error::InvalidConfig("缺少 API key".to_string()))?;
 
         let body = serde_json::json!({
@@ -73,7 +78,8 @@ impl AIAnalyzer {
             "max_tokens": self.config.max_tokens.unwrap_or(4096)
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -89,7 +95,9 @@ impl AIAnalyzer {
 
         let content = json["choices"][0]["message"]["content"]
             .as_str()
-            .ok_or_else(|| crate::error::Error::ProtocolError("无法提取 AI 响应内容".to_string()))?;
+            .ok_or_else(|| {
+                crate::error::Error::ProtocolError("无法提取 AI 响应内容".to_string())
+            })?;
 
         Ok(content.to_string())
     }

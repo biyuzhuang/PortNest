@@ -3,16 +3,16 @@
 //! SFTP 依赖 SSH 传输层实现文件传输功能
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use ssh2::{Session, Sftp};
 use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
-use parking_lot::Mutex;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential,
-    ProtocolCapability, ProtocolPlugin,
+    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, ProtocolCapability,
+    ProtocolPlugin,
 };
 
 /// 文件信息
@@ -49,10 +49,15 @@ impl SftpConnectionHandle {
         // SFTP needs blocking mode, temporarily switch
         ssh_handle.session().set_blocking(true);
 
-        let sftp = ssh_handle.session().sftp()
+        let sftp = ssh_handle
+            .session()
+            .sftp()
             .map_err(|e| Error::ProtocolError(format!("创建 SFTP 会话失败: {}", e)))?;
 
-        let remote_addr = (ssh_handle.remote_addr().0.to_string(), ssh_handle.remote_addr().1);
+        let remote_addr = (
+            ssh_handle.remote_addr().0.to_string(),
+            ssh_handle.remote_addr().1,
+        );
         Ok(Self {
             id: Uuid::new_v4(),
             sftp: Arc::new(Mutex::new(sftp)),
@@ -68,11 +73,13 @@ impl SftpConnectionHandle {
 
         let sftp = self.sftp.lock();
         tracing::debug!("SFTP list_dir: opening {}", path);
-        let mut dir = sftp.opendir(Path::new(path))
-            .map_err(|e| {
-                tracing::error!("SFTP opendir error for {}: {:?}", path, e);
-                Error::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, format!("opendir failed: {:?}", e)))
-            })?;
+        let mut dir = sftp.opendir(Path::new(path)).map_err(|e| {
+            tracing::error!("SFTP opendir error for {}: {:?}", path, e);
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("opendir failed: {:?}", e),
+            ))
+        })?;
 
         let mut entries = Vec::new();
         loop {
@@ -106,7 +113,10 @@ impl SftpConnectionHandle {
                             break;
                         }
                     }
-                    return Err(Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("readdir error: {}", e))));
+                    return Err(Error::IoError(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("readdir error: {}", e),
+                    )));
                 }
             }
         }
@@ -126,14 +136,16 @@ impl SftpConnectionHandle {
         self.session.set_blocking(true);
 
         let sftp = self.sftp.lock();
-        let mut remote_file = sftp.open(Path::new(remote_path))
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, format!("文件不存在: {}", e))))?;
+        let mut remote_file = sftp.open(Path::new(remote_path)).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("文件不存在: {}", e),
+            ))
+        })?;
 
-        let mut local_file = LocalFile::create(local_path)
-            .map_err(|e| Error::IoError(e))?;
+        let mut local_file = LocalFile::create(local_path).map_err(|e| Error::IoError(e))?;
 
-        let copied = copy(&mut remote_file, &mut local_file)
-            .map_err(|e| Error::IoError(e))?;
+        let copied = copy(&mut remote_file, &mut local_file).map_err(|e| Error::IoError(e))?;
 
         self.session.set_blocking(false);
 
@@ -149,14 +161,16 @@ impl SftpConnectionHandle {
         self.session.set_blocking(true);
 
         let sftp = self.sftp.lock();
-        let mut local_file = LocalFile::open(local_path)
-            .map_err(|e| Error::IoError(e))?;
+        let mut local_file = LocalFile::open(local_path).map_err(|e| Error::IoError(e))?;
 
-        let mut remote_file = sftp.create(Path::new(remote_path))
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("上传失败: {}", e))))?;
+        let mut remote_file = sftp.create(Path::new(remote_path)).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("上传失败: {}", e),
+            ))
+        })?;
 
-        let copied = copy(&mut local_file, &mut remote_file)
-            .map_err(|e| Error::IoError(e))?;
+        let copied = copy(&mut local_file, &mut remote_file).map_err(|e| Error::IoError(e))?;
 
         self.session.set_blocking(false);
 
@@ -168,8 +182,12 @@ impl SftpConnectionHandle {
         self.session.set_blocking(true);
 
         let sftp = self.sftp.lock();
-        sftp.mkdir(Path::new(path), 0o755)
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("创建目录失败: {}", e))))?;
+        sftp.mkdir(Path::new(path), 0o755).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("创建目录失败: {}", e),
+            ))
+        })?;
 
         self.session.set_blocking(false);
         Ok(())
@@ -180,8 +198,12 @@ impl SftpConnectionHandle {
         self.session.set_blocking(true);
 
         let sftp = self.sftp.lock();
-        sftp.unlink(Path::new(path))
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("删除文件失败: {}", e))))?;
+        sftp.unlink(Path::new(path)).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("删除文件失败: {}", e),
+            ))
+        })?;
 
         self.session.set_blocking(false);
         Ok(())
@@ -192,8 +214,12 @@ impl SftpConnectionHandle {
         self.session.set_blocking(true);
 
         let sftp = self.sftp.lock();
-        sftp.rmdir(Path::new(path))
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("删除目录失败: {}", e))))?;
+        sftp.rmdir(Path::new(path)).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("删除目录失败: {}", e),
+            ))
+        })?;
 
         self.session.set_blocking(false);
         Ok(())
@@ -205,7 +231,12 @@ impl SftpConnectionHandle {
 
         let sftp = self.sftp.lock();
         sftp.rename(Path::new(old_path), Path::new(new_path), None)
-            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::Other, format!("重命名失败: {}", e))))?;
+            .map_err(|e| {
+                Error::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("重命名失败: {}", e),
+                ))
+            })?;
 
         self.session.set_blocking(false);
         Ok(())

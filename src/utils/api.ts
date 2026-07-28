@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+const shellDecoders = new Map<string, TextDecoder>();
+
 // Connection types
 export interface ConnectionConfig {
   id?: string;
@@ -22,6 +24,7 @@ export interface ConnectionConfig {
   proxy_username?: string;
   proxy_password?: string;
   encoding?: string;
+  timeout_ms?: number;
 }
 
 export interface ConnectionRecord {
@@ -77,6 +80,11 @@ export interface ShellOpenResponse {
   shell_id: string;
 }
 
+export interface PingResult {
+  reachable: boolean;
+  latency_ms: number | null;
+}
+
 export interface QueryResult {
   columns: string[];
   rows: Array<{ values: any[] }>;
@@ -117,6 +125,10 @@ export const api = {
     return invoke("get_protocols");
   },
 
+  async pingHost(host: string, port: number): Promise<PingResult> {
+    return invoke("ping_host", { host, port });
+  },
+
   // Shell operations
   async openShell(connectionId: string, cols: number, rows: number): Promise<ShellOpenResponse> {
     return invoke("open_shell", { connectionId, cols, rows });
@@ -127,7 +139,13 @@ export const api = {
   },
 
   async readShell(shellId: string): Promise<string> {
-    return invoke("read_shell", { shellId });
+    const bytes = await invoke<number[]>("read_shell", { shellId });
+    let decoder = shellDecoders.get(shellId);
+    if (!decoder) {
+      decoder = new TextDecoder("utf-8");
+      shellDecoders.set(shellId, decoder);
+    }
+    return decoder.decode(new Uint8Array(bytes), { stream: true });
   },
 
   async resizeShell(shellId: string, cols: number, rows: number): Promise<void> {
@@ -135,10 +153,12 @@ export const api = {
   },
 
   async closeShell(shellId: string): Promise<void> {
+    shellDecoders.delete(shellId);
     return invoke("close_shell", { shellId });
   },
 
   async disconnectShell(shellId: string): Promise<void> {
+    shellDecoders.delete(shellId);
     return invoke("disconnect_shell", { shellId });
   },
 

@@ -1,6 +1,6 @@
-# Tauri + Solid + Typescript
+# PortNest
 
-This template should help get you started developing with Tauri, Solid and Typescript in Vite.
+A focused, local-first SSH and SFTP desktop workspace built with Tauri, SolidJS and TypeScript.
 
 ## Recommended IDE Setup
 

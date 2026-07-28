@@ -1,5 +1,6 @@
 import { Component, createSignal, For, Show, createMemo, onMount, onCleanup } from "solid-js";
 import { connectionStore, ConnectionFolder, ConnectionRecord } from "../stores/connectionStore";
+import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 
 interface SidebarProps {
   onConnect: (conn: ConnectionRecord) => void;
@@ -8,7 +9,7 @@ interface SidebarProps {
   onDelete: (conn: ConnectionRecord) => void;
   onOpenSettings?: () => void;
   onNewConnection?: () => void;
-  onNewFolder?: () => void;
+  onNewFolder?: (parentId?: string) => void;
   onCopyConnection?: (conn: ConnectionRecord) => void;
   selectedId?: string;
 }
@@ -20,7 +21,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const [contextMenuConn, setContextMenuConn] = createSignal<ConnectionRecord | null>(null);
   const [showContextMenu, setShowContextMenu] = createSignal(false);
   const [dragOverFolderId, setDragOverFolderId] = createSignal<string | null>(null);
-const [dragOverRoot, setDragOverRoot] = createSignal(false);
+  const [dragOverRoot, setDragOverRoot] = createSignal(false);
+  const [draggingConnectionId, setDraggingConnectionId] = createSignal<string | null>(null);
   const [contextMenuFolder, setContextMenuFolder] = createSignal<ConnectionFolder | null>(null);
   const [showFolderMenu, setShowFolderMenu] = createSignal(false);
 
@@ -36,16 +38,90 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
     });
   };
 
+  const handleDragStarted = (connectionId: string) => {
+    setDraggingConnectionId(connectionId);
+    setShowContextMenu(false);
+    setShowFolderMenu(false);
+  };
+
+  const handleDragEnded = () => {
+    setDraggingConnectionId(null);
+    setDragOverFolderId(null);
+    setDragOverRoot(false);
+  };
+
+  const getDraggedConnectionId = (event: DragEvent) =>
+    event.dataTransfer?.getData("application/x-portnest-connection")
+    || event.dataTransfer?.getData("text/plain")
+    || draggingConnectionId();
+
+  const handleFolderDragOver = (event: DragEvent, folderId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    setDragOverRoot(false);
+    setDragOverFolderId(folderId);
+  };
+
+  const handleRootDragOver = (event: DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    setDragOverFolderId(null);
+    setDragOverRoot(true);
+  };
+
+  const handleDrop = (event: DragEvent, folderId: string | null) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const connectionId = getDraggedConnectionId(event);
+    handleDragEnded();
+    if (!connectionId) return;
+    const current = state.connections.find(connection => connection.id === connectionId);
+    if ((current?.folder_id ?? null) === folderId) return;
+    void connectionStore.moveConnectionToFolder(connectionId, folderId).catch(error => {
+      console.error("[Sidebar] 移动连接失败:", error);
+    });
+  };
+
+  const handleDropZoneLeave = (event: DragEvent, folderId: string | null) => {
+    const nextTarget = event.relatedTarget as Node | null;
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    if (folderId === null) {
+      setDragOverRoot(false);
+    } else if (dragOverFolderId() === folderId) {
+      setDragOverFolderId(null);
+    }
+  };
+
   const filteredConnections = createMemo(() => {
     const query = searchQuery().toLowerCase();
     // 根目录区块只显示不在任何文件夹里的连接；已经在文件夹里的连接由
     // 对应 folder 的子列表渲染，否则同一条连接会同时出现在根目录和文件夹里，
     // 看上去像"移动后存在两份"。搜索时仍全表搜，便于按名字找到文件夹里的连接。
-    if (!query) return state.connections.filter(c => !c.folder_id);
+    if (!query) return state.connections.filter(c => matchesAssetFilter(c.protocol) && !c.folder_id);
     return state.connections.filter(
-      (c) => c.name.toLowerCase().includes(query) || c.host.toLowerCase().includes(query)
+      (c) => matchesAssetFilter(c.protocol) &&
+        (c.name.toLowerCase().includes(query) || c.host.toLowerCase().includes(query))
     );
   });
+
+  const visibleFolderNodes = createMemo(() => {
+    const result: Array<{ folder: ConnectionFolder; depth: number }> = [];
+    const appendChildren = (parentId: string | null, depth: number) => {
+      for (const folder of state.folders.filter(item => item.parentId === parentId)) {
+        result.push({ folder, depth });
+        if (expandedFolders().has(folder.id)) appendChildren(folder.id, depth + 1);
+      }
+    };
+    appendChildren(null, 0);
+    return result;
+  });
+
+  const selectAssetFilter = (filter: AssetFilter) => {
+    uiStore.setAssetFilter(filter);
+    uiStore.setAssetTreeVisible(true);
+  };
 
   const getProtocolIcon = (protocol: string) => {
     switch (protocol) {
@@ -173,11 +249,49 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
   });
 
   return (
-    <div class="sidebar" onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
+    <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
+      <nav class="module-rail" aria-label="功能导航">
+        <button class="module-rail-brand" title="PortNest">P</button>
+        <div class="module-rail-primary">
+          <button
+            class={`module-rail-btn ${uiStore.assetTreeVisible() ? "active" : ""}`}
+            title={uiStore.assetTreeVisible() ? "隐藏资产树" : "显示资产树"}
+            onClick={() => uiStore.toggleAssetTree()}
+          >
+            <span>▣</span><small>资产树</small>
+          </button>
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "all" ? "active" : ""}`} title="显示全部" onClick={() => selectAssetFilter("all")}>
+            <span>☷</span><small>全部</small>
+          </button>
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => selectAssetFilter("terminal")}>
+            <span>›_</span><small>终端</small>
+          </button>
+          <div class="module-rail-divider" />
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => selectAssetFilter("database")}>
+            <span>◉</span><small>数据</small>
+          </button>
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "container" ? "active" : ""}`} title="只显示容器" onClick={() => selectAssetFilter("container")}>
+            <span>◇</span><small>容器</small>
+          </button>
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "remote" ? "active" : ""}`} title="只显示远程桌面" onClick={() => selectAssetFilter("remote")}>
+            <span>↗</span><small>远程</small>
+          </button>
+        </div>
+        <div class="module-rail-bottom">
+          <button class="module-rail-btn" title="设置" onClick={() => props.onOpenSettings?.()}>
+            <span>⚙</span><small>设置</small>
+          </button>
+        </div>
+      </nav>
+
+      <div class="asset-sidebar">
       <div class="sidebar-header">
-        <div class="sidebar-logo">
-          <span class="logo-icon">⚡</span>
-          <span class="logo-text">PortNest</span>
+        <strong>资产列表</strong>
+        <div class="sidebar-header-actions">
+          <button title="搜索" onClick={() => document.querySelector<HTMLInputElement>(".search-input")?.focus()}>⌕</button>
+          <button title="新建连接" onClick={() => props.onNewConnection?.()}>＋</button>
+          <button title="新建文件夹" onClick={() => props.onNewFolder?.()}>▰</button>
+          <button title="刷新" onClick={() => void connectionStore.loadConnections()}>↻</button>
         </div>
       </div>
 
@@ -214,133 +328,77 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
           </div>
 
           <Show when={!searchQuery() && state.folders.length > 0}>
-            <For each={state.folders}>
-              {(folder) => (
+            <For each={visibleFolderNodes()}>
+              {(node) => {
+                const folder = node.folder;
+                return (
                 <div class="folder-item">
                   <div
-                    class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""}`}
-                    onClick={() => toggleFolder(folder.id)}
-                    onContextMenu={(e) => handleFolderContextMenu(e, folder)}
-                    ref={(el) => {
-                      if (!el) return;
-                      const onOver = (e: DragEvent) => {
-                        e.preventDefault();
-                        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                        setDragOverFolderId(folder.id);
-                      };
-                      const onLeave = () => setDragOverFolderId(null);
-                      const onDrop = (e: DragEvent) => {
-                        e.preventDefault();
-                        const connId = e.dataTransfer?.getData("connectionId")
-                          || e.dataTransfer?.getData("text/plain");
-                        if (connId) {
-                          connectionStore.moveConnectionToFolder(connId, folder.id);
-                        }
-                        setDragOverFolderId(null);
-                        setDragOverRoot(false);
-                      };
-                      el.addEventListener("dragover", onOver);
-                      el.addEventListener("dragleave", onLeave);
-                      el.addEventListener("drop", onDrop);
-                      onCleanup(() => {
-                        el.removeEventListener("dragover", onOver);
-                        el.removeEventListener("dragleave", onLeave);
-                        el.removeEventListener("drop", onDrop);
-                      });
+                    class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""} ${uiStore.selectedAssetFolderId() === folder.id ? "selected" : ""}`}
+                    onClick={() => {
+                      uiStore.setSelectedAssetFolderId(folder.id);
+                      toggleFolder(folder.id);
                     }}
+                    onContextMenu={(e) => handleFolderContextMenu(e, folder)}
+                    onDragEnter={(event) => handleFolderDragOver(event, folder.id)}
+                    onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+                    onDragLeave={(event) => handleDropZoneLeave(event, folder.id)}
+                    onDrop={(event) => handleDrop(event, folder.id)}
+                    style={{ "margin-left": `${node.depth * 13}px` }}
                   >
                     <span class="folder-icon">
                       {expandedFolders().has(folder.id) ? "📂" : "📁"}
                     </span>
                     <span class="folder-name">{folder.name}</span>
+                    <span class="folder-count">
+                      {state.connections.filter(connection =>
+                        connection.folder_id === folder.id
+                        && matchesAssetFilter(connection.protocol)
+                      ).length}
+                    </span>
                     <span class="folder-toggle">
                       {expandedFolders().has(folder.id) ? "▼" : "▶"}
                     </span>
                   </div>
                   <Show when={expandedFolders().has(folder.id)}>
                     <div
-                      class="folder-children"
-                      ref={(el) => {
-                        if (!el) return;
-                        const onOver = (e: DragEvent) => {
-                          e.preventDefault();
-                          if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                          setDragOverFolderId(folder.id);
-                        };
-                        const onLeave = (e: DragEvent) => {
-                          // 只有真正离开整个 folder 才清空（鼠标移到 folder-children 内
-                          // 的子连接上时不该清）。用 relatedTarget 判断是否还在 folder 范围内。
-                          const folderEl = el.closest(".folder-item");
-                          if (folderEl && !folderEl.contains(e.relatedTarget as Node | null)) {
-                            setDragOverFolderId(null);
-                          }
-                        };
-                        const onDrop = (e: DragEvent) => {
-                          e.preventDefault();
-                          const connId = e.dataTransfer?.getData("connectionId")
-                            || e.dataTransfer?.getData("text/plain");
-                          if (connId) {
-                            connectionStore.moveConnectionToFolder(connId, folder.id);
-                          }
-                          setDragOverFolderId(null);
-                          setDragOverRoot(false);
-                        };
-                        el.addEventListener("dragover", onOver);
-                        el.addEventListener("dragleave", onLeave);
-                        el.addEventListener("drop", onDrop);
-                        onCleanup(() => {
-                          el.removeEventListener("dragover", onOver);
-                          el.removeEventListener("dragleave", onLeave);
-                          el.removeEventListener("drop", onDrop);
-                        });
-                      }}
+                      class={`folder-children ${dragOverFolderId() === folder.id ? "drag-over" : ""}`}
+                      onDragEnter={(event) => handleFolderDragOver(event, folder.id)}
+                      onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+                      onDragLeave={(event) => handleDropZoneLeave(event, folder.id)}
+                      onDrop={(event) => handleDrop(event, folder.id)}
                     >
-                      <For each={state.connections.filter(c => c.folder_id === folder.id)}>
+                      <For each={state.connections.filter(c => matchesAssetFilter(c.protocol) && c.folder_id === folder.id)}>
                         {(conn) => (
                           <ConnectionItem
                             conn={conn}
                             selected={props.selectedId === conn.id}
                             onConnect={props.onConnect}
                             onContextMenu={handleContextMenu}
+                            dragging={draggingConnectionId() === conn.id}
+                            onDragStarted={handleDragStarted}
+                            onDragEnded={handleDragEnded}
                           />
                         )}
                       </For>
                     </div>
                   </Show>
                 </div>
-              )}
+                );
+              }}
             </For>
           </Show>
 
           <div
             class={`connection-list ${dragOverRoot() ? "drag-over" : ""}`}
-            ref={(el) => {
-              if (!el) return;
-              const onOver = (e: DragEvent) => {
-                e.preventDefault();
-                if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                if (!dragOverRoot()) setDragOverRoot(true);
-              };
-              const onLeave = () => setDragOverRoot(false);
-              const onDrop = (e: DragEvent) => {
-                e.preventDefault();
-                const connId = e.dataTransfer?.getData("connectionId")
-                  || e.dataTransfer?.getData("text/plain");
-                if (connId) {
-                  connectionStore.moveConnectionToFolder(connId, null);
-                }
-                setDragOverRoot(false);
-              };
-              el.addEventListener("dragover", onOver);
-              el.addEventListener("dragleave", onLeave);
-              el.addEventListener("drop", onDrop);
-              onCleanup(() => {
-                el.removeEventListener("dragover", onOver);
-                el.removeEventListener("dragleave", onLeave);
-                el.removeEventListener("drop", onDrop);
-              });
-            }}
+            onDragEnter={handleRootDragOver}
+            onDragOver={handleRootDragOver}
+            onDragLeave={(event) => handleDropZoneLeave(event, null)}
+            onDrop={(event) => handleDrop(event, null)}
           >
+            <Show when={state.connections.find(connection => connection.id === draggingConnectionId())?.folder_id}>
+              <div class="root-drop-hint">拖到这里移出文件夹</div>
+            </Show>
             <For each={filteredConnections()}>
               {(conn) => (
                 <ConnectionItem
@@ -348,6 +406,9 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
                   selected={props.selectedId === conn.id}
                   onConnect={props.onConnect}
                   onContextMenu={handleContextMenu}
+                  dragging={draggingConnectionId() === conn.id}
+                  onDragStarted={handleDragStarted}
+                  onDragEnded={handleDragEnded}
                 />
               )}
             </For>
@@ -363,9 +424,6 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
         >
           <div class="context-menu-item" onClick={() => { props.onConnect(contextMenuConn()!); setShowContextMenu(false); }}>
             连接
-          </div>
-          <div class="context-menu-item" onClick={() => { props.onOpenAI(contextMenuConn()!); setShowContextMenu(false); }}>
-            AI 诊断
           </div>
           <div class="context-menu-item has-submenu">
             <span>移动此会话</span>
@@ -460,6 +518,12 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
             }}>
               📁 在此文件夹中新建连接
             </div>
+            <div class="context-menu-item" onClick={() => {
+              props.onNewFolder?.(contextMenuFolder()!.id);
+              setShowFolderMenu(false);
+            }}>
+              📂 新建子文件夹
+            </div>
             <div class="context-menu-divider" />
             <div class="context-menu-item danger" onClick={() => {
               if (confirm(`确定要删除文件夹 "${contextMenuFolder()!.name}" 吗？`)) {
@@ -477,6 +541,12 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
             }}>
               ➕ 新建连接
             </div>
+            <div class="context-menu-item" onClick={() => {
+              props.onNewFolder?.();
+              setShowFolderMenu(false);
+            }}>
+              📁 新建文件夹
+            </div>
           </Show>
         </div>
       </Show>
@@ -489,6 +559,7 @@ const [dragOverRoot, setDragOverRoot] = createSignal(false);
           </span>
         </div>
       </div>
+      </div>
     </div>
   );
 };
@@ -498,6 +569,9 @@ interface ConnectionItemProps {
   selected: boolean;
   onConnect: (conn: ConnectionRecord) => void;
   onContextMenu: (e: MouseEvent, conn: ConnectionRecord) => void;
+  dragging: boolean;
+  onDragStarted: (connectionId: string) => void;
+  onDragEnded: () => void;
   builtin?: boolean;
 }
 
@@ -529,22 +603,23 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       // 同时写 connectionId 和 text/plain 两种 MIME，
       // 避免部分浏览器/WKWebView 只接受 text/plain 导致 dropEffect 失效。
       // effectAllowed 设为 all 以兼容更多场景。
-      e.dataTransfer.setData("connectionId", props.conn.id);
+      e.dataTransfer.setData("application/x-portnest-connection", props.conn.id);
       e.dataTransfer.setData("text/plain", props.conn.id);
       e.dataTransfer.effectAllowed = "all";
     }
+    props.onDragStarted(props.conn.id);
   };
 
-  const handleDragEnd = (_e: DragEvent) => {
-    // 拖拽结束。
+  const handleDragEnd = () => {
+    props.onDragEnded();
   };
 
   return (
     <div
-      class={`connection-item ${props.selected ? "selected" : ""} ${props.builtin ? "builtin" : ""}`}
+      class={`connection-item ${props.selected ? "selected" : ""} ${props.builtin ? "builtin" : ""} ${props.dragging ? "dragging" : ""}`}
       draggable={true}
-      on:dragstart={handleDragStart}
-      on:dragend={handleDragEnd}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onDblClick={() => props.onConnect(props.conn)}
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >

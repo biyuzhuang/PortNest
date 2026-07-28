@@ -1,20 +1,31 @@
 //! Tauri 命令接口
 
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
-use parking_lot::RwLock;
-use std::collections::HashMap;
 
 use crate::ai::{AIAnalyzer, AnalyzeRequest, ConnectionInfo};
 use crate::connection::ConnectionManager;
-use crate::protocol::{ConnectionHandle, Credential, CredentialType};
-use crate::protocol::PluginRegistry;
 use crate::protocol::docker::{
-    ContainerInfo, DockerContainerCreateConfig, DockerSystemInfo, ImageInfo, NetworkInfo,
-    VolumeInfo, ContainerStats,
+    ContainerInfo, ContainerStats, DockerContainerCreateConfig, DockerSystemInfo, ImageInfo,
+    NetworkInfo, VolumeInfo,
 };
-use crate::storage::{ConnectionRecord, Database, CredentialData};
+use crate::protocol::PluginRegistry;
+use crate::protocol::{ConnectionHandle, Credential, CredentialType};
+use crate::storage::{ConnectionRecord, CredentialData, Database};
+
+fn parse_connection_options(
+    raw: Option<&str>,
+) -> Result<crate::protocol::ConnectionOptions, String> {
+    match raw {
+        Some(value) if !value.trim().is_empty() => {
+            serde_json::from_str(value).map_err(|e| format!("连接高级选项无效: {}", e))
+        }
+        _ => Ok(crate::protocol::ConnectionOptions::default()),
+    }
+}
 
 /// Shell 会话信息
 struct ShellSessionInfo {
@@ -35,10 +46,13 @@ impl ShellManager {
     }
 
     fn insert(&self, shell_id: String, connection_id: String, handle: Arc<dyn ConnectionHandle>) {
-        self.sessions.write().insert(shell_id, ShellSessionInfo {
-            _connection_id: connection_id,
-            handle,
-        });
+        self.sessions.write().insert(
+            shell_id,
+            ShellSessionInfo {
+                _connection_id: connection_id,
+                handle,
+            },
+        );
     }
 
     fn get(&self, shell_id: &str) -> Option<Arc<dyn ConnectionHandle>> {
@@ -70,12 +84,21 @@ impl SftpManager {
         }
     }
 
-    fn insert(&self, sftp_id: String, connection_id: String, handle: Arc<crate::protocol::sftp::SftpConnectionHandle>, ssh_handle: Arc<dyn ConnectionHandle>) {
-        self.sessions.write().insert(sftp_id, SftpSessionInfo {
-            _connection_id: connection_id,
-            handle,
-            ssh_handle,
-        });
+    fn insert(
+        &self,
+        sftp_id: String,
+        connection_id: String,
+        handle: Arc<crate::protocol::sftp::SftpConnectionHandle>,
+        ssh_handle: Arc<dyn ConnectionHandle>,
+    ) {
+        self.sessions.write().insert(
+            sftp_id,
+            SftpSessionInfo {
+                _connection_id: connection_id,
+                handle,
+                ssh_handle,
+            },
+        );
     }
 
     fn get(&self, sftp_id: &str) -> Option<Arc<crate::protocol::sftp::SftpConnectionHandle>> {
@@ -83,7 +106,10 @@ impl SftpManager {
     }
 
     fn get_ssh_handle(&self, sftp_id: &str) -> Option<Arc<dyn ConnectionHandle>> {
-        self.sessions.read().get(sftp_id).map(|s| s.ssh_handle.clone())
+        self.sessions
+            .read()
+            .get(sftp_id)
+            .map(|s| s.ssh_handle.clone())
     }
 
     fn remove(&self, sftp_id: &str) {
@@ -109,15 +135,28 @@ impl DockerManager {
         }
     }
 
-    fn insert(&self, connection_id: String, handle: Arc<crate::protocol::docker::DockerConnectionHandle>) {
-        self.sessions.write().insert(connection_id.clone(), DockerSessionInfo {
-            _connection_id: connection_id,
-            handle,
-        });
+    fn insert(
+        &self,
+        connection_id: String,
+        handle: Arc<crate::protocol::docker::DockerConnectionHandle>,
+    ) {
+        self.sessions.write().insert(
+            connection_id.clone(),
+            DockerSessionInfo {
+                _connection_id: connection_id,
+                handle,
+            },
+        );
     }
 
-    fn get(&self, connection_id: &str) -> Option<Arc<crate::protocol::docker::DockerConnectionHandle>> {
-        self.sessions.read().get(connection_id).map(|s| s.handle.clone())
+    fn get(
+        &self,
+        connection_id: &str,
+    ) -> Option<Arc<crate::protocol::docker::DockerConnectionHandle>> {
+        self.sessions
+            .read()
+            .get(connection_id)
+            .map(|s| s.handle.clone())
     }
 
     fn remove(&self, connection_id: &str) {
@@ -190,6 +229,7 @@ pub struct ConnectionConfigRequest {
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
     pub encoding: Option<String>,
+    pub timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,16 +247,40 @@ pub async fn save_connection(
 ) -> Result<ConnectionResponse, String> {
     // Use provided ID if editing, otherwise generate new
     let id = Uuid::parse_str(&config.id).unwrap_or_else(|_| Uuid::new_v4());
-    let credential_id = Uuid::new_v4();
+    let existing_connection = state
+        .db
+        .get_connections()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|connection| connection.id == id.to_string());
+    let credential_id = existing_connection
+        .as_ref()
+        .and_then(|connection| Uuid::parse_str(&connection.credential_id).ok())
+        .unwrap_or_else(Uuid::new_v4);
 
     let auth_type = config.auth_type.as_str();
-    
+
     // 使用结构化 JSON 格式存储凭证
+    let previous_credential = existing_connection.as_ref().and_then(|connection| {
+        state
+            .db
+            .get_credential_structured(&connection.credential_id)
+            .ok()
+    });
     let cred_data = CredentialData {
         auth_type: auth_type.to_string(),
-        password: config.password.clone(),
-        private_key: config.private_key.clone(),
-        passphrase: config.passphrase.clone(),
+        password: config
+            .password
+            .clone()
+            .or_else(|| previous_credential.as_ref()?.password.clone()),
+        private_key: config
+            .private_key
+            .clone()
+            .or_else(|| previous_credential.as_ref()?.private_key.clone()),
+        passphrase: config
+            .passphrase
+            .clone()
+            .or_else(|| previous_credential.as_ref()?.passphrase.clone()),
     };
 
     state
@@ -227,21 +291,46 @@ pub async fn save_connection(
     // Build options JSON with proxy and encoding settings
     let mut options_map = serde_json::Map::new();
     if let (Some(proxy_type), Some(proxy_host), Some(proxy_port)) =
-        (&config.proxy_type, &config.proxy_host, &config.proxy_port) {
+        (&config.proxy_type, &config.proxy_host, &config.proxy_port)
+    {
         let mut proxy_map = serde_json::Map::new();
-        proxy_map.insert("type".to_string(), serde_json::Value::String(proxy_type.clone()));
-        proxy_map.insert("host".to_string(), serde_json::Value::String(proxy_host.clone()));
-        proxy_map.insert("port".to_string(), serde_json::Value::Number((*proxy_port).into()));
+        proxy_map.insert(
+            "type".to_string(),
+            serde_json::Value::String(proxy_type.clone()),
+        );
+        proxy_map.insert(
+            "host".to_string(),
+            serde_json::Value::String(proxy_host.clone()),
+        );
+        proxy_map.insert(
+            "port".to_string(),
+            serde_json::Value::Number((*proxy_port).into()),
+        );
         if let Some(username) = &config.proxy_username {
-            proxy_map.insert("username".to_string(), serde_json::Value::String(username.clone()));
+            proxy_map.insert(
+                "username".to_string(),
+                serde_json::Value::String(username.clone()),
+            );
         }
         if let Some(password) = &config.proxy_password {
-            proxy_map.insert("password".to_string(), serde_json::Value::String(password.clone()));
+            proxy_map.insert(
+                "password".to_string(),
+                serde_json::Value::String(password.clone()),
+            );
         }
         options_map.insert("proxy".to_string(), serde_json::Value::Object(proxy_map));
     }
     if let Some(encoding) = &config.encoding {
-        options_map.insert("encoding".to_string(), serde_json::Value::String(encoding.clone()));
+        options_map.insert(
+            "encoding".to_string(),
+            serde_json::Value::String(encoding.clone()),
+        );
+    }
+    if let Some(timeout_ms) = config.timeout_ms {
+        options_map.insert(
+            "timeout_ms".to_string(),
+            serde_json::Value::Number(timeout_ms.into()),
+        );
     }
     let options_json = if options_map.is_empty() {
         None
@@ -311,7 +400,11 @@ pub async fn analyze_connection(
         },
     };
 
-    state.ai_analyzer.analyze(request).await.map_err(|e| e.to_string())
+    state
+        .ai_analyzer
+        .analyze(request)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -320,7 +413,10 @@ pub fn get_protocols(state: tauri::State<'_, AppState>) -> Vec<ProtocolInfoRespo
         .plugin_registry
         .list_protocols()
         .into_iter()
-        .map(|(id, name)| ProtocolInfoResponse { id: id.to_string(), name: name.to_string() })
+        .map(|(id, name)| ProtocolInfoResponse {
+            id: id.to_string(),
+            name: name.to_string(),
+        })
         .collect()
 }
 
@@ -333,6 +429,36 @@ pub struct ProtocolInfoResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellOpenResponse {
     pub shell_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PingResult {
+    pub reachable: bool,
+    pub latency_ms: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn ping_host(host: String, port: u16) -> Result<PingResult, String> {
+    let address = format!("{}:{}", host, port);
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::net::TcpStream::connect(&address),
+    )
+    .await
+    {
+        Ok(Ok(stream)) => {
+            drop(stream);
+            Ok(PingResult {
+                reachable: true,
+                latency_ms: Some(started.elapsed().as_millis() as u64),
+            })
+        }
+        Ok(Err(_)) | Err(_) => Ok(PingResult {
+            reachable: false,
+            latency_ms: None,
+        }),
+    }
 }
 
 #[tauri::command]
@@ -360,12 +486,7 @@ pub async fn open_shell(
         .map_err(|e| e.to_string())?;
 
     let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
-        "password" => (
-            CredentialType::Password,
-            cred_data.password,
-            None,
-            None,
-        ),
+        "password" => (CredentialType::Password, cred_data.password, None, None),
         "key" => (
             CredentialType::PrivateKey,
             None,
@@ -388,10 +509,16 @@ pub async fn open_shell(
         passphrase,
     };
 
-    let options = crate::protocol::ConnectionOptions::default();
+    let options = parse_connection_options(conn.options.as_deref())?;
 
     let handle: Arc<dyn ConnectionHandle> = plugin
-        .connect(&conn.host, conn.port, conn.username.as_deref().unwrap_or(""), &credential, &options)
+        .connect(
+            &conn.host,
+            conn.port,
+            conn.username.as_deref().unwrap_or(""),
+            &credential,
+            &options,
+        )
         .await
         .map_err(|e| e.to_string())?
         .into();
@@ -399,19 +526,15 @@ pub async fn open_shell(
 
     let handle_clone = handle.clone();
     tracing::info!("Opening shell with cols={}, rows={}", cols, rows);
-    let shell = tokio::task::spawn_blocking(move || {
-        handle_clone.open_shell(cols, rows)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    let shell = tokio::task::spawn_blocking(move || handle_clone.open_shell(cols, rows))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
     tracing::info!("Shell opened successfully: id={}", shell.id);
 
-    state.shell_manager.insert(
-        shell.id.to_string(),
-        connection_id,
-        handle,
-    );
+    state
+        .shell_manager
+        .insert(shell.id.to_string(), connection_id, handle);
 
     Ok(ShellOpenResponse {
         shell_id: shell.id.to_string(),
@@ -430,14 +553,16 @@ pub async fn write_shell(
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
     let data = data.into_bytes();
-    tracing::debug!("write_shell: writing {} bytes to shell {:?}", data.len(), shell_uuid);
+    tracing::debug!(
+        "write_shell: writing {} bytes to shell {:?}",
+        data.len(),
+        shell_uuid
+    );
 
-    tokio::task::spawn_blocking(move || {
-        handle.write_shell(&shell_uuid, &data)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || handle.write_shell(&shell_uuid, &data))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -446,7 +571,7 @@ pub async fn write_shell(
 pub async fn read_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
-) -> Result<String, String> {
+) -> Result<Vec<u8>, String> {
     let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
     let handle = state
         .shell_manager
@@ -459,12 +584,11 @@ pub async fn read_shell(
         match handle.read_shell(&shell_uuid, &mut buf) {
             Ok(n) => {
                 if n > 0 {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    tracing::info!("read_shell: got {} chars: {:?}", n, &data[..std::cmp::min(n, 100)]);
-                    Ok(data)
+                    tracing::debug!("read_shell: got {} bytes", n);
+                    Ok(buf[..n].to_vec())
                 } else {
                     tracing::trace!("read_shell: no data");
-                    Ok(String::new())
+                    Ok(Vec::new())
                 }
             }
             Err(e) => {
@@ -493,12 +617,10 @@ pub async fn resize_shell(
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
 
-    tokio::task::spawn_blocking(move || {
-        handle.resize_shell(&shell_uuid, cols, rows)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || handle.resize_shell(&shell_uuid, cols, rows))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -514,12 +636,10 @@ pub async fn close_shell(
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
 
-    tokio::task::spawn_blocking(move || {
-        handle.close_shell(&shell_uuid)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || handle.close_shell(&shell_uuid))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
     state.shell_manager.remove(&shell_id);
 
@@ -601,12 +721,7 @@ pub async fn execute_query(
         .map_err(|e| e.to_string())?;
 
     let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
-        "password" => (
-            CredentialType::Password,
-            cred_data.password,
-            None,
-            None,
-        ),
+        "password" => (CredentialType::Password, cred_data.password, None, None),
         "key" => (
             CredentialType::PrivateKey,
             None,
@@ -632,7 +747,13 @@ pub async fn execute_query(
     let options = crate::protocol::ConnectionOptions::default();
 
     let handle = plugin
-        .connect(&conn.host, conn.port, conn.username.as_deref().unwrap_or(""), &credential, &options)
+        .connect(
+            &conn.host,
+            conn.port,
+            conn.username.as_deref().unwrap_or(""),
+            &credential,
+            &options,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -648,7 +769,11 @@ pub async fn execute_query(
             let elapsed = start.elapsed().as_millis() as u64;
 
             let columns: Vec<String> = if !rows.is_empty() {
-                rows[0].columns().iter().map(|c| c.name_str().to_string()).collect()
+                rows[0]
+                    .columns()
+                    .iter()
+                    .map(|c| c.name_str().to_string())
+                    .collect()
             } else {
                 vec![]
             };
@@ -662,9 +787,15 @@ pub async fn execute_query(
                             if let Some(v) = row.get(col_idx) {
                                 match v {
                                     mysql_async::Value::NULL => serde_json::Value::Null,
-                                    mysql_async::Value::Bytes(b) => serde_json::Value::String(String::from_utf8_lossy(&b).to_string()),
-                                    mysql_async::Value::Int(i) => serde_json::Value::Number(i.into()),
-                                    mysql_async::Value::UInt(u) => serde_json::Value::Number(u.into()),
+                                    mysql_async::Value::Bytes(b) => serde_json::Value::String(
+                                        String::from_utf8_lossy(&b).to_string(),
+                                    ),
+                                    mysql_async::Value::Int(i) => {
+                                        serde_json::Value::Number(i.into())
+                                    }
+                                    mysql_async::Value::UInt(u) => {
+                                        serde_json::Value::Number(u.into())
+                                    }
                                     mysql_async::Value::Float(f) => serde_json::json!(f),
                                     mysql_async::Value::Double(d) => serde_json::json!(d),
                                     _ => serde_json::Value::String(format!("{:?}", v)),
@@ -685,9 +816,7 @@ pub async fn execute_query(
                 execution_time_ms: elapsed,
             })
         }
-        "postgresql" => {
-            Err("PostgreSQL 查询暂未实现".to_string())
-        }
+        "postgresql" => Err("PostgreSQL 查询暂未实现".to_string()),
         _ => Err("此协议不支持查询".to_string()),
     }
 }
@@ -729,7 +858,11 @@ pub async fn chat_with_ai(
         },
     };
 
-    let analysis = state.ai_analyzer.analyze(request).await.map_err(|e| e.to_string())?;
+    let analysis = state
+        .ai_analyzer
+        .analyze(request)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let response_message = ChatMessage {
         role: "assistant".to_string(),
@@ -778,12 +911,7 @@ pub async fn open_sftp(
         .map_err(|e| e.to_string())?;
 
     let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
-        "password" => (
-            CredentialType::Password,
-            cred_data.password,
-            None,
-            None,
-        ),
+        "password" => (CredentialType::Password, cred_data.password, None, None),
         "key" => (
             CredentialType::PrivateKey,
             None,
@@ -809,7 +937,13 @@ pub async fn open_sftp(
     let options = crate::protocol::ConnectionOptions::default();
 
     let handle = plugin
-        .connect(&conn.host, conn.port, conn.username.as_deref().unwrap_or(""), &credential, &options)
+        .connect(
+            &conn.host,
+            conn.port,
+            conn.username.as_deref().unwrap_or(""),
+            &credential,
+            &options,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -885,12 +1019,10 @@ pub async fn list_sftp_dir(
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
 
     let handle = handle.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.list_dir(&path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.list_dir(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 下载文件
@@ -908,12 +1040,10 @@ pub async fn sftp_download(
     let handle = handle.clone();
     let remote_path = remote_path.clone();
     let local_path = local_path.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.download_file(&remote_path, &local_path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.download_file(&remote_path, &local_path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 上传文件
@@ -931,12 +1061,10 @@ pub async fn sftp_upload(
     let handle = handle.clone();
     let remote_path = remote_path.clone();
     let local_path = local_path.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.upload_file(&local_path, &remote_path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.upload_file(&local_path, &remote_path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 创建目录
@@ -952,12 +1080,10 @@ pub async fn sftp_create_dir(
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
     let handle = handle.clone();
     let path = path.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.create_dir(&path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.create_dir(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 删除文件
@@ -973,12 +1099,10 @@ pub async fn sftp_delete_file(
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
     let handle = handle.clone();
     let path = path.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.delete_file(&path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.delete_file(&path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 删除目录
@@ -1011,20 +1135,15 @@ pub async fn sftp_rename(
     let handle = handle.clone();
     let old_path = old_path.clone();
     let new_path = new_path.clone();
-    tokio::task::spawn_blocking(move || {
-        handle.rename(&old_path, &new_path)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(move || handle.rename(&old_path, &new_path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 /// 关闭 SFTP 会话（不主动断开 SSH，因为可能被 shell 共享）
 #[tauri::command]
-pub async fn close_sftp(
-    state: tauri::State<'_, AppState>,
-    sftp_id: String,
-) -> Result<(), String> {
+pub async fn close_sftp(state: tauri::State<'_, AppState>, sftp_id: String) -> Result<(), String> {
     state.sftp_manager.remove(&sftp_id);
     Ok(())
 }
@@ -1036,9 +1155,7 @@ pub async fn close_sftp_independent(
     sftp_id: String,
 ) -> Result<(), String> {
     if let Some(ssh_handle) = state.sftp_manager.get_ssh_handle(&sftp_id) {
-        let _ = tokio::task::spawn_blocking(move || {
-            ssh_handle.disconnect()
-        }).await;
+        let _ = tokio::task::spawn_blocking(move || ssh_handle.disconnect()).await;
     }
     state.sftp_manager.remove(&sftp_id);
     Ok(())
@@ -1069,10 +1186,7 @@ pub async fn save_folder(
 }
 
 #[tauri::command]
-pub async fn delete_folder(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+pub async fn delete_folder(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
     state.db.delete_folder(&id).map_err(|e| e.to_string())
 }
 
@@ -1113,11 +1227,14 @@ pub async fn test_connection(
         "key_with_passphrase" => {
             let key = config.private_key.unwrap_or_default();
             let pass = config.passphrase.unwrap_or_default();
-            (CredentialType::PrivateKeyWithPassphrase, None, Some(key), Some(pass))
+            (
+                CredentialType::PrivateKeyWithPassphrase,
+                None,
+                Some(key),
+                Some(pass),
+            )
         }
-        "agent" => {
-            (CredentialType::Agent, None, None, None)
-        }
+        "agent" => (CredentialType::Agent, None, None, None),
         _ => return Err("不支持的认证类型".to_string()),
     };
 
@@ -1131,7 +1248,8 @@ pub async fn test_connection(
     // Parse proxy from options if provided
     let mut options = crate::protocol::ConnectionOptions::default();
     if let (Some(proxy_type), Some(proxy_host), Some(proxy_port)) =
-        (&config.proxy_type, &config.proxy_host, &config.proxy_port) {
+        (&config.proxy_type, &config.proxy_host, &config.proxy_port)
+    {
         options.proxy = Some(crate::protocol::ProxyConfig {
             proxy_type: proxy_type.clone(),
             host: proxy_host.clone(),
@@ -1144,7 +1262,13 @@ pub async fn test_connection(
     // Try to connect with timeout
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(10),
-        plugin.connect(&config.host, config.port, &config.username, &credential, &options),
+        plugin.connect(
+            &config.host,
+            config.port,
+            &config.username,
+            &credential,
+            &options,
+        ),
     )
     .await;
 
@@ -1186,7 +1310,13 @@ pub async fn docker_connect(
     let options = crate::protocol::ConnectionOptions::default();
 
     let handle: Arc<dyn ConnectionHandle> = plugin
-        .connect(&conn.host, conn.port, conn.username.as_deref().unwrap_or(""), &credential, &options)
+        .connect(
+            &conn.host,
+            conn.port,
+            conn.username.as_deref().unwrap_or(""),
+            &credential,
+            &options,
+        )
         .await
         .map_err(|e| e.to_string())?
         .into();
@@ -1224,7 +1354,10 @@ pub async fn docker_create_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.create_container(config).await.map_err(|e| e.to_string())
+    handle
+        .create_container(config)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1238,7 +1371,10 @@ pub async fn docker_start_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.start_container(&container_id).await.map_err(|e| e.to_string())
+    handle
+        .start_container(&container_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1253,7 +1389,10 @@ pub async fn docker_stop_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.stop_container(&container_id, timeout).await.map_err(|e| e.to_string())
+    handle
+        .stop_container(&container_id, timeout)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1268,7 +1407,10 @@ pub async fn docker_restart_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.restart_container(&container_id, timeout).await.map_err(|e| e.to_string())
+    handle
+        .restart_container(&container_id, timeout)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1283,7 +1425,10 @@ pub async fn docker_kill_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.kill_container(&container_id, signal.as_deref()).await.map_err(|e| e.to_string())
+    handle
+        .kill_container(&container_id, signal.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1298,7 +1443,10 @@ pub async fn docker_remove_container(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.remove_container(&container_id, force).await.map_err(|e| e.to_string())
+    handle
+        .remove_container(&container_id, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1313,7 +1461,10 @@ pub async fn docker_logs(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.logs(&container_id, tail, false).await.map_err(|e| e.to_string())
+    handle
+        .logs(&container_id, tail, false)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1355,7 +1506,10 @@ pub async fn docker_pull_image(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.pull_image(&image, tag.as_deref()).await.map_err(|e| e.to_string())
+    handle
+        .pull_image(&image, tag.as_deref())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1370,7 +1524,10 @@ pub async fn docker_remove_image(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.remove_image(&image_id, force).await.map_err(|e| e.to_string())
+    handle
+        .remove_image(&image_id, force)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1398,7 +1555,10 @@ pub async fn docker_create_volume(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.create_volume(&name, &driver).await.map_err(|e| e.to_string())
+    handle
+        .create_volume(&name, &driver)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1412,7 +1572,10 @@ pub async fn docker_remove_volume(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.remove_volume(&volume_name).await.map_err(|e| e.to_string())
+    handle
+        .remove_volume(&volume_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1440,7 +1603,10 @@ pub async fn docker_create_network(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.create_network(&name, &driver).await.map_err(|e| e.to_string())
+    handle
+        .create_network(&name, &driver)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1454,7 +1620,10 @@ pub async fn docker_remove_network(
         .get(&connection_id)
         .ok_or_else(|| "Docker 会话未找到".to_string())?;
 
-    handle.remove_network(&network_id).await.map_err(|e| e.to_string())
+    handle
+        .remove_network(&network_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

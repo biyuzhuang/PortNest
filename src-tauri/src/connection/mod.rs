@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::protocol::{ConnectionHandle, PluginRegistry, SessionStatus};
 use crate::error::Result;
+use crate::protocol::{ConnectionHandle, PluginRegistry, SessionStatus};
 
 /// 连接会话状态
 pub struct ConnectionSession {

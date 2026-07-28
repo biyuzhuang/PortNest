@@ -1,11 +1,11 @@
-﻿//! PortNest - 一站式开发运维中心
+//! PortNest - 一站式开发运维中心
 
-pub mod protocol;
-pub mod connection;
-pub mod storage;
 pub mod ai;
 pub mod commands;
+pub mod connection;
 pub mod error;
+pub mod protocol;
+pub mod storage;
 
 pub use error::{Error, Result};
 
@@ -73,6 +73,7 @@ pub fn run() {
             commands::delete_connection,
             commands::analyze_connection,
             commands::get_protocols,
+            commands::ping_host,
             commands::open_shell,
             commands::write_shell,
             commands::read_shell,

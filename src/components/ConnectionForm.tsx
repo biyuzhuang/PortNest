@@ -1,5 +1,5 @@
-import { Component, createSignal, For, Show } from "solid-js";
-import type { ConnectionConfig, FolderRecord } from "../utils/api";
+import { Component, For, Show, createSignal } from "solid-js";
+import { api, type ConnectionConfig } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 
 interface ConnectionFormProps {
@@ -10,272 +10,242 @@ interface ConnectionFormProps {
   defaultFolderId?: string;
 }
 
-type TabType = "general" | "proxy" | "advanced" | "folder";
+type TabType = "general" | "tunnel" | "proxy" | "environment" | "automation" | "advanced";
 
-const ENCODINGS = [
-  { value: "UTF-8", label: "UTF-8 (默认)" },
-  { value: "GBK", label: "GBK (中文)" },
-  { value: "GB2312", label: "GB2312 (中文)" },
-  { value: "Latin-1", label: "Latin-1" },
-  { value: "ISO-8859-1", label: "ISO-8859-1" },
-  { value: "CP437", label: "CP437 ( DOS)" },
-];
+const COLORS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#32b4d4", "#2589e8", "#9b51e0", "#8e8e93"];
+const ENCODINGS = ["UTF-8", "GBK", "GB2312", "Latin-1", "ISO-8859-1", "CP437"];
 
 export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
   const [testing, setTesting] = createSignal(false);
   const [testResult, setTestResult] = createSignal<string | null>(null);
-
-  // General tab
   const [name, setName] = createSignal(props.connection?.name || "");
-  const [protocol, setProtocol] = createSignal(props.connection?.protocol || "ssh");
   const [host, setHost] = createSignal(props.connection?.host || "");
   const [port, setPort] = createSignal(props.connection?.port || 22);
-  const [username, setUsername] = createSignal(props.connection?.username || "");
+  const [username, setUsername] = createSignal(props.connection?.username || "root");
   const [authType, setAuthType] = createSignal(props.connection?.auth_type || "password");
   const [password, setPassword] = createSignal(props.connection?.password || "");
   const [privateKey, setPrivateKey] = createSignal(props.connection?.private_key || "");
   const [passphrase, setPassphrase] = createSignal(props.connection?.passphrase || "");
   const [color, setColor] = createSignal(props.connection?.color || "");
+  const [remark, setRemark] = createSignal(props.connection?.tags || "");
   const [showPassword, setShowPassword] = createSignal(false);
-  const [showPrivateKey, setShowPrivateKey] = createSignal(false);
-
-  // Proxy tab
   const [proxyType, setProxyType] = createSignal(props.connection?.proxy_type || "");
   const [proxyHost, setProxyHost] = createSignal(props.connection?.proxy_host || "");
   const [proxyPort, setProxyPort] = createSignal(props.connection?.proxy_port || 1080);
   const [proxyUsername, setProxyUsername] = createSignal(props.connection?.proxy_username || "");
   const [proxyPassword, setProxyPassword] = createSignal(props.connection?.proxy_password || "");
-
-  // Advanced tab
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
-  const [timeout, setTimeout] = createSignal(30);
-
-  // Folder tab
+  const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
 
+  const isValid = () => name().trim().length > 0 && host().trim().length > 0;
+
+  const buildConfig = (): ConnectionConfig => ({
+    id: props.connection?.id || "",
+    name: name().trim(),
+    protocol: "ssh",
+    host: host().trim(),
+    port: port(),
+    username: username().trim(),
+    auth_type: authType(),
+    password: authType() === "password" ? password() : undefined,
+    private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
+    passphrase: authType() === "key_with_passphrase" ? passphrase() : undefined,
+    color: color(),
+    tags: remark(),
+    folder_id: folderId() || undefined,
+    proxy_type: proxyType() || undefined,
+    proxy_host: proxyHost() || undefined,
+    proxy_port: proxyPort() || undefined,
+    proxy_username: proxyUsername() || undefined,
+    proxy_password: proxyPassword() || undefined,
+    encoding: encoding(),
+    timeout_ms: timeout() * 1000,
+  });
+
   const handleTest = async () => {
+    if (!isValid()) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const { api } = await import("../utils/api");
-      const config = buildConfig();
-      const result = await api.testConnection(config);
-      setTestResult("success:" + result);
-    } catch (e) {
-      setTestResult("error:" + String(e));
+      setTestResult(`success:${await api.testConnection(buildConfig())}`);
+    } catch (error) {
+      setTestResult(`error:${String(error)}`);
     } finally {
       setTesting(false);
     }
   };
 
-  const buildConfig = (): ConnectionConfig => {
-    return {
-      id: props.connection?.id || "",
-      name: name(),
-      protocol: protocol(),
-      host: host(),
-      port: port(),
-      username: username(),
-      auth_type: authType(),
-      password: authType() === "password" ? password() : undefined,
-      private_key: (authType() === "key" || authType() === "key_with_passphrase") ? privateKey() : undefined,
-      passphrase: authType() === "key_with_passphrase" ? passphrase() : undefined,
-      color: color(),
-      folder_id: folderId() || undefined,
-      proxy_type: proxyType() || undefined,
-      proxy_host: proxyHost() || undefined,
-      proxy_port: proxyPort() || undefined,
-      proxy_username: proxyUsername() || undefined,
-      proxy_password: proxyPassword() || undefined,
-      encoding: encoding(),
-    };
+  const handleSubmit = (event: Event) => {
+    event.preventDefault();
+    if (isValid()) props.onSave(buildConfig());
   };
 
-  const handleSubmit = (e: Event) => {
-    e.preventDefault();
-    props.onSave(buildConfig());
-  };
-
-  const tabClasses = (tab: TabType) => {
-    return `tab-btn ${activeTab() === tab ? "active" : ""}`;
-  };
+  const authButton = (value: string, label: string, disabled = false) => (
+    <button
+      type="button"
+      class={`ssh-auth-pill ${authType() === value ? "active" : ""}`}
+      disabled={disabled}
+      onClick={() => !disabled && setAuthType(value)}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div class="modal-overlay" onClick={props.onCancel}>
-      <div class="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h2>{props.connection?.id ? "编辑连接" : "新建连接"}</h2>
+    <div class="modal-overlay ssh-config-overlay" onClick={props.onCancel}>
+      <div class="ssh-config-modal" onClick={event => event.stopPropagation()}>
+        <header class="ssh-config-header">
+          <h2>SSH配置编辑</h2>
+          <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">×</button>
+        </header>
 
-        <div class="content-tabs">
-          <button class={tabClasses("general")} onClick={() => setActiveTab("general")}>常规</button>
-          <button class={tabClasses("proxy")} onClick={() => setActiveTab("proxy")}>代理</button>
-          <button class={tabClasses("advanced")} onClick={() => setActiveTab("advanced")}>高级</button>
-          <button class={tabClasses("folder")} onClick={() => setActiveTab("folder")}>文件夹</button>
-        </div>
+        <form class="ssh-config-form" onSubmit={handleSubmit}>
+          <div class="ssh-config-card">
+            <nav class="ssh-config-tabs">
+              {([
+                ["general", "常规"], ["tunnel", "隧道"], ["proxy", "代理"],
+                ["environment", "环境变量"], ["automation", "自动化"], ["advanced", "高级"],
+              ] as Array<[TabType, string]>).map(([id, label]) => (
+                <button type="button" class={activeTab() === id ? "active" : ""} onClick={() => setActiveTab(id)}>{label}</button>
+              ))}
+            </nav>
 
-        <form onSubmit={handleSubmit} style={{ "margin-top": "20px" }}>
-          <Show when={activeTab() === "general"}>
-            <div class="form-group">
-              <label>名称</label>
-              <input type="text" value={name()} onInput={(e) => setName(e.currentTarget.value)} required />
-            </div>
-
-            <div class="form-group">
-              <label>协议</label>
-              <select value={protocol()} onChange={(e) => setProtocol(e.currentTarget.value)}>
-                <For each={props.protocols}>
-                  {(p) => <option value={p.id}>{p.name}</option>}
-                </For>
-              </select>
-            </div>
-
-            <div class="form-row">
-              <div class="form-group flex-1">
-                <label>主机</label>
-                <input type="text" value={host()} onInput={(e) => setHost(e.currentTarget.value)} required />
-              </div>
-              <div class="form-group">
-                <label>端口</label>
-                <input type="number" value={port()} onInput={(e) => setPort(parseInt(e.currentTarget.value))} required />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label>用户名</label>
-              <input type="text" value={username()} onInput={(e) => setUsername(e.currentTarget.value)} required />
-            </div>
-
-            <div class="form-group">
-              <label>认证方式</label>
-              <select value={authType()} onChange={(e) => setAuthType(e.currentTarget.value)}>
-                <option value="password">密码</option>
-                <option value="key">私钥</option>
-                <option value="key_with_passphrase">私钥 + 密码</option>
-                <option value="agent">Agent (ssh-agent)</option>
-              </select>
-            </div>
-
-            <Show when={authType() === "password"}>
-              <div class="form-group">
-                <label>密码</label>
-                <div class="password-input-wrapper">
-                  <input
-                    type={showPassword() ? "text" : "password"}
-                    value={password()}
-                    onInput={(e) => setPassword(e.currentTarget.value)}
-                  />
-                  <button type="button" class="btn-show-password" onClick={() => setShowPassword(!showPassword())}>
-                    {showPassword() ? "隐藏" : "显示"}
-                  </button>
+            <Show when={activeTab() === "general"}>
+              <div class="ssh-general-grid">
+                <div class="ssh-field ssh-color-field">
+                  <label>颜色标签</label>
+                  <div class="ssh-color-palette">
+                    <For each={COLORS}>{item => (
+                      <button
+                        type="button"
+                        aria-label={`选择颜色 ${item}`}
+                        class={color() === item ? "active" : ""}
+                        style={{ background: item }}
+                        onClick={() => setColor(item)}
+                      />
+                    )}</For>
+                    <button type="button" class="ssh-color-clear" onClick={() => setColor("")}>×</button>
+                  </div>
                 </div>
+
+                <label class="ssh-field">
+                  <span>环境</span>
+                  <select value={folderId()} onChange={event => setFolderId(event.currentTarget.value)}>
+                    <option value="">无</option>
+                    <For each={connectionStore.state.folders}>{folder => (
+                      <option value={folder.id}>{folder.name}</option>
+                    )}</For>
+                  </select>
+                </label>
+
+                <label class={`ssh-field ${!name().trim() ? "invalid" : ""}`}>
+                  <span>名称</span>
+                  <input autofocus value={name()} onInput={event => setName(event.currentTarget.value)} />
+                  <small>name is a required field</small>
+                </label>
+
+                <label class={`ssh-field ${!host().trim() ? "invalid" : ""}`}>
+                  <span>主机</span>
+                  <input value={host()} onInput={event => setHost(event.currentTarget.value)} />
+                  <small>host is a required field</small>
+                </label>
+
+                <label class="ssh-field">
+                  <span>用户</span>
+                  <input value={username()} onInput={event => setUsername(event.currentTarget.value)} />
+                </label>
+
+                <label class="ssh-field">
+                  <span>端口</span>
+                  <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
+                </label>
+
+                <div class="ssh-auth-options">
+                  {authButton("password", "密码")}
+                  {authButton("key", "私钥")}
+                  {authButton("key_with_passphrase", "MFA/2FA")}
+                  {authButton("credential", "凭据", true)}
+                  {authButton("template", "模板机私钥", true)}
+                  {authButton("agent", "SSH Agent")}
+                  {authButton("none", "不验证")}
+                </div>
+
+                <Show when={authType() === "password"}>
+                  <label class="ssh-field">
+                    <span>密码</span>
+                    <div class="ssh-secret-input">
+                      <input type={showPassword() ? "text" : "password"} value={password()} onInput={event => setPassword(event.currentTarget.value)} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword())}>{showPassword() ? "◉" : "⊙"}</button>
+                    </div>
+                  </label>
+                </Show>
+
+                <Show when={authType() === "key" || authType() === "key_with_passphrase"}>
+                  <label class="ssh-field ssh-key-field">
+                    <span>私钥</span>
+                    <textarea rows="3" value={privateKey()} onInput={event => setPrivateKey(event.currentTarget.value)} />
+                  </label>
+                  <Show when={authType() === "key_with_passphrase"}>
+                    <label class="ssh-field">
+                      <span>私钥密码</span>
+                      <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
+                    </label>
+                  </Show>
+                </Show>
+
+                <label class="ssh-field ssh-remark-field">
+                  <span>备注</span>
+                  <textarea value={remark()} onInput={event => setRemark(event.currentTarget.value)} />
+                </label>
               </div>
             </Show>
 
-            <Show when={authType() === "key" || authType() === "key_with_passphrase"}>
-              <div class="form-group">
-                <label>私钥</label>
-                <div class="password-input-wrapper">
-                  <textarea
-                    value={privateKey()}
-                    onInput={(e) => setPrivateKey(e.currentTarget.value)}
-                    rows={5}
-                    style={{ "font-family": "monospace" }}
-                  />
-                  <button type="button" class="btn-show-password" onClick={() => setShowPrivateKey(!showPrivateKey())}>
-                    {showPrivateKey() ? "隐藏" : "显示"}
-                  </button>
-                </div>
+            <Show when={activeTab() === "proxy"}>
+              <div class="ssh-tab-panel">
+                <label class="ssh-field"><span>代理类型</span>
+                  <select value={proxyType()} onChange={event => setProxyType(event.currentTarget.value)}>
+                    <option value="">不使用代理</option><option value="socks5">SOCKS5</option><option value="http">HTTP CONNECT</option>
+                  </select>
+                </label>
+                <Show when={proxyType()}>
+                  <label class="ssh-field"><span>代理主机</span><input value={proxyHost()} onInput={event => setProxyHost(event.currentTarget.value)} /></label>
+                  <label class="ssh-field"><span>代理端口</span><input type="number" value={proxyPort()} onInput={event => setProxyPort(Number(event.currentTarget.value))} /></label>
+                  <label class="ssh-field"><span>代理用户</span><input value={proxyUsername()} onInput={event => setProxyUsername(event.currentTarget.value)} /></label>
+                  <label class="ssh-field"><span>代理密码</span><input type="password" value={proxyPassword()} onInput={event => setProxyPassword(event.currentTarget.value)} /></label>
+                </Show>
               </div>
             </Show>
 
-            <Show when={authType() === "key_with_passphrase"}>
-              <div class="form-group">
-                <label>私钥密码</label>
-                <input type="password" value={passphrase()} onInput={(e) => setPassphrase(e.currentTarget.value)} />
+            <Show when={activeTab() === "advanced"}>
+              <div class="ssh-tab-panel">
+                <label class="ssh-field"><span>终端编码</span>
+                  <select value={encoding()} onChange={event => setEncoding(event.currentTarget.value)}>
+                    <For each={ENCODINGS}>{item => <option value={item}>{item}</option>}</For>
+                  </select>
+                </label>
+                <label class="ssh-field"><span>连接超时（秒）</span><input type="number" min="5" max="120" value={timeout()} onInput={event => setTimeout(Number(event.currentTarget.value))} /></label>
               </div>
             </Show>
 
-            <div class="form-group">
-              <label>颜色</label>
-              <input type="color" value={color() || "#3b82f6"} onInput={(e) => setColor(e.currentTarget.value)} />
-            </div>
-          </Show>
-
-          <Show when={activeTab() === "proxy"}>
-            <div class="form-group">
-              <label>代理类型</label>
-              <select value={proxyType()} onChange={(e) => setProxyType(e.currentTarget.value)}>
-                <option value="">不使用代理</option>
-                <option value="socks5">SOCKS5</option>
-                <option value="http">HTTP CONNECT</option>
-              </select>
-            </div>
-
-            <Show when={proxyType()}>
-              <div class="form-row">
-                <div class="form-group flex-1">
-                  <label>代理主机</label>
-                  <input type="text" value={proxyHost()} onInput={(e) => setProxyHost(e.currentTarget.value)} />
-                </div>
-                <div class="form-group">
-                  <label>代理端口</label>
-                  <input type="number" value={proxyPort()} onInput={(e) => setProxyPort(parseInt(e.currentTarget.value))} />
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>代理用户名 (可选)</label>
-                <input type="text" value={proxyUsername()} onInput={(e) => setProxyUsername(e.currentTarget.value)} />
-              </div>
-
-              <div class="form-group">
-                <label>代理密码 (可选)</label>
-                <input type="password" value={proxyPassword()} onInput={(e) => setProxyPassword(e.currentTarget.value)} />
-              </div>
+            <Show when={activeTab() === "tunnel" || activeTab() === "environment" || activeTab() === "automation"}>
+              <div class="ssh-tab-empty">此配置将在后续版本中提供</div>
             </Show>
-          </Show>
-
-          <Show when={activeTab() === "advanced"}>
-            <div class="form-group">
-              <label>终端编码</label>
-              <select value={encoding()} onChange={(e) => setEncoding(e.currentTarget.value)}>
-                <For each={ENCODINGS}>
-                  {(enc) => <option value={enc.value}>{enc.label}</option>}
-                </For>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>连接超时 (秒)</label>
-              <input type="number" value={timeout()} onInput={(e) => setTimeout(parseInt(e.currentTarget.value))} min={5} max={120} />
-            </div>
-          </Show>
-
-          <Show when={activeTab() === "folder"}>
-            <div class="form-group">
-              <label>所属文件夹</label>
-              <select value={folderId()} onChange={(e) => setFolderId(e.currentTarget.value)}>
-                <option value="">无 (根目录)</option>
-                <For each={connectionStore.state.folders}>
-                  {(folder) => <option value={folder.id}>{folder.name}</option>}
-                </For>
-              </select>
-            </div>
-          </Show>
+          </div>
 
           <Show when={testResult()}>
-            <div class={`test-result ${testResult()!.startsWith("success") ? "success" : "error"}`}>
+            <div class={`ssh-test-result ${testResult()!.startsWith("success:") ? "success" : "error"}`}>
               {testResult()!.replace(/^(success|error):/, "")}
             </div>
           </Show>
 
-          <div class="form-actions">
-            <button type="button" class="btn-cancel" onClick={props.onCancel}>取消</button>
-            <button type="button" class="btn-test" onClick={handleTest} disabled={testing()}>
+          <footer class="ssh-config-actions">
+            <button type="button" class="ssh-test-button" disabled={!isValid() || testing()} onClick={handleTest}>
               {testing() ? "测试中..." : "测试连接"}
             </button>
-            <button type="submit" class="btn-save">保存</button>
-          </div>
+            <button type="submit" class="ssh-save-button" disabled={!isValid()}>保存</button>
+          </footer>
         </form>
       </div>
     </div>

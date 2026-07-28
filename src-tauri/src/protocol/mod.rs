@@ -37,6 +37,7 @@ pub struct ConnectionMetadata {
 
 /// 连接选项
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct ConnectionOptions {
     /// 超时时间（毫秒）
     pub timeout_ms: Option<u64>,
@@ -65,7 +66,8 @@ impl Default for ConnectionOptions {
 /// 代理配置
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
-    pub proxy_type: String,  // socks5, http
+    #[serde(alias = "type")]
+    pub proxy_type: String, // socks5, http
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
@@ -194,15 +196,17 @@ pub struct ShellChannel {
 
 /// 插件注册表
 pub struct PluginRegistry {
-    plugins: std::sync::Arc<parking_lot::RwLock<HashMap<&'static str, std::sync::Arc<dyn ProtocolPlugin>>>>,
+    plugins: std::sync::Arc<
+        parking_lot::RwLock<HashMap<&'static str, std::sync::Arc<dyn ProtocolPlugin>>>,
+    >,
 }
 
-pub mod ssh;
-pub mod sftp;
-pub mod rdp;
+pub mod docker;
 pub mod mysql;
 pub mod pgsql;
-pub mod docker;
+pub mod rdp;
+pub mod sftp;
+pub mod ssh;
 
 impl PluginRegistry {
     pub fn new() -> Self {

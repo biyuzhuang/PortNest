@@ -355,6 +355,16 @@ body {
   background: var(--bg-tertiary);
 }
 
+.folder-header.selected {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.folder-header.selected .folder-name {
+  color: var(--text-primary);
+}
+
 .folder-header.drag-over {
   background: var(--accent);
   color: white;
@@ -375,8 +385,33 @@ body {
   border-radius: 6px;
 }
 
-.connection-item:active {
-  opacity: 0.6;
+.connection-list {
+  min-height: 44px;
+  transition: background 0.15s, outline-color 0.15s;
+}
+
+.connection-item.dragging {
+  opacity: 0.38;
+  transform: scale(0.98);
+}
+
+.root-drop-hint {
+  display: flex;
+  min-height: 38px;
+  margin: 4px 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.connection-list.drag-over .root-drop-hint {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .folder-icon {
@@ -403,6 +438,31 @@ body {
 
 .folder-children {
   padding-left: 20px;
+  min-height: 8px;
+  border-radius: 6px;
+  transition: background 0.15s, outline-color 0.15s;
+}
+
+.folder-count {
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  font-size: 9px;
+  line-height: 17px;
+  text-align: center;
+}
+
+.folder-header.drag-over .folder-count {
+  color: white;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.folder-children.drag-over {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: -1px;
 }
 
 .context-menu {
@@ -540,6 +600,671 @@ body {
   padding: 40px;
 }
 
+.welcome-kicker {
+  display: inline-flex;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 42%, transparent);
+  border-radius: 999px;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 9%, transparent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.protocol-choice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary));
+}
+
+.protocol-choice-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 9px;
+  color: #07110b;
+  background: var(--accent-primary);
+  font-family: monospace;
+  font-weight: 800;
+}
+
+.protocol-choice-card span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.protocol-choice-card small {
+  color: var(--text-muted);
+}
+
+.asset-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  margin: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.asset-view-tabs {
+  height: 38px;
+  padding-left: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.asset-view-tab {
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.asset-view-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.asset-chevron { margin-left: 4px; color: var(--text-muted); }
+
+.asset-toolbar {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(330px, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-primary);
+  font-size: 12px;
+}
+
+.asset-toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.asset-list-icon { color: var(--accent); }
+.asset-selection { color: var(--text-muted); }
+.asset-selection strong { margin: 0 5px; color: var(--accent); }
+
+.asset-breadcrumb {
+  padding: 0;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.asset-breadcrumb:hover { color: var(--accent); }
+.asset-breadcrumb-separator { color: var(--text-muted); }
+
+.asset-toolbar-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
+}
+
+.asset-toolbar-actions > button {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.asset-toolbar-actions > button:hover {
+  border-color: var(--border);
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.asset-toolbar-actions > button.active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.asset-search {
+  display: flex;
+  width: 230px;
+  height: 29px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+}
+
+.asset-search:focus-within { border-color: var(--accent); }
+
+.asset-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 12px;
+}
+
+.asset-table {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.asset-row {
+  display: grid;
+  min-width: 900px;
+  min-height: 36px;
+  grid-template-columns: minmax(190px, 1.35fr) 90px minmax(170px, 1.15fr) 110px 150px 150px minmax(120px, 1fr);
+  align-items: center;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  font-size: 12px;
+}
+
+.asset-row > div {
+  min-width: 0;
+  padding: 8px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-table-head {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 32px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.asset-table-head > div {
+  border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.asset-folder-row:nth-child(even),
+.asset-connection-row:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-secondary) 68%, transparent);
+}
+
+.asset-folder-row,
+.asset-connection-row {
+  cursor: default;
+  user-select: none;
+}
+
+.asset-folder-row:hover,
+.asset-connection-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.asset-connection-row.selected {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary));
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.asset-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.asset-folder-icon { color: #f4b93f; font-size: 13px; }
+
+.asset-terminal-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 15px;
+  place-items: center;
+  border-radius: 2px;
+  color: var(--bg-primary);
+  background: var(--text-secondary);
+  font-family: monospace;
+  font-size: 9px;
+}
+
+.asset-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #35c56a;
+}
+
+.asset-latency {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.asset-latency.testing { color: var(--text-muted); }
+.asset-latency.online { color: var(--success); }
+.asset-latency.offline { color: var(--error); }
+
+.asset-mono { font-family: "Cascadia Code", Consolas, monospace; }
+.asset-muted { color: var(--text-muted); }
+
+.asset-empty {
+  display: flex;
+  height: 100%;
+  min-height: 260px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.asset-empty > span { color: var(--accent); font: 700 32px monospace; }
+
+.asset-empty button {
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 6px;
+  color: #07110b;
+  background: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.asset-footer {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  font-size: 11px;
+}
+
+.asset-context-overlay {
+  position: fixed;
+  z-index: 1198;
+  inset: 0;
+}
+
+.asset-context-menu {
+  position: fixed;
+  z-index: 1199;
+  width: 190px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+}
+
+.asset-context-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.asset-context-menu button:hover {
+  background: var(--bg-tertiary);
+}
+
+.asset-context-menu button > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.asset-context-menu small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.asset-context-icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-weight: 700;
+}
+
+.asset-context-icon.folder {
+  color: #f4b93f;
+  background: color-mix(in srgb, #f4b93f 12%, transparent);
+}
+
+.asset-context-divider {
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--border);
+}
+
+.asset-context-caption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px 5px;
+}
+
+.asset-context-caption strong,
+.asset-context-caption span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-context-caption span {
+  color: var(--text-muted);
+  font: 10px "Cascadia Code", Consolas, monospace;
+}
+
+.asset-context-menu button.danger {
+  color: #ef6a6a;
+}
+
+.asset-context-icon.danger {
+  color: #ef6a6a;
+  background: color-mix(in srgb, #ef6a6a 10%, transparent);
+}
+
+.folder-parent-hint {
+  margin: -5px 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* PortNest-inspired application shell */
+.app-titlebar {
+  height: 40px;
+  padding-left: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, var(--bg-primary));
+}
+
+.titlebar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.titlebar-title b {
+  display: inline-grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--bg-primary);
+  background: var(--text-primary);
+  font-size: 11px;
+}
+
+.titlebar-workspace-status {
+  display: flex;
+  height: 25px;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--bg-primary);
+  font-size: 10px;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar {
+  width: 292px;
+  min-width: 292px;
+  flex-direction: row;
+  border-right: 0;
+  background: color-mix(in srgb, var(--bg-secondary) 75%, var(--bg-primary));
+}
+
+.sidebar.tree-collapsed {
+  width: 48px;
+  min-width: 48px;
+}
+
+.sidebar.tree-collapsed .asset-sidebar {
+  display: none;
+}
+
+.module-rail {
+  display: flex;
+  width: 48px;
+  min-width: 48px;
+  height: 100%;
+  align-items: center;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg-primary));
+}
+
+.module-rail-brand {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  margin: 10px 0 12px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--bg-primary);
+  background: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.module-rail-primary,
+.module-rail-bottom {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.module-rail-primary { flex: 1; }
+.module-rail-bottom { padding-bottom: 8px; }
+
+.module-rail-btn {
+  display: flex;
+  width: 38px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.module-rail-btn > span {
+  font: 600 15px "Cascadia Code", Consolas, monospace;
+}
+
+.module-rail-btn small {
+  font-size: 8px;
+  line-height: 10px;
+}
+
+.module-rail-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.module-rail-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+.module-rail-divider {
+  width: 24px;
+  height: 1px;
+  margin: 5px 0;
+  background: var(--border);
+}
+
+.asset-sidebar {
+  display: flex;
+  width: 244px;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+.sidebar-header {
+  height: 40px;
+  padding: 0 10px;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sidebar-header > strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.sidebar-header-actions button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-header-actions button:hover {
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.sidebar-search {
+  padding: 7px 9px;
+}
+
+.search-wrapper {
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: var(--bg-secondary);
+}
+
+.sidebar-actions {
+  display: none;
+}
+
+.sidebar-nav {
+  padding: 6px 0;
+}
+
+.nav-section {
+  padding: 0 6px;
+}
+
+.nav-section-title {
+  padding: 6px 7px 4px;
+  font-size: 10px;
+}
+
+.folder-header {
+  min-height: 31px;
+  padding: 5px 7px;
+  border-radius: 5px;
+}
+
+.connection-item {
+  min-height: 36px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  gap: 7px;
+}
+
+.conn-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 16px;
+  place-items: center;
+  border-radius: 2px;
+  color: var(--bg-primary) !important;
+  background: var(--text-secondary);
+  font-size: 10px;
+}
+
+.conn-name { font-size: 12px; }
+.conn-host { font-size: 9px; }
+
+.protocol-badge {
+  display: none;
+}
+
+.sidebar-footer {
+  min-height: 29px;
+  border-top: 1px solid var(--border);
+}
+
+.main-content {
+  background: color-mix(in srgb, var(--bg-secondary) 38%, var(--bg-primary));
+}
+
+.asset-workspace {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 .welcome-header {
   text-align: center;
   margin-bottom: 40px;
@@ -593,7 +1318,7 @@ body {
 }
 
 .quick-start li::before {
-  content: "鈻?;
+  content: "◆";
   color: var(--accent);
 }
 
@@ -1185,6 +1910,308 @@ body {
 
 .connection-form-close:hover {
   color: var(--text-primary);
+}
+
+/* PortNest-style SSH configuration editor */
+.ssh-config-overlay {
+  padding: 12px;
+  background: rgba(26, 31, 38, 0.28);
+  backdrop-filter: blur(2px);
+}
+
+.ssh-config-modal {
+  width: min(678px, calc(100vw - 24px));
+  height: min(590px, calc(100vh - 24px));
+  overflow: hidden;
+  border: 1px solid #c7ccd1;
+  border-radius: 7px;
+  color: #34383c;
+  background: #eef0f2;
+  box-shadow: 0 14px 40px rgba(25, 31, 38, 0.25);
+}
+
+.ssh-config-header {
+  display: flex;
+  height: 45px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px 0 17px;
+}
+
+.ssh-config-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.ssh-config-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #4a4e52;
+  background: #d8dcdf;
+  font-size: 23px;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ssh-config-close:hover { background: #ccd1d5; }
+
+.ssh-config-form {
+  display: flex;
+  height: calc(100% - 45px);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.ssh-config-card {
+  min-height: 0;
+  flex: 1;
+  margin: 0 12px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.ssh-config-tabs {
+  display: flex;
+  width: max-content;
+  margin: 16px auto 0;
+  overflow: hidden;
+  border: 1px solid #e5e8ea;
+  border-radius: 5px;
+  background: #f2f3f4;
+}
+
+.ssh-config-tabs button {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  color: #3e4347;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ssh-config-tabs button.active {
+  color: #202428;
+  background: #fff;
+  box-shadow: 0 0 0 1px #e1e5e8;
+}
+
+.ssh-general-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 17px;
+  padding: 24px 24px 16px;
+}
+
+.ssh-field {
+  display: block;
+  min-width: 0;
+}
+
+.ssh-field > span,
+.ssh-color-field > label {
+  display: block;
+  margin: 0 0 7px 2px;
+  color: #404448;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.ssh-field input,
+.ssh-field select,
+.ssh-field textarea {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 4px;
+  outline: 0;
+  color: #34383c;
+  background: #eef0f2;
+  font: 13px "Cascadia Code", Consolas, monospace;
+}
+
+.ssh-field input,
+.ssh-field select {
+  height: 32px;
+  padding: 0 8px;
+}
+
+.ssh-field textarea {
+  min-height: 46px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.ssh-field input:focus,
+.ssh-field select:focus,
+.ssh-field textarea:focus {
+  border-bottom-color: #1685df;
+}
+
+.ssh-field.invalid > span { color: #ec3b26; }
+.ssh-field.invalid input { border-bottom-color: #ec3b26; }
+
+.ssh-field small {
+  display: none;
+  margin: 5px 0 -11px;
+  color: #e93620;
+  font: 12px "Cascadia Code", Consolas, monospace;
+}
+
+.ssh-field.invalid small { display: block; }
+
+.ssh-color-palette {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 10px;
+}
+
+.ssh-color-palette button:not(.ssh-color-clear) {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.ssh-color-palette button.active {
+  outline: 2px solid rgba(35, 110, 180, 0.35);
+  outline-offset: 2px;
+}
+
+.ssh-color-palette .ssh-color-clear {
+  padding: 0 2px;
+  border: 0;
+  color: #555b60;
+  background: transparent;
+  font-size: 20px;
+  font-weight: 300;
+  cursor: pointer;
+}
+
+.ssh-auth-options {
+  display: flex;
+  align-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ssh-auth-pill {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  color: #4d5155;
+  background: #e9eaeb;
+  font: 11px "Cascadia Code", Consolas, monospace;
+  cursor: pointer;
+}
+
+.ssh-auth-pill.active {
+  color: #166cdd;
+  background: #dceaff;
+  box-shadow: inset 0 0 0 1px #83b4fb;
+}
+
+.ssh-auth-pill:disabled {
+  color: #b8bbbe;
+  cursor: not-allowed;
+}
+
+.ssh-secret-input { position: relative; }
+.ssh-secret-input input { padding-right: 35px; }
+
+.ssh-secret-input button {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  width: 30px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  color: #3d4246;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ssh-remark-field { grid-column: 1 / -1; }
+.ssh-remark-field textarea { height: 46px; resize: none; }
+.ssh-key-field textarea { font-size: 11px; }
+
+.ssh-tab-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 24px;
+  padding: 30px 24px;
+}
+
+.ssh-tab-empty {
+  display: grid;
+  min-height: 330px;
+  place-items: center;
+  color: #a1a6aa;
+  font-size: 13px;
+}
+
+.ssh-config-actions {
+  display: flex;
+  height: 53px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+}
+
+.ssh-config-actions button {
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ssh-test-button { color: #20b8ad; }
+.ssh-save-button { color: #3b82f6; }
+
+.ssh-config-actions button:disabled {
+  color: #c8e3e5;
+  cursor: not-allowed;
+}
+
+.ssh-save-button:disabled { color: #c7d9f2 !important; }
+
+.ssh-test-result {
+  position: absolute;
+  bottom: 47px;
+  left: 50%;
+  max-width: 440px;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.ssh-test-result.success { color: #1d9c66; }
+.ssh-test-result.error { color: #e33d2e; }
+
+@media (max-width: 620px), (max-height: 570px) {
+  .ssh-config-modal { height: calc(100vh - 12px); }
+  .ssh-general-grid, .ssh-tab-panel { grid-template-columns: 1fr; }
+  .ssh-remark-field { grid-column: auto; }
 }
 
 .content-tabs {

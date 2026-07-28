@@ -3,18 +3,16 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ConnectionForm } from "./components/ConnectionForm";
-import { QueryEditor } from "./components/QueryEditor";
-import { AIChat } from "./components/AIChat";
 import { TerminalView } from "./components/TerminalView";
+import { AssetList } from "./components/AssetList";
 import { SettingsModal } from "./components/SettingsModal";
-import { DockerDashboard } from "./components/DockerDashboard";
 import { connectionStore, ConnectionRecord, ConnectionConfig } from "./stores/connectionStore";
 import { initTheme } from "./stores/themeStore";
 import { uiStore } from "./stores/uiStore";
-import { api, dockerApi, ProtocolInfo } from "./utils/api";
+import { api, ProtocolInfo } from "./utils/api";
 import "./App.css";
 
-type ViewMode = "terminal" | "query" | "ai" | "docker";
+type ViewMode = "terminal";
 
 type SessionTab = {
   id: string;
@@ -39,6 +37,7 @@ const App: Component = () => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
   const [newFolderName, setNewFolderName] = createSignal("");
+  const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
   const [editingConnection, setEditingConnection] = createSignal<ConnectionRecord | null>(null);
   const [newConnectionDefaultFolderId, setNewConnectionDefaultFolderId] = createSignal<string | undefined>(undefined);
   const [protocols, setProtocols] = createSignal<ProtocolInfo[]>([]);
@@ -53,45 +52,6 @@ const App: Component = () => {
   const showRightPanel = () => {
     const session = activeSession();
     return session?.connection.protocol === "ssh";
-  };
-
-  const isSessionActive = (sessionId: string) => createMemo(() => activeSessionId() === sessionId);
-
-  const renderSessionContent = () => {
-    const session = activeSession();
-    if (!session) return null;
-
-    const renderTerminal = () => (
-      <TerminalView
-        key={session.id}
-        sessionKey={session.id}
-        connection={session.connection}
-        visible={true}
-        shellId={session.shellId}
-      />
-    );
-
-    const renderQueryEditor = () => (
-      <QueryEditor key={session.id} connection={session.connection} />
-    );
-
-    const renderDocker = () => (
-      <DockerDashboard key={session.id} connectionId={session.id} />
-    );
-
-    if (session.connection.protocol === "ssh") {
-      return renderTerminal();
-    }
-
-    if (session.connection.protocol === "mysql" || session.connection.protocol === "postgresql") {
-      return renderQueryEditor();
-    }
-
-    if (session.connection.protocol === "docker") {
-      return renderDocker();
-    }
-
-    return null;
   };
 
   // P0-3: derive the 1-based position of a session among its siblings for the
@@ -129,30 +89,11 @@ const App: Component = () => {
 
     try {
       const supportedProtocols = await api.getProtocols();
-      setProtocols(supportedProtocols);
+      setProtocols(supportedProtocols.filter(protocol => protocol.id === "ssh"));
     } catch (e) {
       console.error("Failed to get protocols:", e);
     }
 
-    // Ensure built-in SSH test connection exists in database
-    const connections = connectionStore.state.connections;
-    const hasTestConnection = connections.some(c => c.name === "测试" && c.host === "192.0.2.10");
-    if (!hasTestConnection) {
-      try {
-        await api.saveConnection({
-          name: "测试",
-          protocol: "ssh",
-          host: "192.0.2.10",
-          port: 22,
-          username: "root",
-          auth_type: "password",
-          password: "",
-        });
-        await connectionStore.loadConnections();
-      } catch (e) {
-        console.error("Failed to create test connection:", e);
-      }
-    }
   });
 
   const isBuiltinConnection = (connId: string) => connId.startsWith("builtin-");
@@ -192,16 +133,7 @@ const App: Component = () => {
   const handleConnect = async (conn: ConnectionRecord) => {
     console.log("[handleConnect] Starting connection:", conn.name, conn.id, "builtin:", isBuiltinConnection(conn.id));
 
-    if (conn.protocol === "docker") {
-      try {
-        await dockerApi.connect(conn.id);
-      } catch (e) {
-        console.error("Docker connection failed:", e);
-        alert("Docker 连接失败: " + e);
-        return;
-      }
-      createSession(conn, "docker");
-    } else if (conn.protocol === "ssh") {
+    if (conn.protocol === "ssh") {
       const sessionId = createSession(conn, "terminal");
       console.log("[handleConnect] Created session:", sessionId);
 
@@ -222,7 +154,7 @@ const App: Component = () => {
         }
       })();
     } else {
-      createSession(conn, conn.protocol === "mysql" || conn.protocol === "postgresql" ? "query" : "terminal");
+      alert("当前版本专注于 SSH / SFTP，其他连接能力将在后续版本开放。");
     }
   };
 
@@ -230,7 +162,7 @@ const App: Component = () => {
   // Called from handleCloseSession. remainingSessions is the post-close snapshot so we
   // can decide whether this session was the last tab of a given connection (relevant for
   // docker, which uses a single per-connection session).
-  const closeSessionResources = async (session: SessionTab, remainingSessions: SessionTab[]) => {
+  const closeSessionResources = async (session: SessionTab, _remainingSessions: SessionTab[]) => {
     if (session.shellId) {
       try {
         await api.disconnectShell(session.shellId);
@@ -243,18 +175,6 @@ const App: Component = () => {
     // the sftp channel when no SSH session is active). The sftpId field is reserved for
     // the future per-session ownership refactor (see P2-9). No action here for now.
 
-    if (session.connection.protocol === "docker") {
-      const stillOpen = remainingSessions.some(
-        s => s.connection.id === session.connection.id && s.connection.protocol === "docker"
-      );
-      if (!stillOpen) {
-        try {
-          await dockerApi.disconnect(session.connection.id);
-        } catch (e) {
-          console.error("[closeSessionResources] docker disconnect failed:", session.id, e);
-        }
-      }
-    }
   };
 
   // P0-2: keep session tabs in sync with the connection store. If a connection
@@ -485,12 +405,24 @@ const App: Component = () => {
   const handleDelete = async (conn: ConnectionRecord) => {
     if (confirm(`确定删除连接 "${conn.name}" 吗？`)) {
       try {
-        await api.deleteConnection(conn.id);
-        connectionStore.deleteConnection(conn.id);
+        await connectionStore.deleteConnection(conn.id);
       } catch (e) {
         console.error("Delete connection error:", e);
         alert("删除连接失败: " + e);
       }
+    }
+  };
+
+  const handleDeleteMany = async (connections: ConnectionRecord[]) => {
+    if (connections.length === 0) return;
+    if (!confirm(`确定删除选中的 ${connections.length} 个连接吗？此操作不可撤销。`)) return;
+    try {
+      await Promise.all(connections.map(connection => api.deleteConnection(connection.id)));
+      await connectionStore.loadConnections();
+    } catch (e) {
+      console.error("Batch delete connections error:", e);
+      await connectionStore.loadConnections();
+      alert("批量删除未能全部完成，列表已刷新，请检查剩余连接。错误: " + e);
     }
   };
 
@@ -508,13 +440,20 @@ const App: Component = () => {
     const name = newFolderName().trim();
     if (!name) return;
     try {
-      await connectionStore.addFolder(name);
+      await connectionStore.addFolder(name, newFolderParentId());
       setShowNewFolderDialog(false);
       setNewFolderName("");
+      setNewFolderParentId(null);
     } catch (e) {
       console.error("Create folder error:", e);
       alert("创建文件夹失败: " + e);
     }
+  };
+
+  const handleNewFolder = (parentId?: string) => {
+    setNewFolderParentId(parentId ?? null);
+    setNewFolderName("");
+    setShowNewFolderDialog(true);
   };
 
   const startResize = (e: MouseEvent) => {
@@ -544,8 +483,11 @@ const App: Component = () => {
   return (
     <div class="app-container">
       <div class="app-titlebar">
-        <span class="titlebar-title" data-tauri-drag-region>PortNest</span>
+        <span class="titlebar-title" data-tauri-drag-region><b>P</b> PortNest</span>
         <div class="titlebar-spacer" data-tauri-drag-region />
+        <div class="titlebar-workspace-status">
+          <span class="status-dot online" /> SSH / SFTP 工作区
+        </div>
         <div class="titlebar-controls">
           <div class="app-menu-container">
             <button class="titlebar-btn" onClick={() => setShowAppMenu(!showAppMenu())}>
@@ -586,43 +528,24 @@ const App: Component = () => {
           onConnect={handleConnect}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onOpenAI={(conn) => {
-            const existingSession = sessions().find(s => s.connection.id === conn.id && s.viewMode === "ai");
-            if (existingSession) {
-              setActiveSessionId(existingSession.id);
-            } else {
-              const sessionId = createSession(conn, "ai");
-              const session = sessions().find(s => s.id === sessionId);
-              if (session) {
-                session.viewMode = "ai";
-                setSessions([...sessions()]);
-              }
-            }
-          }}
+          onOpenAI={() => alert("AI 运维助手已列入后续计划。")}
         onOpenSettings={() => setShowSettings(true)}
         onNewConnection={handleNewConnection}
-        onNewFolder={() => setShowNewFolderDialog(true)}
+        onNewFolder={handleNewFolder}
         onCopyConnection={handleCopyConnection}
       />
 
       <Show when={!activeSession()}>
         <main class="main-content">
-          <div class="welcome-panel">
-            <div class="welcome-header">
-              <h1>PortNest</h1>
-              <p>一站式开发运维中枢</p>
-            </div>
-            <div class="quick-start">
-              <h3>快速开始</h3>
-              <ul>
-                <li>在左侧列表点击连接即可开始会话</li>
-                <li>右键连接可以编辑、删除、复制或进行 AI 诊断</li>
-                <li>数据库连接支持 SQL 查询功能</li>
-                <li>SSH 连接支持终端交互和文件传输</li>
-                <li>点击右上角 ⋮ 打开菜单</li>
-              </ul>
-            </div>
-          </div>
+          <AssetList
+            onConnect={handleConnect}
+            onEdit={handleEdit}
+            onCopy={handleCopyConnection}
+            onDelete={handleDelete}
+            onDeleteMany={handleDeleteMany}
+            onNewConnection={handleNewConnection}
+            onNewFolder={() => handleNewFolder()}
+          />
         </main>
       </Show>
 
@@ -732,12 +655,6 @@ const App: Component = () => {
                         shellId={session.shellId}
                       />
                     )}
-                    {(session.connection.protocol === "mysql" || session.connection.protocol === "postgresql") && (
-                      <QueryEditor connection={session.connection} />
-                    )}
-                    {session.connection.protocol === "docker" && (
-                      <DockerDashboard connectionId={session.id} />
-                    )}
                   </div>
                 );
               }}
@@ -778,7 +695,12 @@ const App: Component = () => {
       <Show when={showNewFolderDialog()}>
         <div class="modal-overlay" onClick={() => setShowNewFolderDialog(false)}>
           <div class="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>新建文件夹</h3>
+            <h3>{newFolderParentId() ? "新建子文件夹" : "新建文件夹"}</h3>
+            <Show when={newFolderParentId()}>
+              <p class="folder-parent-hint">
+                创建到：{connectionStore.state.folders.find(folder => folder.id === newFolderParentId())?.name}
+              </p>
+            </Show>
             <div class="form-group">
               <input
                 type="text"
@@ -800,12 +722,12 @@ const App: Component = () => {
         <div class="modal-overlay" onClick={() => setShowAbout(false)}>
           <div class="modal-content" onClick={(e) => e.stopPropagation()} style={{ "max-width": "360px" }}>
             <h2>PortNest</h2>
-            <p style={{ color: "var(--text-secondary)", "margin-bottom": "12px" }}>一站式开发运维中枢</p>
+            <p style={{ color: "var(--text-secondary)", "margin-bottom": "12px" }}>安全、专注的 SSH / SFTP 工作区</p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px", "margin-bottom": "8px" }}>
               版本 0.1.0 · 基于 Tauri 2.0 + SolidJS
             </p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
-              支持 SSH · SFTP · MySQL · PostgreSQL · Docker · RDP
+              当前专注 SSH · SFTP，数据库与容器能力将在后续版本开放
             </p>
             <div class="form-actions" style={{ "margin-top": "20px" }}>
               <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>

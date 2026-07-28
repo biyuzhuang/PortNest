@@ -12,13 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "PortNest - 一站式开发运维中枢",
+        "title": "PortNest - SSH / SFTP Workspace",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
         "minHeight": 700,
         "center": true,
         "resizable": true,
+        "dragDropEnabled": false,
         "fullscreen": false,
         "decorations": false,
         "transparent": false

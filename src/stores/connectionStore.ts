@@ -101,10 +101,21 @@ export const connectionStore = {
 
   async deleteFolder(folderId: string) {
     try {
+      const deletedFolder = state.folders.find(folder => folder.id === folderId);
+      const parentId = deletedFolder?.parentId ?? null;
       await api.deleteFolder(folderId);
-      // 后端会把 folder 里所有连接的 folder_id 置为 NULL（移到根目录），
-      // 同步更新本地 store；否则这些连接会变成"既不在根目录、原文件夹又没了"的孤儿。
-      setState("connections", (c) => c.folder_id === folderId, "folder_id", undefined);
+      setState(
+        "connections",
+        connection => connection.folder_id === folderId,
+        "folder_id",
+        parentId ?? undefined,
+      );
+      setState(
+        "folders",
+        folder => folder.parentId === folderId,
+        "parentId",
+        parentId,
+      );
       setState("folders", state.folders.filter(f => f.id !== folderId));
     } catch (e) {
       setState("error", String(e));
@@ -117,11 +128,13 @@ export const connectionStore = {
   },
 
   async moveConnectionToFolder(connectionId: string, folderId: string | null) {
+    const connection = state.connections.find(c => c.id === connectionId);
+    const previousFolderId = connection?.folder_id;
+    setState("connections", (c) => c.id === connectionId, "folder_id", folderId ?? undefined);
     try {
       await api.moveConnectionToFolder(connectionId, folderId ?? undefined);
-      // Update local state
-      setState("connections", (c) => c.id === connectionId, "folder_id", folderId ?? undefined);
     } catch (e) {
+      setState("connections", (c) => c.id === connectionId, "folder_id", previousFolderId);
       setState("error", String(e));
       throw e;
     }

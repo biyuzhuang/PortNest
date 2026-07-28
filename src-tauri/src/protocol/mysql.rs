@@ -1,6 +1,6 @@
-﻿//! MySQL 数据库协议插件
+//! MySQL 数据库协议插件
 use async_trait::async_trait;
-use mysql_async::{OptsBuilder, Pool, prelude::Queryable, Row};
+use mysql_async::{prelude::Queryable, OptsBuilder, Pool, Row};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -29,10 +29,15 @@ impl MysqlConnectionHandle {
     }
 
     pub async fn query(&self, sql: &str) -> Result<Vec<Row>> {
-        let mut conn = self.pool.get_conn().await
+        let mut conn = self
+            .pool
+            .get_conn()
+            .await
             .map_err(|e| Error::DatabaseError(format!("获取连接失败: {}", e)))?;
 
-        let result: Vec<Row> = conn.query(sql).await
+        let result: Vec<Row> = conn
+            .query(sql)
+            .await
             .map_err(|e| Error::DatabaseError(format!("查询失败: {}", e)))?;
 
         Ok(result)

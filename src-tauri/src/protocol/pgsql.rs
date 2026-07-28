@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential,
-    ProtocolCapability, ProtocolPlugin,
+    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, ProtocolCapability,
+    ProtocolPlugin,
 };
 
 /// PostgreSQL 连接句柄

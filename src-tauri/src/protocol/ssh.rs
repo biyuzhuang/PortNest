@@ -2,19 +2,20 @@
 
 use async_trait::async_trait;
 use base64::Engine;
+use parking_lot::Mutex;
+use sha2::Digest;
 use ssh2::{Channel, Session};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::time::Instant;
-use uuid::Uuid;
-use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential,
-    CredentialType, ProtocolCapability, ProtocolPlugin, ShellChannel,
+    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, CredentialType,
+    ProtocolCapability, ProtocolPlugin, ShellChannel,
 };
 
 /// Shell 通道包装，使用独立的锁
@@ -49,20 +50,22 @@ impl SshConnectionHandle {
 
     /// 打开新的 shell 通道
     pub fn open_shell_channel(&self, cols: u32, rows: u32) -> Result<ShellChannel> {
-        let mut channel = self.session.channel_session()
+        let mut channel = self
+            .session
+            .channel_session()
             .map_err(|e| Error::SshError(e))?;
 
-        channel.request_pty(
-            "xterm-256color",
-            None,
-            Some((cols, rows, 0, 0)),
-        )
-        .map_err(|e| Error::SshError(e))?;
-
-        channel.shell()
+        channel
+            .request_pty("xterm-256color", None, Some((cols, rows, 0, 0)))
             .map_err(|e| Error::SshError(e))?;
 
-        tracing::info!("SSH shell channel opened successfully, cols={}, rows={}", cols, rows);
+        channel.shell().map_err(|e| Error::SshError(e))?;
+
+        tracing::info!(
+            "SSH shell channel opened successfully, cols={}, rows={}",
+            cols,
+            rows
+        );
 
         // Switch to non-blocking mode after shell is opened
         // This prevents read_shell from blocking while holding the lock
@@ -133,14 +136,23 @@ impl SshConnectionHandle {
         if let Some(entry) = entry {
             // Lock only this specific channel
             let mut channel = entry.channel.lock();
-            tracing::debug!("write_shell: writing {} bytes to shell {:?}", data.len(), shell_id);
+            tracing::debug!(
+                "write_shell: writing {} bytes to shell {:?}",
+                data.len(),
+                shell_id
+            );
             // In non-blocking mode, write may return WouldBlock
             // Try writing with a simple retry
             let mut written = 0;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
             while written < data.len() {
                 match channel.write(&data[written..]) {
+                    Ok(0) => return Err(Error::ConnectionFailed("SSH 通道已关闭".to_string())),
                     Ok(n) => written += n,
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if std::time::Instant::now() >= deadline {
+                            return Err(Error::Timeout("SSH 写入超时".to_string()));
+                        }
                         // Brief pause and retry
                         std::thread::sleep(std::time::Duration::from_millis(1));
                         continue;
@@ -164,7 +176,8 @@ impl SshConnectionHandle {
 
         if let Some(entry) = entry {
             let mut channel = entry.channel.lock();
-            channel.request_pty_size(cols, rows, None, None)
+            channel
+                .request_pty_size(cols, rows, None, None)
                 .map_err(|e| Error::SshError(e))?;
             Ok(())
         } else {
@@ -176,7 +189,11 @@ impl SshConnectionHandle {
     pub fn close_shell(&self, shell_id: &Uuid) -> Result<()> {
         let entry = {
             let mut shells = self.shells.lock();
-            tracing::info!("close_shell: removing shell {:?} from session, remaining shells: {}", shell_id, shells.len());
+            tracing::info!(
+                "close_shell: removing shell {:?} from session, remaining shells: {}",
+                shell_id,
+                shells.len()
+            );
             shells.remove(shell_id)
         };
 
@@ -246,7 +263,8 @@ impl ConnectionHandle for SshConnectionHandle {
     fn disconnect(&self) -> Result<()> {
         tracing::info!("disconnect: disconnecting SSH session {:?}", self.id);
         // Disconnect the SSH session - this will close all channels
-        self.session.disconnect(None, "User requested disconnect", None)
+        self.session
+            .disconnect(None, "User requested disconnect", None)
             .map_err(|e| Error::SshError(e))?;
         tracing::info!("disconnect: SSH session {:?} disconnected", self.id);
         Ok(())
@@ -257,6 +275,57 @@ impl ConnectionHandle for SshConnectionHandle {
 pub struct SshPlugin;
 
 impl SshPlugin {
+    fn verify_host_identity(&self, session: &Session, host: &str, port: u16) -> Result<()> {
+        let (host_key, host_key_type) = session
+            .host_key()
+            .ok_or_else(|| Error::ConnectionFailed("服务器未提供 SSH 主机密钥".to_string()))?;
+        let fingerprint = sha2::Sha256::digest(host_key);
+        let fingerprint = fingerprint
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
+        let key = format!("{}:{}", host, port);
+        let known_hosts_path = dirs::data_local_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("PortNest")
+            .join("known-hosts.json");
+
+        let mut known: HashMap<String, String> = if known_hosts_path.exists() {
+            let content = std::fs::read_to_string(&known_hosts_path)
+                .map_err(|e| Error::StorageError(format!("读取主机密钥记录失败: {}", e)))?;
+            serde_json::from_str(&content)
+                .map_err(|e| Error::StorageError(format!("主机密钥记录已损坏: {}", e)))?
+        } else {
+            HashMap::new()
+        };
+
+        if let Some(expected) = known.get(&key) {
+            if expected != &fingerprint {
+                return Err(Error::AuthenticationFailed(format!(
+                    "SSH 主机密钥已变化，已拒绝连接。主机: {}，新指纹: SHA256:{}",
+                    key, fingerprint
+                )));
+            }
+        } else {
+            if let Some(parent) = known_hosts_path.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| Error::StorageError(format!("创建主机密钥目录失败: {}", e)))?;
+            }
+            known.insert(key.clone(), fingerprint.clone());
+            let content = serde_json::to_vec_pretty(&known)
+                .map_err(|e| Error::StorageError(format!("序列化主机密钥失败: {}", e)))?;
+            std::fs::write(&known_hosts_path, content)
+                .map_err(|e| Error::StorageError(format!("保存主机密钥失败: {}", e)))?;
+            tracing::warn!(
+                "首次连接主机 {}，已记录 {:?} 主机密钥指纹 SHA256:{}",
+                key,
+                host_key_type,
+                fingerprint
+            );
+        }
+        Ok(())
+    }
+
     pub fn new() -> Self {
         Self
     }
@@ -276,7 +345,7 @@ impl SshPlugin {
         target_host: &str,
         target_port: u16,
         username: &Option<String>,
-        _password: &Option<String>,
+        password: &Option<String>,
     ) -> Result<tokio::net::TcpStream> {
         let mut tcp = tcp;
 
@@ -290,11 +359,15 @@ impl SshPlugin {
         let mut greeting = vec![0x05, auth_methods.len() as u8];
         greeting.extend_from_slice(&auth_methods);
 
-        tcp.write_all(&greeting).await.map_err(|e| Error::IoError(e))?;
+        tcp.write_all(&greeting)
+            .await
+            .map_err(|e| Error::IoError(e))?;
 
         // Read server auth method selection
         let mut reply = [0u8; 2];
-        tcp.read_exact(&mut reply).await.map_err(|e| Error::IoError(e))?;
+        tcp.read_exact(&mut reply)
+            .await
+            .map_err(|e| Error::IoError(e))?;
 
         if reply[0] != 0x05 {
             return Err(Error::ProtocolError("SOCKS5 协议错误".to_string()));
@@ -305,22 +378,34 @@ impl SshPlugin {
             0x02 => {
                 // Username/password auth
                 if let Some(ref user) = username {
+                    let pass = password.as_deref().unwrap_or("");
+                    if user.len() > 255 || pass.len() > 255 {
+                        return Err(Error::ProtocolError("SOCKS5 用户名或密码过长".to_string()));
+                    }
                     let mut cred = vec![0x01]; // version
                     cred.push(user.len() as u8);
                     cred.extend_from_slice(user.as_bytes());
-                    // Password is optional
-                    cred.push(0x00);
+                    cred.push(pass.len() as u8);
+                    cred.extend_from_slice(pass.as_bytes());
                     tcp.write_all(&cred).await.map_err(|e| Error::IoError(e))?;
 
                     let mut result = [0u8; 2];
-                    tcp.read_exact(&mut result).await.map_err(|e| Error::IoError(e))?;
+                    tcp.read_exact(&mut result)
+                        .await
+                        .map_err(|e| Error::IoError(e))?;
 
                     if result[1] != 0x00 {
-                        return Err(Error::AuthenticationFailed("SOCKS5 代理认证失败".to_string()));
+                        return Err(Error::AuthenticationFailed(
+                            "SOCKS5 代理认证失败".to_string(),
+                        ));
                     }
                 }
             }
-            0xFF => return Err(Error::AuthenticationFailed("SOCKS5 代理不支持任何认证方式".to_string())),
+            0xFF => {
+                return Err(Error::AuthenticationFailed(
+                    "SOCKS5 代理不支持任何认证方式".to_string(),
+                ))
+            }
             _ => return Err(Error::ProtocolError("SOCKS5 不支持的认证方式".to_string())),
         }
 
@@ -335,15 +420,39 @@ impl SshPlugin {
         connect_request.extend_from_slice(target_host.as_bytes());
         connect_request.extend_from_slice(&target_port.to_be_bytes());
 
-        tcp.write_all(&connect_request).await.map_err(|e| Error::IoError(e))?;
+        tcp.write_all(&connect_request)
+            .await
+            .map_err(|e| Error::IoError(e))?;
 
         // Read connect response
-        let mut response = [0u8; 10];
-        tcp.read_exact(&mut response).await.map_err(|e| Error::IoError(e))?;
-
-        if response[0] != 0x05 || response[1] != 0x00 {
-            return Err(Error::ProtocolError(format!("SOCKS5 连接失败: 错误码 {}", response[1])));
+        let mut response_head = [0u8; 4];
+        tcp.read_exact(&mut response_head)
+            .await
+            .map_err(Error::IoError)?;
+        if response_head[0] != 0x05 || response_head[1] != 0x00 {
+            return Err(Error::ProtocolError(format!(
+                "SOCKS5 连接失败: 错误码 {}",
+                response_head[1]
+            )));
         }
+        let address_len = match response_head[3] {
+            0x01 => 4,
+            0x04 => 16,
+            0x03 => {
+                let mut len = [0u8; 1];
+                tcp.read_exact(&mut len).await.map_err(Error::IoError)?;
+                len[0] as usize
+            }
+            _ => {
+                return Err(Error::ProtocolError(
+                    "SOCKS5 返回了未知地址类型".to_string(),
+                ))
+            }
+        };
+        let mut address_and_port = vec![0u8; address_len + 2];
+        tcp.read_exact(&mut address_and_port)
+            .await
+            .map_err(Error::IoError)?;
 
         Ok(tcp)
     }
@@ -355,13 +464,17 @@ impl SshPlugin {
         target_host: &str,
         target_port: u16,
         username: &Option<String>,
-        _password: &Option<String>,
+        password: &Option<String>,
     ) -> Result<tokio::net::TcpStream> {
         let mut tcp = tcp;
 
         // Build CONNECT request
         let auth_header = if let Some(ref user) = username {
-            let credentials = base64::engine::general_purpose::STANDARD.encode(format!("{}:", user));
+            let credentials = base64::engine::general_purpose::STANDARD.encode(format!(
+                "{}:{}",
+                user,
+                password.as_deref().unwrap_or("")
+            ));
             format!("Proxy-Authorization: Basic {}\r\n", credentials)
         } else {
             String::new()
@@ -374,7 +487,9 @@ impl SshPlugin {
             target_host, target_port, target_host, target_port, auth_header
         );
 
-        tcp.write_all(connect_request.as_bytes()).await.map_err(|e| Error::IoError(e))?;
+        tcp.write_all(connect_request.as_bytes())
+            .await
+            .map_err(|e| Error::IoError(e))?;
 
         // Read HTTP response
         let mut buffer = [0u8; 1024];
@@ -383,8 +498,17 @@ impl SshPlugin {
         let response = String::from_utf8_lossy(&buffer[..n]);
 
         // Check for 200 OK
-        if !response.contains("200") {
-            return Err(Error::ProtocolError(format!("HTTP 代理连接失败: {}", response.split("\r\n").next().unwrap_or(""))));
+        let status_line = response.lines().next().unwrap_or("");
+        let status_ok = status_line
+            .split_whitespace()
+            .nth(1)
+            .map(|code| code == "200")
+            .unwrap_or(false);
+        if !status_ok {
+            return Err(Error::ProtocolError(format!(
+                "HTTP 代理连接失败: {}",
+                response.split("\r\n").next().unwrap_or("")
+            )));
         }
 
         Ok(tcp)
@@ -440,12 +564,19 @@ impl ProtocolPlugin for SshPlugin {
 
             match proxy.proxy_type.as_str() {
                 "socks5" => {
-                    self.socks5_handshake(tcp, host, port, &proxy.username, &proxy.password).await?
+                    self.socks5_handshake(tcp, host, port, &proxy.username, &proxy.password)
+                        .await?
                 }
                 "http" => {
-                    self.http_proxy_handshake(tcp, host, port, &proxy.username, &proxy.password).await?
+                    self.http_proxy_handshake(tcp, host, port, &proxy.username, &proxy.password)
+                        .await?
                 }
-                _ => return Err(Error::ProtocolError(format!("不支持的代理类型: {}", proxy.proxy_type))),
+                _ => {
+                    return Err(Error::ProtocolError(format!(
+                        "不支持的代理类型: {}",
+                        proxy.proxy_type
+                    )))
+                }
             }
         } else {
             // Direct connection
@@ -461,29 +592,36 @@ impl ProtocolPlugin for SshPlugin {
 
         let mut sess = Session::new().map_err(|e| Error::SshError(e))?;
 
-        sess.set_tcp_stream(tcp.into_std().map_err(|e| {
-            Error::ConnectionFailed(format!("转换 TCP 流失败: {}", e))
-        })?);
+        sess.set_tcp_stream(
+            tcp.into_std()
+                .map_err(|e| Error::ConnectionFailed(format!("转换 TCP 流失败: {}", e)))?,
+        );
 
         sess.handshake()
             .map_err(|e| Error::ConnectionFailed(format!("SSH 握手失败: {}", e)))?;
+        self.verify_host_identity(&sess, host, port)?;
 
         match &credential.credential_type {
             CredentialType::Password => {
-                let pass = credential.password.as_ref()
+                let pass = credential
+                    .password
+                    .as_ref()
                     .ok_or_else(|| Error::AuthenticationFailed("缺少密码".to_string()))?;
                 sess.userauth_password(username, pass)
                     .map_err(|e| Error::AuthenticationFailed(format!("密码认证失败: {}", e)))?;
             }
             CredentialType::PrivateKey | CredentialType::PrivateKeyWithPassphrase => {
-                let key = credential.private_key.as_ref()
+                let key = credential
+                    .private_key
+                    .as_ref()
                     .ok_or_else(|| Error::AuthenticationFailed("缺少私钥".to_string()))?;
 
                 let temp_dir = std::env::temp_dir();
                 let key_path = temp_dir.join(format!("portnest_key_{}", Uuid::new_v4()));
 
-                std::fs::write(&key_path, key)
-                    .map_err(|e| Error::AuthenticationFailed(format!("写入临时密钥文件失败: {}", e)))?;
+                std::fs::write(&key_path, key).map_err(|e| {
+                    Error::AuthenticationFailed(format!("写入临时密钥文件失败: {}", e))
+                })?;
 
                 let passphrase = credential.passphrase.as_deref();
                 let res = sess.userauth_pubkey_file(username, None, &key_path, passphrase);

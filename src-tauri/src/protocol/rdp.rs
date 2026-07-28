@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::protocol::{
-    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential,
-    ProtocolCapability, ProtocolPlugin,
+    ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, ProtocolCapability,
+    ProtocolPlugin,
 };
 
 /// RDP 连接句柄
@@ -21,7 +21,11 @@ pub struct RdpConnectionHandle {
 
 impl RdpConnectionHandle {
     pub fn new(id: Uuid, remote_addr: (String, u16), username: Option<String>) -> Self {
-        Self { id, remote_addr, username }
+        Self {
+            id,
+            remote_addr,
+            username,
+        }
     }
 
     /// 获取 RDP 文件路径
@@ -32,7 +36,10 @@ impl RdpConnectionHandle {
     /// 生成 RDP 文件内容
     fn generate_rdp_file(&self) -> String {
         let mut rdp = String::new();
-        rdp.push_str(&format!("full address:s:{}:{}\n", self.remote_addr.0, self.remote_addr.1));
+        rdp.push_str(&format!(
+            "full address:s:{}:{}\n",
+            self.remote_addr.0, self.remote_addr.1
+        ));
         rdp.push_str("screen mode id:i:2\n"); // Full screen
         rdp.push_str("use multimon:i:0\n");
         rdp.push_str("desktopwidth:i:1920\n");
@@ -174,8 +181,16 @@ impl ProtocolPlugin for RdpPlugin {
         #[cfg(target_os = "windows")]
         {
             let id = Uuid::new_v4();
-            let username = if username.is_empty() { None } else { Some(username.to_string()) };
-            let handle = Box::new(RdpConnectionHandle::new(id, (host.to_string(), port), username));
+            let username = if username.is_empty() {
+                None
+            } else {
+                Some(username.to_string())
+            };
+            let handle = Box::new(RdpConnectionHandle::new(
+                id,
+                (host.to_string(), port),
+                username,
+            ));
             handle.launch()?;
             Ok(handle as Box<dyn ConnectionHandle>)
         }

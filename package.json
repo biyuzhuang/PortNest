@@ -1,7 +1,7 @@
 {
-  "name": "tauri-app",
+  "name": "portnest",
   "version": "0.1.0",
-  "description": "",
+  "description": "A focused SSH and SFTP workspace",
   "type": "module",
   "scripts": {
     "start": "vite",

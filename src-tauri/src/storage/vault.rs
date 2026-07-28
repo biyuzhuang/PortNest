@@ -22,15 +22,28 @@ impl CredentialVault {
     pub fn new(db_path: &std::path::Path) -> Result<Self> {
         // 使用数据库路径作为盐派生主密钥
         let salt = Self::generate_salt(db_path)?;
-        let key = pbkdf2_hmac_array::<Sha256, 32>(
-            Self::get_master_password().as_bytes(),
-            &salt,
-            600_000,
-        );
+        let master_key = Self::get_or_create_master_key(db_path)?;
+        let key = pbkdf2_hmac_array::<Sha256, 32>(&master_key, &salt, 600_000);
 
         let cipher = Aes256Gcm::new_from_slice(&key)
             .map_err(|e| Error::EncryptionError(format!("创建加密器失败: {}", e)))?;
 
+        Ok(Self { cipher })
+    }
+
+    pub fn needs_legacy_migration(db_path: &std::path::Path) -> bool {
+        db_path.exists() && !db_path.with_file_name("vault.key").exists()
+    }
+
+    pub fn legacy(db_path: &std::path::Path) -> Result<Self> {
+        let salt = Self::generate_salt(db_path)?;
+        let legacy_password = format!(
+            "portnest-vault-master-key-v1-{}",
+            std::env::var("USERNAME").unwrap_or_else(|_| "default-user".to_string())
+        );
+        let key = pbkdf2_hmac_array::<Sha256, 32>(legacy_password.as_bytes(), &salt, 600_000);
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| Error::EncryptionError(format!("创建旧凭据迁移器失败: {}", e)))?;
         Ok(Self { cipher })
     }
 
@@ -43,17 +56,28 @@ impl CredentialVault {
         Ok(salt)
     }
 
-    /// 获取主密码（实际应该从用户输入或密钥存储获取）
-    fn get_master_password() -> String {
-        // 浠庣郴缁扮幆澧冨彲淇濆櫒鑾峰緱涓绘帶涓绘潈闄愬崟鏍忥紝骞跺煎杺涓绘帶鏉冩ц韩浠借杺涓绘帶瀹炲姟
-        // 鍚庨【鍚庣敤鎴峰瘑鍒楃増鏈轰俊鎭搗浠ユ眽鑵愭潯浠跺湪涓绘帶涓烘眰鍗歌嚜韬
-        let salt = "portnest-vault-master-key-v1";
-        
-        // 灏濊瘯浠庣郴缁扮幆澧冨彲淇濆櫒鑾峰緱涓绘帶涓绘潈闄愬崟鏍
-        let machine_key = std::env::var("USERNAME")
-            .unwrap_or_else(|_| "default-user".to_string());
-        
-        format!("{}-{}", salt, machine_key)
+    fn get_or_create_master_key(db_path: &std::path::Path) -> Result<Vec<u8>> {
+        let key_path = db_path.with_file_name("vault.key");
+        if key_path.exists() {
+            let key = std::fs::read(&key_path)
+                .map_err(|e| Error::EncryptionError(format!("读取凭据主密钥失败: {}", e)))?;
+            if key.len() != 32 {
+                return Err(Error::EncryptionError("凭据主密钥长度无效".to_string()));
+            }
+            return Ok(key);
+        }
+
+        let mut key = vec![0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut key);
+        std::fs::write(&key_path, &key)
+            .map_err(|e| Error::EncryptionError(format!("保存凭据主密钥失败: {}", e)))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| Error::EncryptionError(format!("限制主密钥权限失败: {}", e)))?;
+        }
+        Ok(key)
     }
 
     /// 加密数据
