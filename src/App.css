@@ -238,6 +238,12 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sidebar-nav ::selection {
+  background: transparent;
 }
 
 .nav-section {
@@ -1485,6 +1491,8 @@ body {
   color: var(--text-primary);
   cursor: pointer;
   transition: background 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tab-context-menu-item:hover {

@@ -454,6 +454,38 @@ impl Database {
         Ok(())
     }
 
+    /// 原子保存资产树的父级和显示顺序。
+    pub fn update_asset_order(
+        &self,
+        connections: &[(String, Option<String>, i32)],
+        folders: &[(String, Option<String>, i32)],
+    ) -> Result<()> {
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| Error::StorageError(format!("开始更新资产排序失败: {}", e)))?;
+
+        for (id, folder_id, sort_order) in connections {
+            tx.execute(
+                "UPDATE connections SET folder_id = ?1, sort_order = ?2, updated_at = ?3 WHERE id = ?4",
+                params![folder_id, sort_order, chrono::Utc::now().timestamp(), id],
+            )
+            .map_err(|e| Error::StorageError(format!("更新会话排序失败: {}", e)))?;
+        }
+
+        for (id, parent_id, sort_order) in folders {
+            tx.execute(
+                "UPDATE folders SET parent_id = ?1, sort_order = ?2 WHERE id = ?3",
+                params![parent_id, sort_order, id],
+            )
+            .map_err(|e| Error::StorageError(format!("更新文件夹排序失败: {}", e)))?;
+        }
+
+        tx.commit()
+            .map_err(|e| Error::StorageError(format!("提交资产排序失败: {}", e)))?;
+        Ok(())
+    }
+
     /// 保存凭证（使用 JSON 结构化存储）
     pub fn save_credential_structured(
         &self,

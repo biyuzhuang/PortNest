@@ -101,6 +101,9 @@ pub fn run() {
             commands::save_folder,
             commands::delete_folder,
             commands::move_connection_to_folder,
+            commands::update_asset_order,
+            commands::read_clipboard_text,
+            commands::write_clipboard_text,
             // Test connection
             commands::test_connection,
             // Docker commands

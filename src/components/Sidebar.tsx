@@ -23,6 +23,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const [dragOverFolderId, setDragOverFolderId] = createSignal<string | null>(null);
   const [dragOverRoot, setDragOverRoot] = createSignal(false);
   const [draggingConnectionId, setDraggingConnectionId] = createSignal<string | null>(null);
+  const [draggingFolderId, setDraggingFolderId] = createSignal<string | null>(null);
   const [contextMenuFolder, setContextMenuFolder] = createSignal<ConnectionFolder | null>(null);
   const [showFolderMenu, setShowFolderMenu] = createSignal(false);
 
@@ -46,14 +47,93 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   const handleDragEnded = () => {
     setDraggingConnectionId(null);
+    setDraggingFolderId(null);
     setDragOverFolderId(null);
     setDragOverRoot(false);
   };
 
-  const getDraggedConnectionId = (event: DragEvent) =>
-    event.dataTransfer?.getData("application/x-portnest-connection")
-    || event.dataTransfer?.getData("text/plain")
-    || draggingConnectionId();
+  type DragAsset = { kind: "connection" | "folder"; id: string };
+
+  const getDraggedAsset = (event: DragEvent): DragAsset | null => {
+    const connectionId = event.dataTransfer?.getData("application/x-portnest-connection");
+    if (connectionId) return { kind: "connection", id: connectionId };
+    const folderId = event.dataTransfer?.getData("application/x-portnest-folder");
+    if (folderId) return { kind: "folder", id: folderId };
+    const fallback = event.dataTransfer?.getData("text/plain") || "";
+    if (fallback.startsWith("folder:")) return { kind: "folder", id: fallback.slice(7) };
+    if (fallback.startsWith("connection:")) return { kind: "connection", id: fallback.slice(11) };
+    if (draggingFolderId()) return { kind: "folder", id: draggingFolderId()! };
+    if (draggingConnectionId()) return { kind: "connection", id: draggingConnectionId()! };
+    return null;
+  };
+
+  const sortedConnections = (folderId: string | null) =>
+    state.connections
+      .filter(connection => (connection.folder_id ?? null) === folderId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+
+  const sortedFolders = (parentId: string | null) =>
+    state.folders
+      .filter(folder => folder.parentId === parentId)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+
+  const persistConnectionMove = (
+    connectionId: string,
+    folderId: string | null,
+    targetId?: string,
+    after = false,
+  ) => {
+    const dragged = state.connections.find(connection => connection.id === connectionId);
+    if (!dragged) return;
+    const siblings = sortedConnections(folderId).filter(connection => connection.id !== connectionId);
+    let index = targetId ? siblings.findIndex(connection => connection.id === targetId) : siblings.length;
+    if (index < 0) index = siblings.length;
+    if (after && targetId) index += 1;
+    siblings.splice(index, 0, { ...dragged, folder_id: folderId ?? undefined });
+    const updates = new Map(siblings.map((connection, order) => [
+      connection.id,
+      { ...connection, folder_id: folderId ?? undefined, sort_order: order },
+    ]));
+    const next = state.connections.map(connection => updates.get(connection.id) ?? connection);
+    void connectionStore.saveAssetOrder(next, [...state.folders]).catch(error =>
+      console.error("[Sidebar] 保存会话排序失败:", error)
+    );
+  };
+
+  const folderContains = (folderId: string, possibleChildId: string) => {
+    let current = state.folders.find(folder => folder.id === possibleChildId);
+    while (current) {
+      if (current.parentId === folderId) return true;
+      current = current.parentId
+        ? state.folders.find(folder => folder.id === current!.parentId)
+        : undefined;
+    }
+    return false;
+  };
+
+  const persistFolderMove = (
+    folderId: string,
+    parentId: string | null,
+    targetId?: string,
+    after = false,
+  ) => {
+    if (folderId === parentId || (parentId && folderContains(folderId, parentId))) return;
+    const dragged = state.folders.find(folder => folder.id === folderId);
+    if (!dragged) return;
+    const siblings = sortedFolders(parentId).filter(folder => folder.id !== folderId);
+    let index = targetId ? siblings.findIndex(folder => folder.id === targetId) : siblings.length;
+    if (index < 0) index = siblings.length;
+    if (after && targetId) index += 1;
+    siblings.splice(index, 0, { ...dragged, parentId });
+    const updates = new Map(siblings.map((folder, order) => [
+      folder.id,
+      { ...folder, parentId, sort_order: order },
+    ]));
+    const next = state.folders.map(folder => updates.get(folder.id) ?? folder);
+    void connectionStore.saveAssetOrder([...state.connections], next).catch(error =>
+      console.error("[Sidebar] 保存文件夹排序失败:", error)
+    );
+  };
 
   const handleFolderDragOver = (event: DragEvent, folderId: string) => {
     event.preventDefault();
@@ -74,14 +154,48 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const handleDrop = (event: DragEvent, folderId: string | null) => {
     event.preventDefault();
     event.stopPropagation();
-    const connectionId = getDraggedConnectionId(event);
+    const asset = getDraggedAsset(event);
     handleDragEnded();
-    if (!connectionId) return;
-    const current = state.connections.find(connection => connection.id === connectionId);
-    if ((current?.folder_id ?? null) === folderId) return;
-    void connectionStore.moveConnectionToFolder(connectionId, folderId).catch(error => {
-      console.error("[Sidebar] 移动连接失败:", error);
-    });
+    if (!asset) return;
+    if (asset.kind === "connection") {
+      persistConnectionMove(asset.id, folderId);
+    } else {
+      persistFolderMove(asset.id, folderId);
+    }
+  };
+
+  const handleFolderDrop = (event: DragEvent, folder: ConnectionFolder) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const asset = getDraggedAsset(event);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
+    handleDragEnded();
+    if (!asset) return;
+    if (asset.kind === "connection") {
+      persistConnectionMove(asset.id, folder.id);
+      setExpandedFolders(previous => new Set(previous).add(folder.id));
+      return;
+    }
+    if (ratio < 0.3) {
+      persistFolderMove(asset.id, folder.parentId, folder.id, false);
+    } else if (ratio > 0.7) {
+      persistFolderMove(asset.id, folder.parentId, folder.id, true);
+    } else {
+      persistFolderMove(asset.id, folder.id);
+      setExpandedFolders(previous => new Set(previous).add(folder.id));
+    }
+  };
+
+  const handleConnectionDrop = (event: DragEvent, target: ConnectionRecord) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const asset = getDraggedAsset(event);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const after = event.clientY > rect.top + rect.height / 2;
+    handleDragEnded();
+    if (!asset || asset.kind !== "connection" || asset.id === target.id) return;
+    persistConnectionMove(asset.id, target.folder_id ?? null, target.id, after);
   };
 
   const handleDropZoneLeave = (event: DragEvent, folderId: string | null) => {
@@ -99,8 +213,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     // 根目录区块只显示不在任何文件夹里的连接；已经在文件夹里的连接由
     // 对应 folder 的子列表渲染，否则同一条连接会同时出现在根目录和文件夹里，
     // 看上去像"移动后存在两份"。搜索时仍全表搜，便于按名字找到文件夹里的连接。
-    if (!query) return state.connections.filter(c => matchesAssetFilter(c.protocol) && !c.folder_id);
-    return state.connections.filter(
+    if (!query) return sortedConnections(null).filter(c => matchesAssetFilter(c.protocol));
+    return [...state.connections].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)).filter(
       (c) => matchesAssetFilter(c.protocol) &&
         (c.name.toLowerCase().includes(query) || c.host.toLowerCase().includes(query))
     );
@@ -109,7 +223,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const visibleFolderNodes = createMemo(() => {
     const result: Array<{ folder: ConnectionFolder; depth: number }> = [];
     const appendChildren = (parentId: string | null, depth: number) => {
-      for (const folder of state.folders.filter(item => item.parentId === parentId)) {
+      for (const folder of sortedFolders(parentId)) {
         result.push({ folder, depth });
         if (expandedFolders().has(folder.id)) appendChildren(folder.id, depth + 1);
       }
@@ -117,6 +231,35 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     appendChildren(null, 0);
     return result;
   });
+
+  const displayedConnectionCount = createMemo(() => {
+    const query = searchQuery().trim().toLowerCase();
+    const validFolderIds = new Set(state.folders.map(folder => folder.id));
+    return state.connections.filter(connection => {
+      if (!matchesAssetFilter(connection.protocol)) return false;
+      if (connection.folder_id && !validFolderIds.has(connection.folder_id)) return false;
+      if (!query) return true;
+      return connection.name.toLowerCase().includes(query)
+        || connection.host.toLowerCase().includes(query);
+    }).length;
+  });
+
+  const folderConnectionCount = (folderId: string, visited = new Set<string>()): number => {
+    if (visited.has(folderId)) return 0;
+    const nextVisited = new Set(visited);
+    nextVisited.add(folderId);
+    const directCount = state.connections.filter(connection =>
+      connection.folder_id === folderId
+      && matchesAssetFilter(connection.protocol)
+    ).length;
+    const childCount = state.folders
+      .filter(folder => folder.parentId === folderId)
+      .reduce(
+        (total, folder) => total + folderConnectionCount(folder.id, nextVisited),
+        0,
+      );
+    return directCount + childCount;
+  };
 
   const selectAssetFilter = (filter: AssetFilter) => {
     uiStore.setAssetFilter(filter);
@@ -324,7 +467,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <div class="nav-section">
           <div class="nav-section-title">
             <span>连接列表</span>
-            <span class="conn-count">{state.connections.length}</span>
+            <span class="conn-count">{displayedConnectionCount()}</span>
           </div>
 
           <Show when={!searchQuery() && state.folders.length > 0}>
@@ -335,6 +478,15 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 <div class="folder-item">
                   <div
                     class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""} ${uiStore.selectedAssetFolderId() === folder.id ? "selected" : ""}`}
+                    draggable={true}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      event.dataTransfer?.setData("application/x-portnest-folder", folder.id);
+                      event.dataTransfer?.setData("text/plain", `folder:${folder.id}`);
+                      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+                      setDraggingFolderId(folder.id);
+                    }}
+                    onDragEnd={handleDragEnded}
                     onClick={() => {
                       uiStore.setSelectedAssetFolderId(folder.id);
                       toggleFolder(folder.id);
@@ -343,7 +495,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                     onDragEnter={(event) => handleFolderDragOver(event, folder.id)}
                     onDragOver={(event) => handleFolderDragOver(event, folder.id)}
                     onDragLeave={(event) => handleDropZoneLeave(event, folder.id)}
-                    onDrop={(event) => handleDrop(event, folder.id)}
+                    onDrop={(event) => handleFolderDrop(event, folder)}
                     style={{ "margin-left": `${node.depth * 13}px` }}
                   >
                     <span class="folder-icon">
@@ -351,10 +503,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                     </span>
                     <span class="folder-name">{folder.name}</span>
                     <span class="folder-count">
-                      {state.connections.filter(connection =>
-                        connection.folder_id === folder.id
-                        && matchesAssetFilter(connection.protocol)
-                      ).length}
+                      {folderConnectionCount(folder.id)}
                     </span>
                     <span class="folder-toggle">
                       {expandedFolders().has(folder.id) ? "▼" : "▶"}
@@ -368,7 +517,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                       onDragLeave={(event) => handleDropZoneLeave(event, folder.id)}
                       onDrop={(event) => handleDrop(event, folder.id)}
                     >
-                      <For each={state.connections.filter(c => matchesAssetFilter(c.protocol) && c.folder_id === folder.id)}>
+                      <For each={sortedConnections(folder.id).filter(c => matchesAssetFilter(c.protocol))}>
                         {(conn) => (
                           <ConnectionItem
                             conn={conn}
@@ -378,6 +527,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                             dragging={draggingConnectionId() === conn.id}
                             onDragStarted={handleDragStarted}
                             onDragEnded={handleDragEnded}
+                            onDropAsset={handleConnectionDrop}
                           />
                         )}
                       </For>
@@ -409,6 +559,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   dragging={draggingConnectionId() === conn.id}
                   onDragStarted={handleDragStarted}
                   onDragEnded={handleDragEnded}
+                  onDropAsset={handleConnectionDrop}
                 />
               )}
             </For>
@@ -572,6 +723,7 @@ interface ConnectionItemProps {
   dragging: boolean;
   onDragStarted: (connectionId: string) => void;
   onDragEnded: () => void;
+  onDropAsset: (event: DragEvent, connection: ConnectionRecord) => void;
   builtin?: boolean;
 }
 
@@ -604,7 +756,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       // 避免部分浏览器/WKWebView 只接受 text/plain 导致 dropEffect 失效。
       // effectAllowed 设为 all 以兼容更多场景。
       e.dataTransfer.setData("application/x-portnest-connection", props.conn.id);
-      e.dataTransfer.setData("text/plain", props.conn.id);
+      e.dataTransfer.setData("text/plain", `connection:${props.conn.id}`);
       e.dataTransfer.effectAllowed = "all";
     }
     props.onDragStarted(props.conn.id);
@@ -620,6 +772,16 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       draggable={true}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => props.onDropAsset(event, props.conn)}
       onDblClick={() => props.onConnect(props.conn)}
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >

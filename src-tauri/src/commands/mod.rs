@@ -15,6 +15,7 @@ use crate::protocol::docker::{
 use crate::protocol::PluginRegistry;
 use crate::protocol::{ConnectionHandle, Credential, CredentialType};
 use crate::storage::{ConnectionRecord, CredentialData, Database};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 fn parse_connection_options(
     raw: Option<&str>,
@@ -1200,6 +1201,43 @@ pub async fn move_connection_to_folder(
         .db
         .update_connection_folder(&connection_id, folder_id.as_deref())
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetOrderItem {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub sort_order: i32,
+}
+
+#[tauri::command]
+pub async fn update_asset_order(
+    state: tauri::State<'_, AppState>,
+    connections: Vec<AssetOrderItem>,
+    folders: Vec<AssetOrderItem>,
+) -> Result<(), String> {
+    let connection_updates = connections
+        .into_iter()
+        .map(|item| (item.id, item.parent_id, item.sort_order))
+        .collect::<Vec<_>>();
+    let folder_updates = folders
+        .into_iter()
+        .map(|item| (item.id, item.parent_id, item.sort_order))
+        .collect::<Vec<_>>();
+    state
+        .db
+        .update_asset_order(&connection_updates, &folder_updates)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn read_clipboard_text(app: tauri::AppHandle) -> Result<String, String> {
+    app.clipboard().read_text().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn write_clipboard_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 // ==================== Test Connection ====================

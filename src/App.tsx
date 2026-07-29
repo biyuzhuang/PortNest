@@ -689,6 +689,7 @@ const App: Component = () => {
                         connection={session.connection}
                         visible={sessionVisible}
                         shellId={session.shellId}
+                        onDisconnected={() => void handleReconnect(session.id)}
                       />
                     )}
                   </div>

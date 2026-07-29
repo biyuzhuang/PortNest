@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use parking_lot::Mutex;
 use sha2::Digest;
-use ssh2::{Channel, Session};
+use ssh2::{Channel, ErrorCode, Session};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -29,23 +29,47 @@ pub struct SshConnectionHandle {
     session: Session,
     remote_addr: (String, u16),
     _connected_at: Instant,
+    keepalive_interval: u32,
+    last_keepalive: Mutex<Instant>,
     /// 活跃的 shell 通道，每个通道有独立的锁
     shells: Arc<Mutex<HashMap<Uuid, Arc<ShellEntry>>>>,
 }
 
 impl SshConnectionHandle {
-    pub fn new(id: Uuid, session: Session, remote_addr: (String, u16)) -> Self {
+    pub fn new(
+        id: Uuid,
+        session: Session,
+        remote_addr: (String, u16),
+        keepalive_interval: u32,
+    ) -> Self {
         Self {
             id,
             session,
             remote_addr,
             _connected_at: Instant::now(),
+            keepalive_interval,
+            last_keepalive: Mutex::new(Instant::now()),
             shells: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn session(&self) -> &Session {
         &self.session
+    }
+
+    fn send_keepalive_if_due(&self) -> Result<()> {
+        let mut last = self.last_keepalive.lock();
+        if last.elapsed() < std::time::Duration::from_secs(self.keepalive_interval as u64) {
+            return Ok(());
+        }
+        match self.session.keepalive_send() {
+            Ok(_) => {
+                *last = Instant::now();
+                Ok(())
+            }
+            Err(error) if error.code() == ErrorCode::Session(-37) => Ok(()),
+            Err(error) => Err(Error::SshError(error)),
+        }
     }
 
     /// 打开新的 shell 通道
@@ -88,6 +112,7 @@ impl SshConnectionHandle {
 
     /// 读取 shell 数据
     pub fn read_shell(&self, shell_id: &Uuid, buf: &mut [u8]) -> Result<usize> {
+        self.send_keepalive_if_due()?;
         // Get the entry Arc, then release the HashMap lock
         let entry = {
             let shells = self.shells.lock();
@@ -134,8 +159,6 @@ impl SshConnectionHandle {
         };
 
         if let Some(entry) = entry {
-            // Lock only this specific channel
-            let mut channel = entry.channel.lock();
             tracing::debug!(
                 "write_shell: writing {} bytes to shell {:?}",
                 data.len(),
@@ -146,21 +169,26 @@ impl SshConnectionHandle {
             let mut written = 0;
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
             while written < data.len() {
-                match channel.write(&data[written..]) {
+                let write_result = {
+                    let mut channel = entry.channel.lock();
+                    channel.write(&data[written..])
+                };
+                match write_result {
                     Ok(0) => return Err(Error::ConnectionFailed("SSH 通道已关闭".to_string())),
                     Ok(n) => written += n,
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                         if std::time::Instant::now() >= deadline {
                             return Err(Error::Timeout("SSH 写入超时".to_string()));
                         }
-                        // Brief pause and retry
-                        std::thread::sleep(std::time::Duration::from_millis(1));
+                        // Release the channel lock before retrying so reads and
+                        // remote window updates can continue.
+                        std::thread::sleep(std::time::Duration::from_millis(2));
                         continue;
                     }
                     Err(e) => return Err(Error::IoError(e)),
                 }
             }
-            let _ = channel.flush();
+            let _ = entry.channel.lock().flush();
             Ok(written)
         } else {
             Err(Error::ProtocolError("Shell 通道不存在".to_string()))
@@ -640,16 +668,20 @@ impl ProtocolPlugin for SshPlugin {
             return Err(Error::AuthenticationFailed("认证未成功".to_string()));
         }
 
+        let keepalive_interval = options.keepalive_interval.unwrap_or(15).max(5);
+        sess.set_keepalive(true, keepalive_interval);
+
         let id = Uuid::new_v4();
         Ok(Box::new(SshConnectionHandle::new(
             id,
             sess,
             (host.to_string(), port),
+            keepalive_interval,
         )))
     }
 
-    async fn health_check(&self, _handle: &dyn ConnectionHandle) -> Result<bool> {
-        Ok(true)
+    async fn health_check(&self, handle: &dyn ConnectionHandle) -> Result<bool> {
+        Ok(handle.status() == crate::protocol::SessionStatus::Connected)
     }
 
     async fn get_metadata(&self, _handle: &dyn ConnectionHandle) -> Result<ConnectionMetadata> {

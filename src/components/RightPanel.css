@@ -212,7 +212,7 @@
 
 /* Subtle PortNest-style file panel handle */
 .right-panel-collapse-btn {
-  left: -8px;
+  left: 2px;
   width: 16px;
   height: 36px;
   border: 0;
@@ -221,6 +221,7 @@
   background: #eceff1;
   font-size: 13px;
   opacity: 0.82;
+  z-index: 20;
 }
 
 .right-panel-collapse-btn:hover {
@@ -232,16 +233,23 @@
 
 .right-panel-expand-tab {
   display: grid;
+  position: relative;
+  right: auto;
+  top: auto;
+  transform: none;
+  flex: 0 0 18px;
+  align-self: center;
   width: 16px;
   height: 36px;
   padding: 0;
   place-items: center;
   gap: 0;
   border: 0;
-  border-radius: 4px 0 0 4px;
+  border-radius: 4px;
   color: #70767b;
   background: #eceff1;
   opacity: 0.82;
+  z-index: 20;
 }
 
 .right-panel-expand-tab:hover {

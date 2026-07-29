@@ -17,6 +17,21 @@ use crate::protocol::{
     ProtocolPlugin,
 };
 
+struct BlockingModeGuard<'a>(&'a Session);
+
+impl<'a> BlockingModeGuard<'a> {
+    fn new(session: &'a Session) -> Self {
+        session.set_blocking(true);
+        Self(session)
+    }
+}
+
+impl Drop for BlockingModeGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set_blocking(false);
+    }
+}
+
 /// 文件信息
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileInfo {
@@ -70,8 +85,7 @@ impl SftpConnectionHandle {
 
     /// 从 SSH 连接创建 SFTP 会话
     pub fn from_ssh(ssh_handle: &crate::protocol::ssh::SshConnectionHandle) -> Result<Self> {
-        // SFTP needs blocking mode, temporarily switch
-        ssh_handle.session().set_blocking(true);
+        let _blocking = BlockingModeGuard::new(ssh_handle.session());
 
         let sftp = ssh_handle
             .session()
@@ -94,8 +108,7 @@ impl SftpConnectionHandle {
 
     /// 列出目录内容
     pub fn list_dir(&self, path: &str) -> Result<Vec<FileInfo>> {
-        // SFTP operations need blocking mode
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         tracing::debug!("SFTP list_dir: opening {}", path);
@@ -168,9 +181,6 @@ impl SftpConnectionHandle {
             entry.owner_group = format!("{}/{}", user, group);
         }
 
-        // Switch back to non-blocking for SSH shell
-        self.session.set_blocking(false);
-
         Ok(entries)
     }
 
@@ -209,8 +219,7 @@ impl SftpConnectionHandle {
         use std::fs::File as LocalFile;
         use std::io::copy;
 
-        // SFTP needs blocking mode
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         let mut remote_file = sftp.open(Path::new(remote_path)).map_err(|e| {
@@ -224,8 +233,6 @@ impl SftpConnectionHandle {
 
         let copied = copy(&mut remote_file, &mut local_file).map_err(|e| Error::IoError(e))?;
 
-        self.session.set_blocking(false);
-
         Ok(copied)
     }
 
@@ -234,8 +241,7 @@ impl SftpConnectionHandle {
         use std::fs::File as LocalFile;
         use std::io::copy;
 
-        // SFTP needs blocking mode
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         let mut local_file = LocalFile::open(local_path).map_err(|e| Error::IoError(e))?;
@@ -249,14 +255,12 @@ impl SftpConnectionHandle {
 
         let copied = copy(&mut local_file, &mut remote_file).map_err(|e| Error::IoError(e))?;
 
-        self.session.set_blocking(false);
-
         Ok(copied)
     }
 
     /// 创建目录
     pub fn create_dir(&self, path: &str) -> Result<()> {
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         sftp.mkdir(Path::new(path), 0o755).map_err(|e| {
@@ -266,13 +270,12 @@ impl SftpConnectionHandle {
             ))
         })?;
 
-        self.session.set_blocking(false);
         Ok(())
     }
 
     /// 删除文件
     pub fn delete_file(&self, path: &str) -> Result<()> {
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         sftp.unlink(Path::new(path)).map_err(|e| {
@@ -282,13 +285,12 @@ impl SftpConnectionHandle {
             ))
         })?;
 
-        self.session.set_blocking(false);
         Ok(())
     }
 
     /// 删除目录
     pub fn delete_dir(&self, path: &str) -> Result<()> {
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         sftp.rmdir(Path::new(path)).map_err(|e| {
@@ -298,13 +300,12 @@ impl SftpConnectionHandle {
             ))
         })?;
 
-        self.session.set_blocking(false);
         Ok(())
     }
 
     /// 重命名
     pub fn rename(&self, old_path: &str, new_path: &str) -> Result<()> {
-        self.session.set_blocking(true);
+        let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
         sftp.rename(Path::new(old_path), Path::new(new_path), None)
@@ -315,7 +316,6 @@ impl SftpConnectionHandle {
                 ))
             })?;
 
-        self.session.set_blocking(false);
         Ok(())
     }
 }

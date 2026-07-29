@@ -10,6 +10,7 @@ interface TerminalViewProps {
   sessionKey?: string;
   visible?: boolean | (() => boolean);
   shellId?: string;
+  onDisconnected?: () => void;
 }
 
 interface TerminalState {
@@ -17,6 +18,7 @@ interface TerminalState {
   fitAddon: FitAddon;
   shellId: string;
   readInterval: number | null;
+  stopPolling: () => void;
   resizeObserver: ResizeObserver | null;
   initialized: boolean;
   contentWritten: boolean;
@@ -44,6 +46,7 @@ export function disposeAllTerminals() {
       clearInterval(state.readInterval);
       state.readInterval = null;
     }
+    state.stopPolling();
     if (state.terminal.element?.isConnected) {
       try {
         state.terminal.dispose();
@@ -125,6 +128,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         clearInterval(existingState.readInterval);
         existingState.readInterval = null;
       }
+      existingState.stopPolling();
       terminalStates.delete(sessionKey);
     }
 
@@ -180,10 +184,25 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
     terminal.open(containerRef);
 
-    const readInterval = setInterval(async () => {
+    let readTimer: number | null = null;
+    let stopped = false;
+    let disconnectHandled = false;
+
+    const handleShellFailure = (error: unknown) => {
+      if (disconnectHandled || stopped) return;
+      disconnectHandled = true;
+      console.error("[TerminalView] SSH session disconnected:", error);
+      terminal.writeln("");
+      terminal.writeln("\x1b[1;31m连接已中断，请重新连接。\x1b[0m");
+      if (getTerminalSettings().reconnectOnDisconnect) {
+        terminal.writeln("\x1b[33m正在尝试自动重连…\x1b[0m");
+        props.onDisconnected?.();
+      }
+    };
+
+    const pollShell = async () => {
       const currentState = terminalStates.get(sessionKey);
       if (!currentState || shellId !== currentState.shellId) {
-        if (readInterval) clearInterval(readInterval);
         return;
       }
       try {
@@ -191,8 +210,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         if (data && terminal.element?.isConnected) {
           terminal.write(data);
         }
-      } catch (_) {}
-    }, 50) as unknown as number;
+      } catch (error) {
+        handleShellFailure(error);
+        return;
+      }
+      if (!stopped) {
+        readTimer = window.setTimeout(pollShell, 50);
+        currentState.readInterval = readTimer;
+      }
+    };
 
     let sessionLastHeight = 0;
     let sessionLastWidth = 0;
@@ -224,12 +250,16 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     terminal.writeln(`\x1b[32mHost: ${props.connection.host}:${props.connection.port}\x1b[0m`);
     terminal.writeln("");
 
-    terminal.onData(async (data) => {
-      try {
-        await api.writeShell(shellId, data);
-      } catch (e) {
-        console.error("Write shell error:", e);
-      }
+    let writeQueue = Promise.resolve();
+    const sendData = (data: string) => {
+      writeQueue = writeQueue
+        .then(() => api.writeShell(shellId, data))
+        .catch(error => handleShellFailure(error));
+      return writeQueue;
+    };
+
+    terminal.onData((data) => {
+      void sendData(data);
     });
 
     // Ctrl+C: 有选中文本时复制，否则发送到远程
@@ -237,7 +267,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         const selection = terminal.getSelection();
         if (selection) {
-          navigator.clipboard.writeText(selection).catch(() => {});
+          api.writeClipboardText(selection).catch(() => {});
           return false;
         }
         // No selection: xterm sends \x03 to onData
@@ -245,8 +275,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "v") {
         if (!getTerminalSettings().ctrlVPaste) return true;
-        navigator.clipboard.readText().then(text => {
-          if (text) api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
+        api.readClipboardText().then(text => {
+          if (text) sendData(text.replace(/\r?\n/g, "\r"));
         }).catch(() => {});
         return false;
       }
@@ -258,7 +288,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       if (getTerminalSettings().copyOnSelect) {
         const selection = terminal.getSelection();
         if (selection) {
-          navigator.clipboard.writeText(selection).catch(() => {});
+          api.writeClipboardText(selection).catch(() => {});
         }
       }
     });
@@ -267,9 +297,9 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       e.preventDefault();
       if (getTerminalSettings().rightClickAction !== "paste") return;
       try {
-        const text = await navigator.clipboard.readText();
+        const text = await api.readClipboardText();
         if (text) {
-          await api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
+          await sendData(text.replace(/\r?\n/g, "\r"));
         }
       } catch (err) {
         console.error("Paste error:", err);
@@ -280,8 +310,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       if (e.button !== 1 || getTerminalSettings().middleClickAction !== "paste") return;
       e.preventDefault();
       try {
-        const text = await navigator.clipboard.readText();
-        if (text) await api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
+        const text = await api.readClipboardText();
+        if (text) await sendData(text.replace(/\r?\n/g, "\r"));
       } catch (_) {}
     });
 
@@ -289,7 +319,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       terminal,
       fitAddon,
       shellId,
-      readInterval,
+      readInterval: null,
+      stopPolling: () => {
+        stopped = true;
+        if (readTimer !== null) window.clearTimeout(readTimer);
+      },
       resizeObserver,
       initialized: true,
       contentWritten: true,
@@ -297,6 +331,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     };
 
     terminalStates.set(sessionKey, state);
+    void pollShell();
     console.log("[TerminalView] Created new terminal state for:", sessionKey);
 
     setTimeout(() => {
@@ -363,8 +398,9 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     if (props.sessionKey) {
       const state = terminalStates.get(props.sessionKey);
       if (state) {
+        state.stopPolling();
         if (state.readInterval) {
-          clearInterval(state.readInterval);
+          clearTimeout(state.readInterval);
           state.readInterval = null;
         }
         if (state.resizeObserver) {

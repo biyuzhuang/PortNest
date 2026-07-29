@@ -139,4 +139,33 @@ export const connectionStore = {
       throw e;
     }
   },
+
+  async saveAssetOrder(
+    connections: ConnectionRecord[],
+    folders: ConnectionFolder[],
+  ) {
+    const previousConnections = [...state.connections];
+    const previousFolders = [...state.folders];
+    setState("connections", connections);
+    setState("folders", folders);
+    try {
+      await api.updateAssetOrder(
+        connections.map(connection => ({
+          id: connection.id,
+          parent_id: connection.folder_id ?? null,
+          sort_order: connection.sort_order,
+        })),
+        folders.map(folder => ({
+          id: folder.id,
+          parent_id: folder.parentId,
+          sort_order: folder.sort_order,
+        })),
+      );
+    } catch (e) {
+      setState("connections", previousConnections);
+      setState("folders", previousFolders);
+      setState("error", String(e));
+      throw e;
+    }
+  },
 };

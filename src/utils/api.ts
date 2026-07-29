@@ -80,6 +80,12 @@ export interface ShellOpenResponse {
   shell_id: string;
 }
 
+export interface AssetOrderItem {
+  id: string;
+  parent_id: string | null;
+  sort_order: number;
+}
+
 export interface PingResult {
   reachable: boolean;
   latency_ms: number | null;
@@ -231,6 +237,18 @@ export const api = {
 
   async moveConnectionToFolder(connectionId: string, folderId?: string): Promise<void> {
     return invoke("move_connection_to_folder", { connectionId, folderId: folderId ?? null });
+  },
+
+  async updateAssetOrder(connections: AssetOrderItem[], folders: AssetOrderItem[]): Promise<void> {
+    return invoke("update_asset_order", { connections, folders });
+  },
+
+  async readClipboardText(): Promise<string> {
+    return invoke("read_clipboard_text");
+  },
+
+  async writeClipboardText(text: string): Promise<void> {
+    return invoke("write_clipboard_text", { text });
   },
 
   // Test connection
