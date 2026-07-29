@@ -179,3 +179,76 @@
   font-size: 14px;
   line-height: 1;
 }
+
+.right-panel {
+  min-width: 320px;
+  max-width: none;
+  height: 100%;
+  border-left: 1px solid #dfe3e7;
+  background: #fff;
+}
+
+.right-panel-collapse-btn {
+  left: -9px;
+  width: 18px;
+  height: 36px;
+  border-color: #dfe3e7;
+  color: #666;
+  background: #eef0f2;
+}
+
+.right-panel-top .file-manager { background: #fff; }
+.right-panel-top .file-manager-header {
+  padding: 7px 9px 4px;
+  border-bottom: 0;
+  background: #fff;
+}
+.right-panel-top .file-manager-header .toolbar { display: flex; }
+.right-panel-top .file-list { padding: 0 7px 7px; }
+.right-panel-top .file-row { padding: 0 7px; border-radius: 0; }
+.right-panel-top .file-cell.size,
+.right-panel-top .file-cell.date { display: block; }
+.right-panel-top .file-cell.name { flex: none; }
+
+/* Subtle PortNest-style file panel handle */
+.right-panel-collapse-btn {
+  left: -8px;
+  width: 16px;
+  height: 36px;
+  border: 0;
+  border-radius: 4px;
+  color: #70767b;
+  background: #eceff1;
+  font-size: 13px;
+  opacity: 0.82;
+}
+
+.right-panel-collapse-btn:hover {
+  width: 16px;
+  color: #33383d;
+  background: #e2e6e9;
+  opacity: 1;
+}
+
+.right-panel-expand-tab {
+  display: grid;
+  width: 16px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  gap: 0;
+  border: 0;
+  border-radius: 4px 0 0 4px;
+  color: #70767b;
+  background: #eceff1;
+  opacity: 0.82;
+}
+
+.right-panel-expand-tab:hover {
+  color: #33383d;
+  background: #e2e6e9;
+  opacity: 1;
+}
+
+.right-panel-expand-tab-icon { display: none; }
+.right-panel-expand-tab-arrow { font-size: 13px; }

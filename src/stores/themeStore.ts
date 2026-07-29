@@ -271,6 +271,7 @@ export const terminalThemes: Record<string, TerminalTheme> = {
 };
 
 const terminalThemeKey = "portnest-terminal-theme";
+const [terminalThemeRevision, setTerminalThemeRevision] = createSignal(0);
 
 export function getTerminalTheme(): string {
   return localStorage.getItem(terminalThemeKey) || "vscode_dark";
@@ -278,6 +279,7 @@ export function getTerminalTheme(): string {
 
 export function setTerminalTheme(name: string) {
   localStorage.setItem(terminalThemeKey, name);
+  setTerminalThemeRevision(value => value + 1);
 }
 
 export function getTerminalThemeConfig(): TerminalTheme {
@@ -286,19 +288,70 @@ export function getTerminalThemeConfig(): TerminalTheme {
 
 // Terminal behavior settings
 const TERMINAL_SETTINGS_KEY = "portnest-terminal-settings";
+const [terminalSettingsRevision, setTerminalSettingsRevision] = createSignal(0);
 
 export interface TerminalSettings {
   copyOnSelect: boolean;
+  rightClickAction: "paste" | "none";
+  middleClickAction: "paste" | "none";
+  ctrlVPaste: boolean;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  scrollback: number;
+  commandHints: boolean;
+  sshHistory: boolean;
+  reconnectOnDisconnect: boolean;
+  terminalBell: boolean;
 }
 
 export function getTerminalSettings(): TerminalSettings {
+  const defaults: TerminalSettings = {
+    copyOnSelect: true,
+    rightClickAction: "paste",
+    middleClickAction: "none",
+    ctrlVPaste: true,
+    fontFamily: "JetBrains Mono, Cascadia Code, Consolas, monospace",
+    fontSize: 13,
+    lineHeight: 1,
+    letterSpacing: 0,
+    scrollback: 1000,
+    commandHints: true,
+    sshHistory: true,
+    reconnectOnDisconnect: false,
+    terminalBell: false,
+  };
   try {
     const stored = localStorage.getItem(TERMINAL_SETTINGS_KEY);
-    if (stored) return JSON.parse(stored);
+    if (stored) return { ...defaults, ...JSON.parse(stored) };
   } catch {}
-  return { copyOnSelect: false };
+  return defaults;
 }
 
 export function setTerminalSettings(settings: TerminalSettings) {
   localStorage.setItem(TERMINAL_SETTINGS_KEY, JSON.stringify(settings));
+  setTerminalSettingsRevision(value => value + 1);
 }
+
+export { terminalSettingsRevision, terminalThemeRevision };
+
+export type TerminalBackgroundStyle = "portnest" | "solid_dark" | "solid_light" | "midnight";
+const TERMINAL_BACKGROUND_KEY = "portnest-terminal-background";
+
+function getStoredTerminalBackground(): TerminalBackgroundStyle {
+  const value = localStorage.getItem(TERMINAL_BACKGROUND_KEY);
+  return value === "solid_dark" || value === "solid_light" || value === "midnight" || value === "portnest"
+    ? value
+    : "portnest";
+}
+
+const [terminalBackgroundStyle, setTerminalBackgroundStyleSignal] =
+  createSignal<TerminalBackgroundStyle>(getStoredTerminalBackground());
+
+export function setTerminalBackgroundStyle(style: TerminalBackgroundStyle) {
+  localStorage.setItem(TERMINAL_BACKGROUND_KEY, style);
+  setTerminalBackgroundStyleSignal(style);
+}
+
+export { terminalBackgroundStyle };

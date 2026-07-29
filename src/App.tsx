@@ -43,7 +43,8 @@ const App: Component = () => {
   const [protocols, setProtocols] = createSignal<ProtocolInfo[]>([]);
   const [sessions, setSessions] = createSignal<SessionTab[]>([]);
   const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null);
-  const [rightPanelWidth, setRightPanelWidth] = createSignal(280);
+  const [assetListActive, setAssetListActive] = createSignal(false);
+  const [rightPanelWidth, setRightPanelWidth] = createSignal(390);
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
@@ -51,7 +52,7 @@ const App: Component = () => {
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
   const showRightPanel = () => {
     const session = activeSession();
-    return session?.connection.protocol === "ssh";
+    return !assetListActive() && session?.connection.protocol === "ssh";
   };
 
   // P0-3: derive the 1-based position of a session among its siblings for the
@@ -108,6 +109,7 @@ const App: Component = () => {
     };
     setSessions(prev => [...prev, newSession]);
     setActiveSessionId(sessionId);
+    setAssetListActive(false);
     return sessionId;
   };
 
@@ -334,6 +336,7 @@ const App: Component = () => {
 
   const handleSwitchSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
+    setAssetListActive(false);
   };
 
   const handleDuplicateSession = async (sessionId: string) => {
@@ -349,6 +352,7 @@ const App: Component = () => {
     };
     setSessions(prev => [...prev, newSession]);
     setActiveSessionId(newSessionId);
+    setAssetListActive(false);
     setTabContextMenu(null);
 
     if (session.connection.protocol === "ssh") {
@@ -463,7 +467,10 @@ const App: Component = () => {
 
     const onMouseMove = (e: MouseEvent) => {
       const delta = startX - e.clientX;
-      const newWidth = Math.min(450, Math.max(200, startWidth + delta));
+      const appBody = document.querySelector<HTMLElement>(".app-body");
+      const sidebar = document.querySelector<HTMLElement>(".sidebar");
+      const availableWidth = Math.max(320, (appBody?.clientWidth || window.innerWidth) - (sidebar?.offsetWidth || 0));
+      const newWidth = Math.min(availableWidth, Math.max(320, startWidth + delta));
       setRightPanelWidth(newWidth);
     };
 
@@ -523,7 +530,7 @@ const App: Component = () => {
           </div>
         </div>
       </div>
-      <div class="app-body">
+      <div class={`app-body ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() ? "files-layout-stacked" : ""}`}>
         <Sidebar
           onConnect={handleConnect}
           onEdit={handleEdit}
@@ -535,7 +542,7 @@ const App: Component = () => {
         onCopyConnection={handleCopyConnection}
       />
 
-      <Show when={!activeSession()}>
+      <Show when={sessions().length === 0}>
         <main class="main-content">
           <AssetList
             onConnect={handleConnect}
@@ -549,10 +556,16 @@ const App: Component = () => {
         </main>
       </Show>
 
-      <Show when={activeSession()}>
+      <Show when={sessions().length > 0}>
         <main class="main-content with-tabs">
           <div class="session-tabs-bar">
             <div class="session-tabs">
+              <button
+                class={`session-list-tab ${assetListActive() ? "active" : ""}`}
+                onClick={() => setAssetListActive(true)}
+              >
+                ☷ 列表⌄
+              </button>
               <For each={sessions()}>
                 {(session) => {
                   const isActive = () => activeSessionId() === session.id;
@@ -565,11 +578,11 @@ const App: Component = () => {
                       <Show when={session.pinned}>
                         <span class="session-tab-pin" title="已固定">📌</span>
                       </Show>
+                      <span class="session-tab-terminal-icon">›_</span>
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
                       <Show when={(tabPosition().get(session.id)?.index ?? 0) > 1}>
                         <span class="session-tab-badge">{tabPosition().get(session.id)?.index}</span>
                       </Show>
-                      <span class="session-tab-protocol">{session.connection.protocol.toUpperCase()}</span>
                       <button
                         class="session-tab-close"
                         onClick={(e) => {
@@ -631,10 +644,33 @@ const App: Component = () => {
             <div class="tab-context-menu-overlay" onClick={() => setTabContextMenu(null)} />
           </Show>
 
-          <div class="content-body" style={{ position: "relative", flex: 1, overflow: "hidden" }}>
+          <Show when={assetListActive()}>
+            <div class="session-asset-list">
+              <AssetList
+                onConnect={handleConnect}
+                onEdit={handleEdit}
+                onCopy={handleCopyConnection}
+                onDelete={handleDelete}
+                onDeleteMany={handleDeleteMany}
+                onNewConnection={handleNewConnection}
+                onNewFolder={() => handleNewFolder()}
+              />
+            </div>
+          </Show>
+
+          <div
+            class="content-body"
+            style={{
+              position: "relative",
+              flex: 1,
+              overflow: "hidden",
+              display: assetListActive() ? "none" : "block",
+            }}
+          >
             <For each={sessions()}>
               {(session) => {
                 const sessionActive = createMemo(() => activeSessionId() === session.id);
+                const sessionVisible = createMemo(() => sessionActive() && !assetListActive());
                 return (
                   <div
                     key={session.id}
@@ -651,7 +687,7 @@ const App: Component = () => {
                       <TerminalView
                         sessionKey={session.id}
                         connection={session.connection}
-                        visible={sessionActive}
+                        visible={sessionVisible}
                         shellId={session.shellId}
                       />
                     )}

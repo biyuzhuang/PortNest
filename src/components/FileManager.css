@@ -182,3 +182,183 @@
   inset: 0;
   z-index: 999;
 }
+
+/* Compact SFTP table */
+.file-manager { color: #252a2f; background: #fff; }
+.file-manager-header { gap: 0; background: #fff; }
+.path-bar { gap: 4px; }
+.nav-btn {
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: #20252a;
+  background: transparent;
+  font-size: 17px;
+}
+.nav-btn:hover { border: 0; color: #111; background: #eef1f4; }
+.path-input {
+  height: 29px;
+  padding: 0 10px;
+  border: 1px solid #dfe3e7;
+  border-radius: 5px;
+  color: #20252a;
+  background: #fff;
+  font: 12px "Cascadia Code", Consolas, monospace;
+}
+.file-manager-summary {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border-bottom: 1px solid #e5e8eb;
+  color: #272c31;
+  font-size: 12px;
+}
+.file-manager-summary > span {
+  position: absolute;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+}
+.file-manager-summary button {
+  padding: 2px 5px;
+  border: 0;
+  color: #596169;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.file-list { padding: 0; background: #fff; }
+.file-table { min-width: 500px; }
+.file-row {
+  display: grid;
+  min-height: 30px;
+  grid-template-columns: minmax(175px, 1.35fr) 125px 70px 80px;
+  padding: 0 7px;
+  border-radius: 0;
+  font: 12px "Cascadia Code", Consolas, monospace;
+}
+.file-row:nth-child(even) { background: #f0f1f2; }
+.file-row:hover { background: #e8f1fd; }
+.file-row.selected { color: #17202a; background: #dbeafe; }
+.file-row.header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 31px;
+  border-bottom: 1px solid #e1e5e8;
+  color: #33383d;
+  background: #fafafa;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+}
+.file-row.header:hover { background: #fafafa; }
+.file-cell.name { display: flex; min-width: 0; flex: none; gap: 7px; }
+.file-cell.date,
+.file-cell.type,
+.file-cell.size {
+  width: auto;
+  overflow: hidden;
+  color: #30353a;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.file-icon { color: #86c51f; font-size: 12px; }
+.file-icon.folder { color: #ffb51b; }
+.file-name { color: inherit; font-size: 12px; }
+
+.sftp-file-icon {
+  position: relative;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: #89939d;
+}
+
+.sftp-file-icon svg {
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+
+.sftp-file-icon small {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  padding: 0 1px;
+  border-radius: 1px;
+  color: #fff;
+  background: rgba(23, 30, 38, 0.58);
+  font: 4.5px/6px "Segoe UI", sans-serif;
+  letter-spacing: -0.2px;
+}
+
+.sftp-file-icon small::first-line { color: #fff; }
+.sftp-file-icon.kind-folder { color: #f4b526; }
+.sftp-file-icon.kind-image { color: #8d62d9; }
+.sftp-file-icon.kind-archive { color: #d68b24; }
+.sftp-file-icon.kind-script,
+.sftp-file-icon.kind-executable { color: #63af2e; }
+.sftp-file-icon.kind-code { color: #318bd4; }
+.sftp-file-icon.kind-config { color: #6f7d89; }
+.sftp-file-icon.kind-text { color: #45a1aa; }
+.sftp-file-icon.kind-database { color: #3478c7; }
+.sftp-file-icon.kind-key { color: #d1a01e; }
+.sftp-file-icon.kind-link { color: #2aa39a; }
+.sftp-file-icon.kind-generic { color: #9aa4ad; }
+.parent-row { cursor: pointer; }
+
+.file-options-menu {
+  position: absolute;
+  z-index: 1002;
+  top: 38px;
+  right: 8px;
+  width: 192px;
+  padding: 8px 0;
+  border: 1px solid #d8dcdf;
+  border-radius: 5px;
+  color: #4a4f54;
+  background: #f4f4f4;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.24);
+  font-size: 13px;
+}
+
+.file-options-menu label {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-options-menu label:hover { background: #e6e8ea; }
+.file-options-menu input { width: 13px; height: 13px; accent-color: #3d4145; }
+.file-options-divider { height: 1px; margin: 3px 0; background: #d7dadd; }
+.file-options-caption { padding: 7px 20px 4px; color: #989da1; font-size: 12px; }
+.file-options-overlay { position: fixed; z-index: 1001; inset: 0; }
+.nav-btn.active { background: #e5e8eb; }
+
+.file-cell.permissions,
+.file-cell.owner {
+  overflow: hidden;
+  color: #30353a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
