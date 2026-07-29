@@ -1,4 +1,4 @@
-//! PortNest - 一站式开发运维中心
+//! PortNest - SSH / SFTP 桌面工作区
 
 pub mod ai;
 pub mod commands;

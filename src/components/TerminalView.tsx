@@ -134,12 +134,12 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
     const themeConfig = getTerminalThemeConfig();
     const backgroundStyle = terminalBackgroundStyle();
-    const terminalBackground = backgroundStyle === "portnest"
+    const terminalBackground = backgroundStyle === "striped"
       ? "#00000000"
       : backgroundStyle === "solid_light" ? "#ffffff"
       : backgroundStyle === "midnight" ? "#101827"
       : themeConfig.background;
-    const terminalForeground = backgroundStyle === "portnest" || backgroundStyle === "solid_light"
+    const terminalForeground = backgroundStyle === "striped" || backgroundStyle === "solid_light"
       ? "#111827"
       : themeConfig.foreground;
 
@@ -366,11 +366,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const theme = getTerminalThemeConfig();
     state.terminal.options.theme = {
       ...theme,
-      background: style === "portnest" ? "#00000000"
+      background: style === "striped" ? "#00000000"
         : style === "solid_light" ? "#ffffff"
         : style === "midnight" ? "#101827"
         : theme.background,
-      foreground: style === "portnest" || style === "solid_light" ? "#111827" : theme.foreground,
+      foreground: style === "striped" || style === "solid_light" ? "#111827" : theme.foreground,
     };
     const settings = getTerminalSettings();
     state.terminal.options.fontFamily = settings.fontFamily;

@@ -14,7 +14,7 @@ interface SettingsModalProps { onClose: () => void; }
 type Page = "appearance" | "terminalAppearance" | "general" | "ssh";
 
 const BACKGROUNDS: Array<[TerminalBackgroundStyle, string]> = [
-  ["portnest", "PortNest 条纹"], ["solid_dark", "纯色深色"],
+  ["striped", "PortNest 条纹"], ["solid_dark", "纯色深色"],
   ["solid_light", "纯色浅色"], ["midnight", "午夜渐变"],
 ];
 
@@ -106,7 +106,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   <label><span>整体缩放</span><select><option>100%</option><option>90%</option><option>110%</option><option>125%</option></select></label>
                 </div>
                 <div class="settings-card">
-                  <label><span>主题配色</span><select><option>PortNest / PortNest</option><option>经典蓝</option></select></label>
+                  <label><span>主题配色</span><select><option>PortNest</option><option>经典蓝</option></select></label>
                   <label><span>UI 字体</span><select><option>JetBrains Mono, Noto Sans SC</option><option>系统默认</option></select></label>
                 </div>
               </div>
@@ -143,7 +143,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   <label><span>终端间距</span><input type="number" min="-2" max="8" value={terminalSettings().letterSpacing} onChange={event => updateSetting("letterSpacing", Number(event.currentTarget.value))} /></label>
                 </div>
                 <div class="settings-card">
-                  <label><span>条纹背景</span><Toggle checked={terminalBackgroundStyle() === "portnest"} onChange={value => setTerminalBackgroundStyle(value ? "portnest" : "solid_dark")} /></label>
+                  <label><span>条纹背景</span><Toggle checked={terminalBackgroundStyle() === "striped"} onChange={value => setTerminalBackgroundStyle(value ? "striped" : "solid_dark")} /></label>
                   <label><span>终端背景</span>
                     <select value={terminalBackgroundStyle()} onChange={event => setTerminalBackgroundStyle(event.currentTarget.value as TerminalBackgroundStyle)}>
                       <For each={BACKGROUNDS}>{([key, label]) => <option value={key}>{label}</option>}</For>

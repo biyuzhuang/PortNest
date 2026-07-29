@@ -336,14 +336,14 @@ export function setTerminalSettings(settings: TerminalSettings) {
 
 export { terminalSettingsRevision, terminalThemeRevision };
 
-export type TerminalBackgroundStyle = "portnest" | "solid_dark" | "solid_light" | "midnight";
+export type TerminalBackgroundStyle = "striped" | "solid_dark" | "solid_light" | "midnight";
 const TERMINAL_BACKGROUND_KEY = "portnest-terminal-background";
 
 function getStoredTerminalBackground(): TerminalBackgroundStyle {
   const value = localStorage.getItem(TERMINAL_BACKGROUND_KEY);
-  return value === "solid_dark" || value === "solid_light" || value === "midnight" || value === "portnest"
+  return value === "solid_dark" || value === "solid_light" || value === "midnight" || value === "striped"
     ? value
-    : "portnest";
+    : "striped";
 }
 
 const [terminalBackgroundStyle, setTerminalBackgroundStyleSignal] =

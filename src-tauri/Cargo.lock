@@ -3616,50 +3616,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "portnest"
-version = "0.1.1"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "async-io",
- "async-trait",
- "base64 0.22.1",
- "bollard",
- "chrono",
- "dirs",
- "flume",
- "futures-util",
- "mysql_async",
- "parking_lot",
- "pbkdf2",
- "pem",
- "rand 0.8.6",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "ssh2",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-updater",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4004,6 +3960,50 @@ dependencies = [
  "cpufeatures",
  "opaque-debug",
  "universal-hash",
+]
+
+[[package]]
+name = "portnest"
+version = "0.1.1"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "async-io",
+ "async-trait",
+ "base64 0.22.1",
+ "bollard",
+ "chrono",
+ "dirs",
+ "flume",
+ "futures-util",
+ "mysql_async",
+ "parking_lot",
+ "pbkdf2",
+ "pem",
+ "rand 0.8.6",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "ssh2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-updater",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

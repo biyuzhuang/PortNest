@@ -210,7 +210,7 @@
 .right-panel-top .file-cell.date { display: block; }
 .right-panel-top .file-cell.name { flex: none; }
 
-/* Subtle PortNest-style file panel handle */
+/* Subtle PortNest file panel handle */
 .right-panel-collapse-btn {
   left: 2px;
   width: 16px;
