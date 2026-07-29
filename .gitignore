@@ -5,6 +5,9 @@ dist/
 # IDE / editor
 .vscode/
 
+# Local planning documents
+docs/
+
 # Backup / temp files
 *.bak
 *.tmp
