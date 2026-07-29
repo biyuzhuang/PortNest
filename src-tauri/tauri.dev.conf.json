@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PortNest Dev",
+  "identifier": "com.portnest.app.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "PortNest Dev - SSH / SFTP Workspace"
+      }
+    ]
+  }
+}

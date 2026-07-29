@@ -313,10 +313,7 @@ impl SshPlugin {
             .map(|b| format!("{:02x}", b))
             .collect::<String>();
         let key = format!("{}:{}", host, port);
-        let known_hosts_path = dirs::data_local_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("PortNest")
-            .join("known-hosts.json");
+        let known_hosts_path = crate::app_data_dir().join("known-hosts.json");
 
         let mut known: HashMap<String, String> = if known_hosts_path.exists() {
             let content = std::fs::read_to_string(&known_hosts_path)

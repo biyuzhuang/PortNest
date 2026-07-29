@@ -38,7 +38,12 @@ impl Database {
     pub fn new(app_dir: PathBuf) -> Result<Self> {
         std::fs::create_dir_all(&app_dir).map_err(|e| Error::StorageError(e.to_string()))?;
 
-        let db_path = app_dir.join("portnest.db");
+        let database_name = if cfg!(dev) {
+            "portnest-dev.db"
+        } else {
+            "portnest.db"
+        };
+        let db_path = app_dir.join(database_name);
         let legacy_vault = if CredentialVault::needs_legacy_migration(&db_path) {
             Some(CredentialVault::legacy(&db_path)?)
         } else {

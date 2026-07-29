@@ -75,7 +75,7 @@ PortNest_<version>_x64-setup.exe
 git clone https://github.com/biyuzhuang/PortNest.git
 cd PortNest
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
 只启动前端页面：
@@ -97,7 +97,7 @@ npm run build
 ```powershell
 $env:CARGO_BUILD_JOBS="2"
 $env:TAURI_SIGNING_PRIVATE_KEY_PATH=(Resolve-Path "src-tauri\.keys\portnest.key").Path
-npm run tauri build
+npm run tauri:build
 ```
 
 构建结果位于：

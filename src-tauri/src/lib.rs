@@ -13,6 +13,18 @@ use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+pub fn app_data_dir() -> PathBuf {
+    let directory_name = if cfg!(dev) {
+        "PortNestDev"
+    } else {
+        "PortNest"
+    };
+
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(directory_name)
+}
+
 /// 日志 Guard - 保持日志写入线程存活直到应用结束
 pub struct LogGuard {
     _guard: WorkerGuard,
@@ -45,9 +57,7 @@ fn init_app_state(app_dir: PathBuf) -> Result<(commands::AppState, LogGuard)> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("PortNest");
+    let app_dir = app_data_dir();
 
     std::fs::create_dir_all(&app_dir).ok();
 
