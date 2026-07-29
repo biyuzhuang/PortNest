@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { api, ConnectionRecord } from "../utils/api";
-import { getTerminalThemeConfig, getTerminalSettings } from "../stores/themeStore";
+import { getTerminalThemeConfig, getTerminalSettings, terminalBackgroundStyle, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
 
 interface TerminalViewProps {
   connection: ConnectionRecord;
@@ -129,13 +129,25 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }
 
     const themeConfig = getTerminalThemeConfig();
+    const backgroundStyle = terminalBackgroundStyle();
+    const terminalBackground = backgroundStyle === "portnest"
+      ? "#00000000"
+      : backgroundStyle === "solid_light" ? "#ffffff"
+      : backgroundStyle === "midnight" ? "#101827"
+      : themeConfig.background;
+    const terminalForeground = backgroundStyle === "portnest" || backgroundStyle === "solid_light"
+      ? "#111827"
+      : themeConfig.foreground;
 
+    const settings = getTerminalSettings();
     const terminal = new Terminal({
-      fontFamily: "Cascadia Code, Consolas, monospace",
-      fontSize: 14,
+      fontFamily: settings.fontFamily,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      letterSpacing: settings.letterSpacing,
       theme: {
-        background: themeConfig.background,
-        foreground: themeConfig.foreground,
+        background: terminalBackground,
+        foreground: terminalForeground,
         cursor: themeConfig.cursor,
         cursorAccent: themeConfig.cursorAccent,
         selectionBackground: themeConfig.selectionBackground,
@@ -158,7 +170,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       },
       cursorBlink: true,
       cursorStyle: "block",
-      scrollback: 10000,
+      bellStyle: settings.terminalBell ? "sound" : "none",
+      scrollback: settings.scrollback,
       convertEol: true,
     });
 
@@ -231,6 +244,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         return true;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (!getTerminalSettings().ctrlVPaste) return true;
         navigator.clipboard.readText().then(text => {
           if (text) api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
         }).catch(() => {});
@@ -240,18 +254,18 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     });
 
     // 左键选中自动复制
-    const settings = getTerminalSettings();
-    if (settings.copyOnSelect) {
-      terminal.onSelectionChange(() => {
+    terminal.onSelectionChange(() => {
+      if (getTerminalSettings().copyOnSelect) {
         const selection = terminal.getSelection();
         if (selection) {
           navigator.clipboard.writeText(selection).catch(() => {});
         }
-      });
-    }
+      }
+    });
 
     terminal.element?.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
+      if (getTerminalSettings().rightClickAction !== "paste") return;
       try {
         const text = await navigator.clipboard.readText();
         if (text) {
@@ -260,6 +274,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       } catch (err) {
         console.error("Paste error:", err);
       }
+    });
+
+    terminal.element?.addEventListener("mousedown", async (e) => {
+      if (e.button !== 1 || getTerminalSettings().middleClickAction !== "paste") return;
+      e.preventDefault();
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) await api.writeShell(shellId, text.replace(/\r?\n/g, "\r"));
+      } catch (_) {}
     });
 
     const state: TerminalState = {
@@ -299,6 +322,31 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }
   }, { defer: true }));
 
+  createEffect(() => {
+    const style = terminalBackgroundStyle();
+    terminalSettingsRevision();
+    terminalThemeRevision();
+    const state = props.sessionKey ? terminalStates.get(props.sessionKey) : undefined;
+    if (!state) return;
+    const theme = getTerminalThemeConfig();
+    state.terminal.options.theme = {
+      ...theme,
+      background: style === "portnest" ? "#00000000"
+        : style === "solid_light" ? "#ffffff"
+        : style === "midnight" ? "#101827"
+        : theme.background,
+      foreground: style === "portnest" || style === "solid_light" ? "#111827" : theme.foreground,
+    };
+    const settings = getTerminalSettings();
+    state.terminal.options.fontFamily = settings.fontFamily;
+    state.terminal.options.fontSize = settings.fontSize;
+    state.terminal.options.lineHeight = settings.lineHeight;
+    state.terminal.options.letterSpacing = settings.letterSpacing;
+    state.terminal.options.scrollback = settings.scrollback;
+    state.terminal.options.bellStyle = settings.terminalBell ? "sound" : "none";
+    doFit(state);
+  });
+
   onMount(() => {
     console.log("[TerminalView] onMount:", props.sessionKey);
     const vis = isVisible();
@@ -337,7 +385,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   return (
     <div
       ref={containerRef}
-      class="terminal-container"
+      class={`terminal-container terminal-background-${terminalBackgroundStyle()}`}
       style={{ width: "100%", height: "100%" }}
     />
   );

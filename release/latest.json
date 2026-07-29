@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "notes": "PortNest 0.1.0 首个 Windows 安装版本。",
+  "pub_date": "2026-07-29T03:15:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjdsNXRUSjJYanU3akp2Y09MVTJRSHVHaDBpSWh2U2tWRm80QzFXbkhzdjF3N050NHdwUllhaGZxb2tjd1B0bURyTG5SQ0RjSFFHdHl1MVVIQXVvMVEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1Mjk0ODM5CWZpbGU6UG9ydE5lc3RfMC4xLjBfeDY0LXNldHVwLmV4ZQo2OHB6QWFmTmNsWlIvSkJnSFJFYUlkWjlWaHhXanoyS1RJNnN1dTg5a01YRjBNVFk1Sng2WDIyRTF6NVpFM2NXMzR3WjI0UndlN1RwcE81ZlhkNWhCQT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.1.0/PortNest_0.1.0_x64-setup.exe"
+    }
+  }
+}

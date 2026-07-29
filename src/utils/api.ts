@@ -247,6 +247,8 @@ export interface FileInfo {
   is_dir: boolean;
   is_link: boolean;
   modified: number | null;
+  permissions?: string;
+  owner_group?: string;
 }
 
 // Docker types

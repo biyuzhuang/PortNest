@@ -1,5 +1,6 @@
-import { Component, createSignal, For, Show, onMount, onCleanup, createEffect, on } from "solid-js";
+import { Component, createSignal, createMemo, For, Show, onMount, onCleanup, createEffect, on } from "solid-js";
 import { api, FileInfo, ConnectionRecord } from "../utils/api";
+import { uiStore } from "../stores/uiStore";
 import "./FileManager.css";
 
 interface FileManagerProps {
@@ -10,8 +11,54 @@ interface FileManagerProps {
   onClose?: () => void;
 }
 
+const fileIconKind = (file: FileInfo) => {
+  if (file.is_dir) return { kind: "folder", label: "" };
+  if (file.is_link) return { kind: "link", label: "↗" };
+  const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico"].includes(extension)) return { kind: "image", label: "IMG" };
+  if (["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz"].includes(extension)) return { kind: "archive", label: "ZIP" };
+  if (["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"].includes(extension)) return { kind: "script", label: "SH" };
+  if (["js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "vue"].includes(extension)) return { kind: "code", label: "<>" };
+  if (["yaml", "yml", "json", "toml", "ini", "conf", "cfg", "xml", "env"].includes(extension)) return { kind: "config", label: "CFG" };
+  if (["txt", "md", "log", "csv"].includes(extension)) return { kind: "text", label: "TXT" };
+  if (["sql", "db", "sqlite"].includes(extension)) return { kind: "database", label: "DB" };
+  if (["pem", "key", "pub", "crt", "cer"].includes(extension)) return { kind: "key", label: "KEY" };
+  if (["exe", "bin", "run", "appimage"].includes(extension) || (!extension && file.permissions?.includes("x"))) {
+    return { kind: "executable", label: "EXE" };
+  }
+  return { kind: "generic", label: "FILE" };
+};
+
+const FileTypeIcon: Component<{ file: FileInfo; parent?: boolean }> = (props) => {
+  const icon = () => props.parent ? { kind: "folder", label: "" } : fileIconKind(props.file);
+  return (
+    <span class={`sftp-file-icon kind-${icon().kind}`}>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <Show when={icon().kind === "folder"} fallback={
+          <path d="M5 2.5h6l4 4v11H5z M11 2.5v4h4" />
+        }>
+          <path d="M2.5 5.5h6l1.7 2H17.5v9.5h-15z" />
+        </Show>
+      </svg>
+      <Show when={icon().kind !== "folder"}><small>{icon().label}</small></Show>
+    </span>
+  );
+};
+
 export const FileManager: Component<FileManagerProps> = (props) => {
-  const [currentPath, setCurrentPath] = createSignal("/");
+  const storedOptions = (() => {
+    try { return JSON.parse(localStorage.getItem("portnest-file-view-options") || "{}"); }
+    catch { return {}; }
+  })();
+  const defaultPath = props.connection.username === "root"
+    ? "/root"
+    : props.connection.username ? `/home/${props.connection.username}` : "/";
+  const initialPath = storedOptions.pathLinked
+    ? localStorage.getItem("portnest-linked-sftp-path") || defaultPath
+    : storedOptions.favoritePath
+      ? localStorage.getItem(`portnest-favorite-path-${props.connection.id}`) || defaultPath
+      : defaultPath;
+  const [currentPath, setCurrentPath] = createSignal(initialPath);
   const [files, setFiles] = createSignal<FileInfo[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -20,27 +67,76 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const [newFolderName, setNewFolderName] = createSignal("");
   const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; file: FileInfo } | null>(null);
   const [initialized, setInitialized] = createSignal(false);
+  const [showOptions, setShowOptions] = createSignal(false);
+  const [showHidden, setShowHidden] = createSignal(storedOptions.showHidden === true);
+  const [pathLinked, setPathLinked] = createSignal(storedOptions.pathLinked === true);
+  const [favoritePath, setFavoritePath] = createSignal(storedOptions.favoritePath === true);
+  const [columns, setColumns] = createSignal({
+    name: storedOptions.columns?.name !== false,
+    modified: storedOptions.columns?.modified !== false,
+    type: storedOptions.columns?.type !== false,
+    size: storedOptions.columns?.size !== false,
+    permissions: storedOptions.columns?.permissions === true,
+    owner: storedOptions.columns?.owner === true,
+  });
+  const directoryCache = new Map<string, FileInfo[]>();
+  let directoryRequestId = 0;
 
   const getSftpId = () => props.sftpId;
+
+  const persistOptions = () => localStorage.setItem("portnest-file-view-options", JSON.stringify({
+    showHidden: showHidden(),
+    pathLinked: pathLinked(),
+    favoritePath: favoritePath(),
+    columns: columns(),
+  }));
+
+  const toggleColumn = (key: keyof ReturnType<typeof columns>) => {
+    setColumns(previous => ({ ...previous, [key]: !previous[key] }));
+    persistOptions();
+  };
+
+  const visibleFiles = createMemo(() => showHidden() ? files() : files().filter(file => !file.name.startsWith(".")));
+  const columnTemplate = createMemo(() => [
+    columns().name && "minmax(175px, 1.35fr)",
+    columns().modified && "125px",
+    columns().type && "70px",
+    columns().size && "80px",
+    columns().permissions && "78px",
+    columns().owner && "90px",
+  ].filter(Boolean).join(" "));
 
   const loadDirectory = async (path: string) => {
     const id = getSftpId();
     if (!id) return;
 
-    setLoading(true);
+    const requestId = ++directoryRequestId;
+    const cached = directoryCache.get(path);
+    setCurrentPath(path);
+    setSelectedFile(null);
+    if (cached) {
+      setFiles(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const entries = await api.listSftpDir(id, path);
-      setFiles(entries.sort((a, b) => {
+      const sortedEntries = entries.sort((a, b) => {
         if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
         return a.name.localeCompare(b.name);
-      }));
-      setCurrentPath(path);
+      });
+      directoryCache.set(path, sortedEntries);
+      if (requestId !== directoryRequestId) return;
+      setFiles(sortedEntries);
+      if (pathLinked()) localStorage.setItem("portnest-linked-sftp-path", path);
+      if (favoritePath()) localStorage.setItem(`portnest-favorite-path-${props.connection.id}`, path);
       setSelectedFile(null);
     } catch (e) {
-      setError(String(e));
+      if (requestId === directoryRequestId && !cached) setError(String(e));
     } finally {
-      setLoading(false);
+      if (requestId === directoryRequestId) setLoading(false);
     }
   };
 
@@ -48,7 +144,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     console.log("[FileManager] sftpId changed:", sftpId, "session:", props.sessionKey);
     if (sftpId && !initialized()) {
       setInitialized(true);
-      loadDirectory("/");
+      loadDirectory(initialPath);
     }
   }));
 
@@ -56,7 +152,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     console.log("[FileManager] Mounted, session:", props.sessionKey, "sftpId:", props.sftpId);
     if (props.sftpId) {
       setInitialized(true);
-      loadDirectory("/");
+      loadDirectory(initialPath);
     }
   });
 
@@ -169,15 +265,23 @@ export const FileManager: Component<FileManagerProps> = (props) => {
 
   const formatDate = (timestamp: number | null): string => {
     if (!timestamp) return "-";
-    return new Date(timestamp * 1000).toLocaleString();
+    return new Date(timestamp * 1000).toLocaleString("zh-CN", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).replace(/\//g, "-");
   };
+
+  const fileType = (file: FileInfo) => file.is_dir
+    ? "文件夹"
+    : file.name.includes(".") ? file.name.split(".").pop() || "文件" : "文件";
+  const totalSize = () => files().filter(file => !file.is_dir).reduce((sum, file) => sum + file.size, 0);
 
   return (
     <div class="file-manager">
       <div class="file-manager-header">
         <div class="path-bar">
-          <button class="nav-btn" onClick={navigateUp} title="返回上级目录">↑</button>
-          <button class="nav-btn" onClick={() => navigateTo("/")} title="回到根目录">🏠</button>
+          <button class="nav-btn" onClick={navigateUp} title="返回上级目录">‹</button>
+          <button class="nav-btn" onClick={() => navigateTo(currentPath())} title="刷新">↻</button>
           <input
             type="text"
             class="path-input"
@@ -185,11 +289,17 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             onKeyDown={(e) => e.key === "Enter" && navigateTo(e.currentTarget.value)}
             onBlur={(e) => navigateTo(e.currentTarget.value)}
           />
+          <button class="nav-btn" title="搜索">⌕</button>
+          <button class="nav-btn" title="历史记录">◷</button>
+          <button class={`nav-btn ${showOptions() ? "active" : ""}`} title="更多操作" onClick={() => setShowOptions(!showOptions())}>⋮</button>
         </div>
-        <div class="toolbar">
-          <button class="toolbar-btn" onClick={() => setShowNewFolderDialog(true)} title="新建文件夹">📁+</button>
-          <button class="toolbar-btn" onClick={handleUpload} title="上传文件">⬆</button>
-        </div>
+      </div>
+      <div class="file-manager-summary">
+        共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
+        <span>
+          <button onClick={() => setShowNewFolderDialog(true)} title="新建文件夹">＋文件夹</button>
+          <button onClick={handleUpload} title="上传文件">上传</button>
+        </span>
       </div>
 
       <div class="file-list">
@@ -201,26 +311,50 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         </Show>
         <Show when={!loading() && !error()}>
           <div class="file-table">
-            <div class="file-row header">
-              <div class="file-cell name">名称</div>
-              <div class="file-cell size">大小</div>
-              <div class="file-cell date">修改时间</div>
+            <div class="file-row header" style={{ "grid-template-columns": columnTemplate() }}>
+              <Show when={columns().name}><div class="file-cell name">名称</div></Show>
+              <Show when={columns().modified}><div class="file-cell date">修改时间</div></Show>
+              <Show when={columns().type}><div class="file-cell type">类型</div></Show>
+              <Show when={columns().size}><div class="file-cell size">大小</div></Show>
+              <Show when={columns().permissions}><div class="file-cell permissions">权限</div></Show>
+              <Show when={columns().owner}><div class="file-cell owner">用户/组</div></Show>
             </div>
             <div class="file-body">
-              <For each={files()}>
+              <Show when={currentPath() !== "/"}>
+                <div
+                  class="file-row parent-row"
+                  style={{ "grid-template-columns": columnTemplate() }}
+                  onDblClick={navigateUp}
+                >
+                  <Show when={columns().name}><div class="file-cell name">
+                    <FileTypeIcon file={{ name: "..", path: "", size: 0, is_dir: true, is_link: false, modified: null }} parent />
+                    <span class="file-name">..</span>
+                  </div></Show>
+                  <Show when={columns().modified}><div class="file-cell date">-</div></Show>
+                  <Show when={columns().type}><div class="file-cell type">文件夹</div></Show>
+                  <Show when={columns().size}><div class="file-cell size">-</div></Show>
+                  <Show when={columns().permissions}><div class="file-cell permissions">-</div></Show>
+                  <Show when={columns().owner}><div class="file-cell owner">-/-</div></Show>
+                </div>
+              </Show>
+              <For each={visibleFiles()}>
                 {(file) => (
                   <div
                     class={`file-row ${selectedFile()?.path === file.path ? "selected" : ""}`}
+                    style={{ "grid-template-columns": columnTemplate() }}
                     onClick={() => handleFileClick(file)}
                     onDblClick={() => handleFileDoubleClick(file)}
                     onContextMenu={(e) => handleContextMenu(e, file)}
                   >
-                    <div class="file-cell name">
-                      <span class="file-icon">{file.is_dir ? "📁" : file.is_link ? "🔗" : "📄"}</span>
+                    <Show when={columns().name}><div class="file-cell name">
+                      <FileTypeIcon file={file} />
                       <span class="file-name">{file.name}</span>
-                    </div>
-                    <div class="file-cell size">{file.is_dir ? "-" : formatSize(file.size)}</div>
-                    <div class="file-cell date">{formatDate(file.modified)}</div>
+                    </div></Show>
+                    <Show when={columns().modified}><div class="file-cell date">{formatDate(file.modified)}</div></Show>
+                    <Show when={columns().type}><div class="file-cell type">{fileType(file)}</div></Show>
+                    <Show when={columns().size}><div class="file-cell size">{file.is_dir ? "-" : formatSize(file.size)}</div></Show>
+                    <Show when={columns().permissions}><div class="file-cell permissions">{file.permissions || "-"}</div></Show>
+                    <Show when={columns().owner}><div class="file-cell owner">{file.owner_group || "-"}</div></Show>
                   </div>
                 )}
               </For>
@@ -228,6 +362,32 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           </div>
         </Show>
       </div>
+
+      <Show when={showOptions()}>
+        <div class="file-options-menu" onClick={event => event.stopPropagation()}>
+          <label><input type="checkbox" checked={uiStore.filesStacked()} onChange={event => uiStore.setFilesStacked(event.currentTarget.checked)} />上下布局</label>
+          <label><input type="checkbox" checked={showHidden()} onChange={event => { setShowHidden(event.currentTarget.checked); persistOptions(); }} />显示隐藏文件</label>
+          <label><input type="checkbox" checked={pathLinked()} onChange={event => {
+            setPathLinked(event.currentTarget.checked);
+            if (event.currentTarget.checked) localStorage.setItem("portnest-linked-sftp-path", currentPath());
+            persistOptions();
+          }} />路径联动</label>
+          <label><input type="checkbox" checked={favoritePath()} onChange={event => {
+            setFavoritePath(event.currentTarget.checked);
+            if (event.currentTarget.checked) localStorage.setItem(`portnest-favorite-path-${props.connection.id}`, currentPath());
+            persistOptions();
+          }} />收藏路径</label>
+          <div class="file-options-divider" />
+          <div class="file-options-caption">远程显示列</div>
+          <label><input type="checkbox" checked={columns().name} onChange={() => toggleColumn("name")} />名称</label>
+          <label><input type="checkbox" checked={columns().modified} onChange={() => toggleColumn("modified")} />修改时间</label>
+          <label><input type="checkbox" checked={columns().type} onChange={() => toggleColumn("type")} />类型</label>
+          <label><input type="checkbox" checked={columns().size} onChange={() => toggleColumn("size")} />大小</label>
+          <label><input type="checkbox" checked={columns().permissions} onChange={() => toggleColumn("permissions")} />权限</label>
+          <label><input type="checkbox" checked={columns().owner} onChange={() => toggleColumn("owner")} />用户/组</label>
+        </div>
+        <div class="file-options-overlay" onClick={() => setShowOptions(false)} />
+      </Show>
 
       <Show when={contextMenu()}>
         <div
