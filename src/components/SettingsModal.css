@@ -111,6 +111,17 @@
 .settings-card select:focus,
 .settings-card input:focus { border-color: #d7dce0; background: #fff; }
 
+.settings-inline-button {
+  padding: 5px 11px;
+  border: 1px solid #d5dadd;
+  border-radius: 4px;
+  color: #2f6fce;
+  background: #fff;
+  cursor: pointer;
+}
+
+.settings-inline-button:disabled { color: #92999f; cursor: wait; }
+
 .settings-switch {
   position: relative;
   width: 38px;

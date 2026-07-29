@@ -22,3 +22,6 @@ src-tauri/src/commands/mod_new.rs
 *.sqlite
 *.sqlite3
 *.sqlitedb
+
+# Tauri updater private signing keys (must be backed up securely, never commit)
+src-tauri/.keys/

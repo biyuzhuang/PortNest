@@ -6,6 +6,8 @@ import {
   type TerminalSettings,
 } from "../stores/themeStore";
 import { uiStore } from "../stores/uiStore";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./SettingsModal.css";
 
 interface SettingsModalProps { onClose: () => void; }
@@ -30,6 +32,31 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [page, setPage] = createSignal<Page>("appearance");
   const [currentTerminalTheme, setCurrentTerminalTheme] = createSignal(getTerminalTheme());
   const [terminalSettings, setSettings] = createSignal<TerminalSettings>(getTerminalSettings());
+  const [updateStatus, setUpdateStatus] = createSignal("检查更新");
+  const [checkingUpdate, setCheckingUpdate] = createSignal(false);
+
+  const handleCheckUpdate = async () => {
+    if (checkingUpdate()) return;
+    setCheckingUpdate(true);
+    setUpdateStatus("正在检查...");
+    try {
+      const update = await check();
+      if (!update) {
+        setUpdateStatus("已是最新版本");
+        return;
+      }
+      setUpdateStatus(`正在下载 ${update.version}...`);
+      await update.downloadAndInstall(event => {
+        if (event.event === "Finished") setUpdateStatus("安装完成，正在重启...");
+      });
+      await relaunch();
+    } catch (error) {
+      console.error("Update failed:", error);
+      setUpdateStatus("检查更新失败");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const updateSetting = <K extends keyof TerminalSettings>(key: K, value: TerminalSettings[K]) => {
     const next = { ...terminalSettings(), [key]: value };
@@ -141,6 +168,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 <div class="settings-card">
                   <label><span>语言</span><select><option>简体中文</option></select></label>
                   <label><span>更新通道</span><select><option>稳定通道</option></select></label>
+                  <label><span>应用更新</span><button class="settings-inline-button" disabled={checkingUpdate()} onClick={handleCheckUpdate}>{updateStatus()}</button></label>
                   <label><span>恢复上次标签</span><Toggle checked={false} onChange={() => {}} /></label>
                 </div>
               </div>
