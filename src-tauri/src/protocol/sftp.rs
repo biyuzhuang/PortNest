@@ -361,6 +361,44 @@ impl Default for SftpPlugin {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::symbolic_permissions;
+
+    #[test]
+    fn formats_regular_file_permissions() {
+        assert_eq!(
+            symbolic_permissions(Some(0o100644), false, false),
+            "-rw-r--r--"
+        );
+        assert_eq!(
+            symbolic_permissions(Some(0o100755), false, false),
+            "-rwxr-xr-x"
+        );
+    }
+
+    #[test]
+    fn uses_the_file_kind_reported_by_sftp_metadata() {
+        assert_eq!(
+            symbolic_permissions(Some(0o040750), true, false),
+            "drwxr-x---"
+        );
+        assert_eq!(
+            symbolic_permissions(Some(0o120777), false, true),
+            "lrwxrwxrwx"
+        );
+    }
+
+    #[test]
+    fn formats_missing_and_special_permission_bits_consistently() {
+        assert_eq!(symbolic_permissions(None, false, false), "----------");
+        assert_eq!(
+            symbolic_permissions(Some(0o104755), false, false),
+            "-rwxr-xr-x"
+        );
+    }
+}
+
 #[async_trait]
 impl ProtocolPlugin for SftpPlugin {
     fn protocol_id(&self) -> &'static str {
