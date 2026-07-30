@@ -1,5 +1,11 @@
 import { Component, createSignal, For, Show, createMemo, onMount, onCleanup } from "solid-js";
-import { connectionStore, ConnectionFolder, ConnectionRecord } from "../stores/connectionStore";
+import {
+  connectionStore,
+  ConnectionFolder,
+  ConnectionRecord,
+  countFolderConnections,
+  sortAssetsByTreeOrder,
+} from "../stores/connectionStore";
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 
 interface SidebarProps {
@@ -68,14 +74,14 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   };
 
   const sortedConnections = (folderId: string | null) =>
-    state.connections
-      .filter(connection => (connection.folder_id ?? null) === folderId)
-      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    sortAssetsByTreeOrder(
+      state.connections.filter(connection => (connection.folder_id ?? null) === folderId)
+    );
 
   const sortedFolders = (parentId: string | null) =>
-    state.folders
-      .filter(folder => folder.parentId === parentId)
-      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
+    sortAssetsByTreeOrder(
+      state.folders.filter(folder => folder.parentId === parentId)
+    );
 
   const persistConnectionMove = (
     connectionId: string,
@@ -244,22 +250,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     }).length;
   });
 
-  const folderConnectionCount = (folderId: string, visited = new Set<string>()): number => {
-    if (visited.has(folderId)) return 0;
-    const nextVisited = new Set(visited);
-    nextVisited.add(folderId);
-    const directCount = state.connections.filter(connection =>
-      connection.folder_id === folderId
-      && matchesAssetFilter(connection.protocol)
-    ).length;
-    const childCount = state.folders
-      .filter(folder => folder.parentId === folderId)
-      .reduce(
-        (total, folder) => total + folderConnectionCount(folder.id, nextVisited),
-        0,
-      );
-    return directCount + childCount;
-  };
+  const folderConnectionCount = (folderId: string) =>
+    countFolderConnections(
+      folderId,
+      state.connections,
+      state.folders,
+      connection => matchesAssetFilter(connection.protocol),
+    );
 
   const selectAssetFilter = (filter: AssetFilter) => {
     uiStore.setAssetFilter(filter);
@@ -676,6 +673,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               📂 新建子文件夹
             </div>
             <div class="context-menu-divider" />
+            <div class="context-menu-item" onClick={() => {
+              const folder = contextMenuFolder()!;
+              const nextName = prompt("请输入新的文件夹名称", folder.name);
+              if (nextName?.trim() && nextName.trim() !== folder.name) {
+                void connectionStore.renameFolder(folder.id, nextName);
+              }
+              setShowFolderMenu(false);
+            }}>
+              ✎ 重命名文件夹
+            </div>
             <div class="context-menu-item danger" onClick={() => {
               if (confirm(`确定要删除文件夹 "${contextMenuFolder()!.name}" 吗？`)) {
                 connectionStore.deleteFolder(contextMenuFolder()!.id);

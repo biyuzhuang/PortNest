@@ -44,16 +44,28 @@ pub struct FileInfo {
     pub permissions: String,
     pub owner_group: String,
     #[serde(skip)]
-    uid: Option<u32>,
+    pub(crate) uid: Option<u32>,
     #[serde(skip)]
-    gid: Option<u32>,
+    pub(crate) gid: Option<u32>,
 }
 
-fn symbolic_permissions(perm: Option<u32>, is_dir: bool, is_link: bool) -> String {
-    let Some(mode) = perm else { return "----------".to_string() };
+pub(crate) fn symbolic_permissions(perm: Option<u32>, is_dir: bool, is_link: bool) -> String {
+    let Some(mode) = perm else {
+        return "----------".to_string();
+    };
     let mut result = String::with_capacity(10);
-    result.push(if is_link { 'l' } else if is_dir { 'd' } else { '-' });
-    for (read, write, execute) in [(0o400, 0o200, 0o100), (0o040, 0o020, 0o010), (0o004, 0o002, 0o001)] {
+    result.push(if is_link {
+        'l'
+    } else if is_dir {
+        'd'
+    } else {
+        '-'
+    });
+    for (read, write, execute) in [
+        (0o400, 0o200, 0o100),
+        (0o040, 0o020, 0o010),
+        (0o004, 0o002, 0o001),
+    ] {
         result.push(if mode & read != 0 { 'r' } else { '-' });
         result.push(if mode & write != 0 { 'w' } else { '-' });
         result.push(if mode & execute != 0 { 'x' } else { '-' });
@@ -132,7 +144,8 @@ impl SftpConnectionHandle {
                             format!("{}/{}", path, name)
                         };
                         let is_dir = stat.is_dir();
-                        let is_link = stat.perm
+                        let is_link = stat
+                            .perm
                             .map(|perm| perm & 0o170000 == 0o120000)
                             .unwrap_or(false);
                         entries.push(FileInfo {
@@ -172,10 +185,12 @@ impl SftpConnectionHandle {
         drop(sftp);
 
         for entry in &mut entries {
-            let user = entry.uid
+            let user = entry
+                .uid
                 .map(|uid| self.resolve_account_name("passwd", uid))
                 .unwrap_or_else(|| "-".to_string());
-            let group = entry.gid
+            let group = entry
+                .gid
                 .map(|gid| self.resolve_account_name("group", gid))
                 .unwrap_or_else(|| "-".to_string());
             entry.owner_group = format!("{}/{}", user, group);
@@ -185,7 +200,11 @@ impl SftpConnectionHandle {
     }
 
     fn resolve_account_name(&self, database: &str, id: u32) -> String {
-        let cache = if database == "passwd" { &self.user_names } else { &self.group_names };
+        let cache = if database == "passwd" {
+            &self.user_names
+        } else {
+            &self.group_names
+        };
         if let Some(name) = cache.lock().get(&id).cloned() {
             return name;
         }
@@ -205,7 +224,9 @@ impl SftpConnectionHandle {
             return fallback;
         }
         let _ = channel.wait_close();
-        let resolved = output.split(':').next()
+        let resolved = output
+            .split(':')
+            .next()
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .unwrap_or(&fallback)
@@ -358,6 +379,44 @@ impl SftpPlugin {
 impl Default for SftpPlugin {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::symbolic_permissions;
+
+    #[test]
+    fn formats_regular_file_permissions() {
+        assert_eq!(
+            symbolic_permissions(Some(0o100644), false, false),
+            "-rw-r--r--"
+        );
+        assert_eq!(
+            symbolic_permissions(Some(0o100755), false, false),
+            "-rwxr-xr-x"
+        );
+    }
+
+    #[test]
+    fn uses_the_file_kind_reported_by_sftp_metadata() {
+        assert_eq!(
+            symbolic_permissions(Some(0o040750), true, false),
+            "drwxr-x---"
+        );
+        assert_eq!(
+            symbolic_permissions(Some(0o120777), false, true),
+            "lrwxrwxrwx"
+        );
+    }
+
+    #[test]
+    fn formats_missing_and_special_permission_bits_consistently() {
+        assert_eq!(symbolic_permissions(None, false, false), "----------");
+        assert_eq!(
+            symbolic_permissions(Some(0o104755), false, false),
+            "-rwxr-xr-x"
+        );
     }
 }
 

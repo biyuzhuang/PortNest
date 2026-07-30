@@ -22,6 +22,8 @@ pub struct CredentialData {
     pub password: Option<String>,
     pub private_key: Option<String>,
     pub passphrase: Option<String>,
+    #[serde(default)]
+    pub key_id: Option<String>,
 }
 
 /// 数据库管理器
@@ -126,6 +128,7 @@ impl Database {
                         password: None,
                         private_key: None,
                         passphrase: None,
+                        key_id: None,
                     })
                     .map_err(|e| Error::EncryptionError(format!("重置损坏凭据失败: {}", e)))?
                 }
@@ -197,6 +200,21 @@ impl Database {
             [],
         )
         .map_err(|e| Error::StorageError(format!("创建 credentials 表失败: {}", e)))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ssh_keys (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                key_type TEXT NOT NULL,
+                encrypted_data TEXT NOT NULL,
+                iv TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 ssh_keys 表失败: {}", e)))?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
@@ -444,6 +462,75 @@ impl Database {
         Ok(())
     }
 
+    pub fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(Error::StorageError("文件夹名称不能为空".to_string()));
+        }
+        let conn = self.conn.lock();
+        let changed = conn
+            .execute("UPDATE folders SET name = ?1 WHERE id = ?2", params![name, id])
+            .map_err(|e| Error::StorageError(format!("重命名文件夹失败: {}", e)))?;
+        if changed == 0 {
+            return Err(Error::StorageError("文件夹不存在".to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn save_ssh_key(&self, id: Uuid, name: &str, file_name: &str, key_type: &str, private_key: &str) -> Result<()> {
+        let (encrypted, iv) = self.vault.encrypt(private_key.as_bytes())?;
+        let conn = self.conn.lock();
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT OR REPLACE INTO ssh_keys
+             (id, name, file_name, key_type, encrypted_data, iv, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                id.to_string(), name.trim(), file_name, key_type,
+                base64::engine::general_purpose::STANDARD.encode(encrypted),
+                base64::engine::general_purpose::STANDARD.encode(iv), now, now
+            ],
+        )
+        .map_err(|e| Error::StorageError(format!("保存密钥失败: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn get_ssh_keys(&self) -> Result<Vec<SshKeyRecord>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("SELECT id, name, file_name, key_type, created_at, updated_at FROM ssh_keys ORDER BY name")
+            .map_err(|e| Error::StorageError(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| Ok(SshKeyRecord {
+                id: row.get(0)?, name: row.get(1)?, file_name: row.get(2)?,
+                key_type: row.get(3)?, created_at: row.get(4)?, updated_at: row.get(5)?,
+            }))
+            .map_err(|e| Error::StorageError(e.to_string()))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::StorageError(e.to_string()))?;
+        Ok(rows)
+    }
+
+    pub fn get_ssh_key_material(&self, id: &str) -> Result<String> {
+        let conn = self.conn.lock();
+        let (encrypted, iv): (String, String) = conn
+            .query_row("SELECT encrypted_data, iv FROM ssh_keys WHERE id = ?1", params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| Error::StorageError(format!("读取密钥失败: {}", e)))?;
+        let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted)
+            .map_err(|e| Error::EncryptionError(e.to_string()))?;
+        let iv = base64::engine::general_purpose::STANDARD.decode(iv)
+            .map_err(|e| Error::EncryptionError(e.to_string()))?;
+        String::from_utf8(self.vault.decrypt(&encrypted, &iv)?)
+            .map_err(|e| Error::EncryptionError(e.to_string()))
+    }
+
+    pub fn delete_ssh_key(&self, id: &str) -> Result<()> {
+        self.conn.lock().execute("DELETE FROM ssh_keys WHERE id = ?1", params![id])
+            .map_err(|e| Error::StorageError(format!("删除密钥失败: {}", e)))?;
+        Ok(())
+    }
+
     /// 更新连接的文件夹
     pub fn update_connection_folder(
         &self,
@@ -651,6 +738,16 @@ pub struct CredentialRecord {
     pub id: String,
     pub name: String,
     pub auth_type: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshKeyRecord {
+    pub id: String,
+    pub name: String,
+    pub file_name: String,
+    pub key_type: String,
     pub created_at: i64,
     pub updated_at: i64,
 }

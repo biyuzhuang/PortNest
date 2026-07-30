@@ -12,9 +12,12 @@ use crate::protocol::docker::{
     ContainerInfo, ContainerStats, DockerContainerCreateConfig, DockerSystemInfo, ImageInfo,
     NetworkInfo, VolumeInfo,
 };
+use crate::protocol::ssh_backend::{
+    ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend, SshBackend, SshSession, TerminalSize,
+};
 use crate::protocol::PluginRegistry;
 use crate::protocol::{ConnectionHandle, Credential, CredentialType};
-use crate::storage::{ConnectionRecord, CredentialData, Database};
+use crate::storage::{ConnectionRecord, CredentialData, Database, SshKeyRecord};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 fn parse_connection_options(
@@ -31,7 +34,8 @@ fn parse_connection_options(
 /// Shell 会话信息
 struct ShellSessionInfo {
     _connection_id: String,
-    handle: Arc<dyn ConnectionHandle>,
+    session: Arc<dyn SshSession>,
+    shell: Arc<dyn ShellHandle>,
 }
 
 /// Shell 会话管理器
@@ -46,18 +50,28 @@ impl ShellManager {
         }
     }
 
-    fn insert(&self, shell_id: String, connection_id: String, handle: Arc<dyn ConnectionHandle>) {
+    fn insert(
+        &self,
+        shell_id: String,
+        connection_id: String,
+        session: Arc<dyn SshSession>,
+        shell: Arc<dyn ShellHandle>,
+    ) {
         self.sessions.write().insert(
             shell_id,
             ShellSessionInfo {
                 _connection_id: connection_id,
-                handle,
+                session,
+                shell,
             },
         );
     }
 
-    fn get(&self, shell_id: &str) -> Option<Arc<dyn ConnectionHandle>> {
-        self.sessions.read().get(shell_id).map(|s| s.handle.clone())
+    fn get(&self, shell_id: &str) -> Option<(Arc<dyn SshSession>, Arc<dyn ShellHandle>)> {
+        self.sessions
+            .read()
+            .get(shell_id)
+            .map(|entry| (entry.session.clone(), entry.shell.clone()))
     }
 
     fn remove(&self, shell_id: &str) {
@@ -68,9 +82,8 @@ impl ShellManager {
 /// SFTP 会话信息
 struct SftpSessionInfo {
     _connection_id: String,
-    handle: Arc<crate::protocol::sftp::SftpConnectionHandle>,
-    #[allow(dead_code)]
-    ssh_handle: Arc<dyn ConnectionHandle>,
+    handle: Arc<dyn SftpHandle>,
+    session: Arc<dyn SshSession>,
 }
 
 /// SFTP 会话管理器
@@ -89,28 +102,25 @@ impl SftpManager {
         &self,
         sftp_id: String,
         connection_id: String,
-        handle: Arc<crate::protocol::sftp::SftpConnectionHandle>,
-        ssh_handle: Arc<dyn ConnectionHandle>,
+        handle: Arc<dyn SftpHandle>,
+        session: Arc<dyn SshSession>,
     ) {
         self.sessions.write().insert(
             sftp_id,
             SftpSessionInfo {
                 _connection_id: connection_id,
                 handle,
-                ssh_handle,
+                session,
             },
         );
     }
 
-    fn get(&self, sftp_id: &str) -> Option<Arc<crate::protocol::sftp::SftpConnectionHandle>> {
+    fn get(&self, sftp_id: &str) -> Option<Arc<dyn SftpHandle>> {
         self.sessions.read().get(sftp_id).map(|s| s.handle.clone())
     }
 
-    fn get_ssh_handle(&self, sftp_id: &str) -> Option<Arc<dyn ConnectionHandle>> {
-        self.sessions
-            .read()
-            .get(sftp_id)
-            .map(|s| s.ssh_handle.clone())
+    fn get_session(&self, sftp_id: &str) -> Option<Arc<dyn SshSession>> {
+        self.sessions.read().get(sftp_id).map(|s| s.session.clone())
     }
 
     fn remove(&self, sftp_id: &str) {
@@ -171,6 +181,8 @@ pub struct AppState {
     pub connection_manager: Arc<ConnectionManager>,
     pub plugin_registry: Arc<PluginRegistry>,
     pub ai_analyzer: AIAnalyzer,
+    ssh2_backend: Arc<dyn SshBackend>,
+    russh_backend: Arc<dyn SshBackend>,
     pub(crate) shell_manager: Arc<ShellManager>,
     pub(crate) sftp_manager: Arc<SftpManager>,
     pub(crate) docker_manager: Arc<DockerManager>,
@@ -192,10 +204,24 @@ impl AppState {
             connection_manager,
             plugin_registry,
             ai_analyzer: AIAnalyzer::default(),
+            ssh2_backend: Arc::new(Ssh2Backend),
+            russh_backend: Arc::new(crate::protocol::russh_backend::RusshBackend),
             shell_manager: Arc::new(ShellManager::new()),
             sftp_manager: Arc::new(SftpManager::new()),
             docker_manager: Arc::new(DockerManager::new()),
         })
+    }
+
+    fn ssh_backend(&self, options: &crate::protocol::ConnectionOptions) -> Arc<dyn SshBackend> {
+        match options
+            .protocol_options
+            .get("ssh_backend")
+            .map(String::as_str)
+        {
+            Some("ssh2") => self.ssh2_backend.clone(),
+            Some("russh") => self.russh_backend.clone(),
+            _ => self.russh_backend.clone(),
+        }
     }
 
     fn register_plugins(registry: &Arc<PluginRegistry>) {
@@ -220,6 +246,7 @@ pub struct ConnectionConfigRequest {
     pub password: Option<String>,
     pub private_key: Option<String>,
     pub passphrase: Option<String>,
+    pub key_id: Option<String>,
     pub options: Option<String>,
     pub tags: Option<String>,
     pub color: Option<String>,
@@ -268,20 +295,44 @@ pub async fn save_connection(
             .get_credential_structured(&connection.credential_id)
             .ok()
     });
-    let cred_data = CredentialData {
-        auth_type: auth_type.to_string(),
-        password: config
-            .password
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.password.clone()),
-        private_key: config
-            .private_key
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.private_key.clone()),
-        passphrase: config
-            .passphrase
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.passphrase.clone()),
+    let managed_private_key = match config.key_id.as_deref() {
+        Some(key_id) => Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?),
+        None => None,
+    };
+    let cred_data = match auth_type {
+        "password" => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: config
+                .password
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.password.clone()),
+            private_key: None,
+            passphrase: None,
+            key_id: None,
+        },
+        "key" | "key_with_passphrase" => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: None,
+            private_key: managed_private_key.or_else(|| config
+                .private_key
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.private_key.clone())),
+            passphrase: config
+                .passphrase
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.passphrase.clone()),
+            key_id: config
+                .key_id
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.key_id.clone()),
+        },
+        _ => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: None,
+            private_key: None,
+            passphrase: None,
+            key_id: None,
+        },
     };
 
     state
@@ -369,6 +420,74 @@ pub async fn get_connections(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ConnectionRecord>, String> {
     state.db.get_connections().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_connection_config(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<ConnectionConfigRequest, String> {
+    let connection = state
+        .db
+        .get_connections()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|connection| connection.id == id)
+        .ok_or_else(|| "连接不存在".to_string())?;
+    let credential = state
+        .db
+        .get_credential_structured(&connection.credential_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut proxy_type = None;
+    let mut proxy_host = None;
+    let mut proxy_port = None;
+    let mut proxy_username = None;
+    let mut proxy_password = None;
+    let mut encoding = None;
+    let mut timeout_ms = None;
+
+    if let Some(options) = connection.options.as_deref() {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(options) {
+            encoding = value.get("encoding").and_then(|item| item.as_str()).map(str::to_string);
+            timeout_ms = value.get("timeout_ms").and_then(|item| item.as_u64());
+            if let Some(proxy) = value.get("proxy") {
+                proxy_type = proxy.get("type").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_host = proxy.get("host").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_port = proxy.get("port").and_then(|item| item.as_u64()).and_then(|port| u16::try_from(port).ok());
+                proxy_username = proxy.get("username").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_password = proxy.get("password").and_then(|item| item.as_str()).map(str::to_string);
+            }
+        }
+    }
+
+    Ok(ConnectionConfigRequest {
+        id: connection.id,
+        name: connection.name,
+        protocol: connection.protocol,
+        host: connection.host,
+        port: connection.port,
+        username: connection.username.unwrap_or_else(|| "root".to_string()),
+        auth_type: match credential.auth_type.as_str() {
+            "key_with_passphrase" => "key".to_string(),
+            value => value.to_string(),
+        },
+        password: credential.password,
+        private_key: credential.private_key,
+        passphrase: credential.passphrase,
+        key_id: credential.key_id,
+        options: connection.options,
+        tags: connection.tags,
+        color: connection.color,
+        folder_id: connection.folder_id,
+        proxy_type,
+        proxy_host,
+        proxy_port,
+        proxy_username,
+        proxy_password,
+        encoding,
+        timeout_ms,
+    })
 }
 
 #[tauri::command]
@@ -475,10 +594,9 @@ pub async fn open_shell(
         .find(|c| c.id == connection_id)
         .ok_or_else(|| "连接未找到".to_string())?;
 
-    let plugin = state
-        .plugin_registry
-        .get(&conn.protocol)
-        .ok_or_else(|| "协议插件未找到".to_string())?;
+    if conn.protocol != "ssh" {
+        return Err("此命令仅支持 SSH 连接".to_string());
+    }
 
     // 使用结构化方式获取凭证
     let cred_data = state
@@ -512,34 +630,29 @@ pub async fn open_shell(
 
     let options = parse_connection_options(conn.options.as_deref())?;
 
-    let handle: Arc<dyn ConnectionHandle> = plugin
-        .connect(
-            &conn.host,
-            conn.port,
-            conn.username.as_deref().unwrap_or(""),
-            &credential,
-            &options,
-        )
+    let target = ConnectionTarget {
+        host: conn.host.clone(),
+        port: conn.port,
+        username: conn.username.clone().unwrap_or_default(),
+    };
+    let session = state
+        .ssh_backend(&options)
+        .connect(&target, &credential, &options)
         .await
-        .map_err(|e| e.to_string())?
-        .into();
+        .map_err(|e| e.to_string())?;
     tracing::info!("SSH connection established to {}:{}", conn.host, conn.port);
 
-    let handle_clone = handle.clone();
     tracing::info!("Opening shell with cols={}, rows={}", cols, rows);
-    let shell = tokio::task::spawn_blocking(move || handle_clone.open_shell(cols, rows))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
-    tracing::info!("Shell opened successfully: id={}", shell.id);
+    let size = TerminalSize::new(cols, rows).map_err(|error| error.to_string())?;
+    let shell = session.open_shell(size).await.map_err(|e| e.to_string())?;
+    tracing::info!("Shell opened successfully: id={}", shell.id());
+    let shell_id = shell.id().to_string();
 
     state
         .shell_manager
-        .insert(shell.id.to_string(), connection_id, handle);
+        .insert(shell_id.clone(), connection_id, session, shell);
 
-    Ok(ShellOpenResponse {
-        shell_id: shell.id.to_string(),
-    })
+    Ok(ShellOpenResponse { shell_id })
 }
 
 #[tauri::command]
@@ -548,22 +661,12 @@ pub async fn write_shell(
     shell_id: String,
     data: String,
 ) -> Result<(), String> {
-    let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
-    let handle = state
+    let (_, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
     let data = data.into_bytes();
-    tracing::debug!(
-        "write_shell: writing {} bytes to shell {:?}",
-        data.len(),
-        shell_uuid
-    );
-
-    tokio::task::spawn_blocking(move || handle.write_shell(&shell_uuid, &data))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    shell.write(&data).await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -573,36 +676,11 @@ pub async fn read_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
 ) -> Result<Vec<u8>, String> {
-    let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
-    let handle = state
+    let (_, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-
-    let result = tokio::task::spawn_blocking(move || {
-        let mut buf = [0u8; 4096];
-        tracing::debug!("read_shell calling handle.read_shell for {:?}", shell_uuid);
-        match handle.read_shell(&shell_uuid, &mut buf) {
-            Ok(n) => {
-                if n > 0 {
-                    tracing::debug!("read_shell: got {} bytes", n);
-                    Ok(buf[..n].to_vec())
-                } else {
-                    tracing::trace!("read_shell: no data");
-                    Ok(Vec::new())
-                }
-            }
-            Err(e) => {
-                tracing::error!("read_shell error: {:?}", e);
-                Err(e)
-            }
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    Ok(result)
+    shell.read().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -612,16 +690,12 @@ pub async fn resize_shell(
     cols: u32,
     rows: u32,
 ) -> Result<(), String> {
-    let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
-    let handle = state
+    let (_, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-
-    tokio::task::spawn_blocking(move || handle.resize_shell(&shell_uuid, cols, rows))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    let size = TerminalSize::new(cols, rows).map_err(|error| error.to_string())?;
+    shell.resize(size).await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -631,16 +705,11 @@ pub async fn close_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
 ) -> Result<(), String> {
-    let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
-    let handle = state
+    let (_, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-
-    tokio::task::spawn_blocking(move || handle.close_shell(&shell_uuid))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    shell.close().await.map_err(|e| e.to_string())?;
 
     state.shell_manager.remove(&shell_id);
 
@@ -654,26 +723,16 @@ pub async fn disconnect_shell(
     shell_id: String,
 ) -> Result<(), String> {
     tracing::info!("disconnect_shell command called for shell_id: {}", shell_id);
-    let shell_uuid = Uuid::parse_str(&shell_id).map_err(|e| e.to_string())?;
-    let handle = state
+    let (session, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-
-    // 在单个任务中顺序执行：先关闭 shell，再断开连接
-    // 避免并发操作同一 handle 导致的竞态条件
-    tokio::task::spawn_blocking(move || {
-        // 先关闭 shell channel
-        if let Err(e) = handle.close_shell(&shell_uuid) {
-            tracing::warn!("关闭 shell channel 失败: {:?}", e);
-        }
-        // 再断开 SSH session
-        if let Err(e) = handle.disconnect() {
-            tracing::warn!("断开 SSH session 失败: {:?}", e);
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    if let Err(error) = shell.close().await {
+        tracing::warn!("关闭 shell channel 失败: {:?}", error);
+    }
+    if let Err(error) = session.disconnect().await {
+        tracing::warn!("断开 SSH session 失败: {:?}", error);
+    }
 
     // Remove from shell manager
     state.shell_manager.remove(&shell_id);
@@ -900,10 +959,9 @@ pub async fn open_sftp(
         .find(|c| c.id == connection_id)
         .ok_or_else(|| "连接未找到".to_string())?;
 
-    let plugin = state
-        .plugin_registry
-        .get(&conn.protocol)
-        .ok_or_else(|| "协议插件未找到".to_string())?;
+    if conn.protocol != "ssh" {
+        return Err("此协议不支持 SFTP".to_string());
+    }
 
     // 使用结构化方式获取凭证
     let cred_data = state
@@ -935,39 +993,23 @@ pub async fn open_sftp(
         passphrase,
     };
 
-    let options = crate::protocol::ConnectionOptions::default();
-
-    let handle = plugin
-        .connect(
-            &conn.host,
-            conn.port,
-            conn.username.as_deref().unwrap_or(""),
-            &credential,
-            &options,
-        )
+    let options = parse_connection_options(conn.options.as_deref())?;
+    let target = ConnectionTarget {
+        host: conn.host.clone(),
+        port: conn.port,
+        username: conn.username.clone().unwrap_or_default(),
+    };
+    let session = state
+        .ssh_backend(&options)
+        .connect(&target, &credential, &options)
         .await
         .map_err(|e| e.to_string())?;
+    let sftp_handle = session.open_sftp().await.map_err(|e| e.to_string())?;
+    let sftp_id = sftp_handle.id().to_string();
 
-    // SSH 连接才能创建 SFTP
-    let ssh_handle = handle
-        .as_any()
-        .downcast_ref::<crate::protocol::ssh::SshConnectionHandle>()
-        .ok_or_else(|| "此协议不支持 SFTP".to_string())?;
-
-    let sftp_handle = crate::protocol::sftp::SftpConnectionHandle::from_ssh(ssh_handle)
-        .map_err(|e| e.to_string())?;
-
-    // Convert Box<dyn ConnectionHandle> to Arc<dyn ConnectionHandle>
-    let handle_arc: Arc<dyn ConnectionHandle> = handle.into();
-
-    let sftp_id = Uuid::new_v4().to_string();
-
-    state.sftp_manager.insert(
-        sftp_id.clone(),
-        connection_id,
-        Arc::new(sftp_handle),
-        handle_arc,
-    );
+    state
+        .sftp_manager
+        .insert(sftp_id.clone(), connection_id, sftp_handle, session);
 
     Ok(SftpOpenResponse { sftp_id })
 }
@@ -978,31 +1020,16 @@ pub async fn open_sftp_for_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
 ) -> Result<SftpOpenResponse, String> {
-    let ssh_handle = state
+    let (session, _) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
+    let sftp_handle = session.open_sftp().await.map_err(|e| e.to_string())?;
+    let sftp_id = sftp_handle.id().to_string();
 
-    let ssh_conn = ssh_handle
-        .as_any()
-        .downcast_ref::<crate::protocol::ssh::SshConnectionHandle>()
-        .ok_or_else(|| "此连接不支持 SFTP".to_string())?;
-
-    let sftp_handle = crate::protocol::sftp::SftpConnectionHandle::from_ssh(ssh_conn)
-        .map_err(|e| e.to_string())?;
-
-    // 恢复非阻塞模式，避免影响 Shell 读写
-    ssh_conn.session().set_blocking(false);
-
-    let sftp_id = Uuid::new_v4().to_string();
-
-    // 共享 Shell 的 SSH 句柄，不独立持有
-    state.sftp_manager.insert(
-        sftp_id.clone(),
-        String::new(),
-        Arc::new(sftp_handle),
-        ssh_handle.clone(),
-    );
+    state
+        .sftp_manager
+        .insert(sftp_id.clone(), String::new(), sftp_handle, session);
 
     Ok(SftpOpenResponse { sftp_id })
 }
@@ -1019,11 +1046,7 @@ pub async fn list_sftp_dir(
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
 
-    let handle = handle.clone();
-    tokio::task::spawn_blocking(move || handle.list_dir(&path))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    handle.list_dir(&path).await.map_err(|e| e.to_string())
 }
 
 /// 下载文件
@@ -1038,12 +1061,9 @@ pub async fn sftp_download(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    let handle = handle.clone();
-    let remote_path = remote_path.clone();
-    let local_path = local_path.clone();
-    tokio::task::spawn_blocking(move || handle.download_file(&remote_path, &local_path))
+    handle
+        .download(&remote_path, &local_path)
         .await
-        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -1059,12 +1079,9 @@ pub async fn sftp_upload(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    let handle = handle.clone();
-    let remote_path = remote_path.clone();
-    let local_path = local_path.clone();
-    tokio::task::spawn_blocking(move || handle.upload_file(&local_path, &remote_path))
+    handle
+        .upload(&local_path, &remote_path)
         .await
-        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
@@ -1079,12 +1096,7 @@ pub async fn sftp_create_dir(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    let handle = handle.clone();
-    let path = path.clone();
-    tokio::task::spawn_blocking(move || handle.create_dir(&path))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    handle.create_dir(&path).await.map_err(|e| e.to_string())
 }
 
 /// 删除文件
@@ -1098,12 +1110,7 @@ pub async fn sftp_delete_file(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    let handle = handle.clone();
-    let path = path.clone();
-    tokio::task::spawn_blocking(move || handle.delete_file(&path))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+    handle.delete_file(&path).await.map_err(|e| e.to_string())
 }
 
 /// 删除目录
@@ -1118,7 +1125,7 @@ pub async fn sftp_delete_dir(
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
 
-    handle.delete_dir(&path).map_err(|e| e.to_string())
+    handle.delete_dir(&path).await.map_err(|e| e.to_string())
 }
 
 /// 重命名
@@ -1133,18 +1140,18 @@ pub async fn sftp_rename(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    let handle = handle.clone();
-    let old_path = old_path.clone();
-    let new_path = new_path.clone();
-    tokio::task::spawn_blocking(move || handle.rename(&old_path, &new_path))
+    handle
+        .rename(&old_path, &new_path)
         .await
-        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 
 /// 关闭 SFTP 会话（不主动断开 SSH，因为可能被 shell 共享）
 #[tauri::command]
 pub async fn close_sftp(state: tauri::State<'_, AppState>, sftp_id: String) -> Result<(), String> {
+    if let Some(handle) = state.sftp_manager.get(&sftp_id) {
+        handle.close().await.map_err(|error| error.to_string())?;
+    }
     state.sftp_manager.remove(&sftp_id);
     Ok(())
 }
@@ -1155,8 +1162,11 @@ pub async fn close_sftp_independent(
     state: tauri::State<'_, AppState>,
     sftp_id: String,
 ) -> Result<(), String> {
-    if let Some(ssh_handle) = state.sftp_manager.get_ssh_handle(&sftp_id) {
-        let _ = tokio::task::spawn_blocking(move || ssh_handle.disconnect()).await;
+    if let Some(handle) = state.sftp_manager.get(&sftp_id) {
+        let _ = handle.close().await;
+    }
+    if let Some(session) = state.sftp_manager.get_session(&sftp_id) {
+        let _ = session.disconnect().await;
     }
     state.sftp_manager.remove(&sftp_id);
     Ok(())
@@ -1189,6 +1199,149 @@ pub async fn save_folder(
 #[tauri::command]
 pub async fn delete_folder(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
     state.db.delete_folder(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn rename_folder(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<(), String> {
+    state.db.rename_folder(&id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_ssh_keys(state: tauri::State<'_, AppState>) -> Result<Vec<SshKeyRecord>, String> {
+    state.db.get_ssh_keys().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_ssh_key(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    file_name: String,
+    private_key: String,
+) -> Result<SshKeyRecord, String> {
+    if name.trim().is_empty() || private_key.trim().is_empty() {
+        return Err("密钥名称和内容不能为空".to_string());
+    }
+    let key_type = if private_key.contains("BEGIN RSA PRIVATE KEY") {
+        "ssh-rsa"
+    } else if private_key.contains("BEGIN EC PRIVATE KEY") {
+        "ecdsa"
+    } else if private_key.contains("BEGIN OPENSSH PRIVATE KEY") {
+        "OpenSSH"
+    } else {
+        return Err("无法识别私钥格式".to_string());
+    };
+    let id = Uuid::new_v4();
+    state.db.save_ssh_key(id, &name, &file_name, key_type, &private_key)
+        .map_err(|e| e.to_string())?;
+    state.db.get_ssh_keys().map_err(|e| e.to_string())?
+        .into_iter().find(|key| key.id == id.to_string())
+        .ok_or_else(|| "保存后读取密钥失败".to_string())
+}
+
+#[tauri::command]
+pub async fn delete_ssh_key(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    state.db.delete_ssh_key(&id).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionExportBundle {
+    pub version: u32,
+    pub exported_at: i64,
+    pub folders: Vec<crate::storage::FolderRecord>,
+    pub connections: Vec<SessionExportConnection>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionExportConnection {
+    #[serde(flatten)]
+    pub connection: ConnectionRecord,
+    pub credential: CredentialData,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionImportResult {
+    pub folders: usize,
+    pub connections: usize,
+}
+
+#[tauri::command]
+pub async fn export_sessions(
+    state: tauri::State<'_, AppState>,
+    include_passwords: bool,
+    include_private_keys: bool,
+) -> Result<String, String> {
+    let mut exported = Vec::new();
+    for connection in state.db.get_connections().map_err(|e| e.to_string())? {
+        let mut credential = state.db.get_credential_structured(&connection.credential_id)
+            .map_err(|e| e.to_string())?;
+        if !include_passwords {
+            credential.password = None;
+            credential.passphrase = None;
+        }
+        if !include_private_keys {
+            credential.private_key = None;
+            credential.key_id = None;
+        } else if credential.private_key.is_none() {
+            if let Some(key_id) = credential.key_id.as_deref() {
+                credential.private_key = Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?);
+            }
+            credential.key_id = None;
+        }
+        exported.push(SessionExportConnection { connection, credential });
+    }
+    serde_json::to_string_pretty(&SessionExportBundle {
+        version: 1,
+        exported_at: chrono::Utc::now().timestamp(),
+        folders: state.db.get_folders().map_err(|e| e.to_string())?,
+        connections: exported,
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_sessions(
+    state: tauri::State<'_, AppState>,
+    json: String,
+) -> Result<SessionImportResult, String> {
+    let bundle: SessionExportBundle = serde_json::from_str(&json)
+        .map_err(|e| format!("会话 JSON 格式无效: {}", e))?;
+    if bundle.version != 1 {
+        return Err(format!("不支持的导出版本: {}", bundle.version));
+    }
+    let mut folder_ids = HashMap::new();
+    for folder in &bundle.folders {
+        folder_ids.insert(folder.id.clone(), Uuid::new_v4());
+    }
+    for folder in &bundle.folders {
+        let id = folder_ids[&folder.id];
+        let parent = folder.parent_id.as_ref()
+            .and_then(|old| folder_ids.get(old))
+            .map(|id| id.to_string());
+        state.db.save_folder(id, &folder.name, parent.as_deref(), folder.sort_order)
+            .map_err(|e| e.to_string())?;
+    }
+    let count = bundle.connections.len();
+    for item in bundle.connections {
+        let connection_id = Uuid::new_v4();
+        let credential_id = Uuid::new_v4();
+        let mut credential = item.credential;
+        credential.key_id = None;
+        state.db.save_credential_structured(credential_id, &item.connection.name, &credential.auth_type, &credential)
+            .map_err(|e| e.to_string())?;
+        let folder_id = item.connection.folder_id.as_ref()
+            .and_then(|old| folder_ids.get(old))
+            .map(|id| id.to_string());
+        state.db.save_connection(
+            connection_id, &item.connection.name, &item.connection.protocol,
+            &item.connection.host, item.connection.port, item.connection.username.as_deref(),
+            credential_id, item.connection.options.as_deref(), item.connection.tags.as_deref(),
+            item.connection.color.as_deref(), folder_id.as_deref(),
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(SessionImportResult { folders: bundle.folders.len(), connections: count })
 }
 
 #[tauri::command]
@@ -1245,8 +1398,11 @@ pub fn write_clipboard_text(app: tauri::AppHandle, text: String) -> Result<(), S
 #[tauri::command]
 pub async fn test_connection(
     state: tauri::State<'_, AppState>,
-    config: ConnectionConfigRequest,
+    mut config: ConnectionConfigRequest,
 ) -> Result<String, String> {
+    if let Some(key_id) = config.key_id.as_deref() {
+        config.private_key = Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?);
+    }
     let plugin = state
         .plugin_registry
         .get(&config.protocol)
@@ -1297,26 +1453,44 @@ pub async fn test_connection(
         });
     }
 
-    // Try to connect with timeout
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        plugin.connect(
-            &config.host,
-            config.port,
-            &config.username,
-            &credential,
-            &options,
-        ),
-    )
-    .await;
-
-    match result {
-        Ok(Ok(_handle)) => {
-            // Connection successful, handle dropped automatically
-            Ok("连接成功".to_string())
+    if config.protocol == "ssh" {
+        let target = ConnectionTarget {
+            host: config.host,
+            port: config.port,
+            username: config.username,
+        };
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            state
+                .ssh_backend(&options)
+                .connect(&target, &credential, &options),
+        )
+        .await
+        {
+            Ok(Ok(session)) => {
+                let _ = session.disconnect().await;
+                Ok("连接成功".to_string())
+            }
+            Ok(Err(error)) => Err(format!("连接失败: {error}")),
+            Err(_) => Err("连接超时".to_string()),
         }
-        Ok(Err(e)) => Err(format!("连接失败: {}", e)),
-        Err(_) => Err("连接超时".to_string()),
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            plugin.connect(
+                &config.host,
+                config.port,
+                &config.username,
+                &credential,
+                &options,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(_handle)) => Ok("连接成功".to_string()),
+            Ok(Err(error)) => Err(format!("连接失败: {error}")),
+            Err(_) => Err("连接超时".to_string()),
+        }
     }
 }
 

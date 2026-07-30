@@ -27,6 +27,11 @@ interface TerminalState {
 
 const terminalStates = new Map<string, TerminalState>();
 
+const terminalCursorColors = (backgroundStyle: string, fallbackCursor: string, fallbackAccent: string) =>
+  backgroundStyle === "striped" || backgroundStyle === "solid_light"
+    ? { cursor: "#2563eb", cursorAccent: "#ffffff" }
+    : { cursor: fallbackCursor, cursorAccent: fallbackAccent };
+
 export function getTerminalState(sessionKey: string): TerminalState | undefined {
   return terminalStates.get(sessionKey);
 }
@@ -142,6 +147,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const terminalForeground = backgroundStyle === "striped" || backgroundStyle === "solid_light"
       ? "#111827"
       : themeConfig.foreground;
+    const cursorColors = terminalCursorColors(
+      backgroundStyle,
+      themeConfig.cursor,
+      themeConfig.cursorAccent,
+    );
 
     const settings = getTerminalSettings();
     const terminal = new Terminal({
@@ -152,8 +162,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       theme: {
         background: terminalBackground,
         foreground: terminalForeground,
-        cursor: themeConfig.cursor,
-        cursorAccent: themeConfig.cursorAccent,
+        cursor: cursorColors.cursor,
+        cursorAccent: cursorColors.cursorAccent,
         selectionBackground: themeConfig.selectionBackground,
         black: themeConfig.black,
         red: themeConfig.red,
@@ -364,6 +374,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const state = props.sessionKey ? terminalStates.get(props.sessionKey) : undefined;
     if (!state) return;
     const theme = getTerminalThemeConfig();
+    const cursorColors = terminalCursorColors(style, theme.cursor, theme.cursorAccent);
     state.terminal.options.theme = {
       ...theme,
       background: style === "striped" ? "#00000000"
@@ -371,6 +382,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         : style === "midnight" ? "#101827"
         : theme.background,
       foreground: style === "striped" || style === "solid_light" ? "#111827" : theme.foreground,
+      cursor: cursorColors.cursor,
+      cursorAccent: cursorColors.cursorAccent,
     };
     const settings = getTerminalSettings();
     state.terminal.options.fontFamily = settings.fontFamily;

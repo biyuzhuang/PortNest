@@ -14,32 +14,32 @@ interface RightPanelProps {
 export const RightPanel: Component<RightPanelProps> = (props) => {
   const [sftpId, setSftpId] = createSignal<string | null>(null);
 
-  let currentConnectionId: string | null = null;
+  let currentShellId: string | null = null;
   let currentSftpId: string | null = null;
 
-  // 独立 SFTP 连接（不复用 shell 的 SSH 会话），避免 SFTP 期间
-  // ssh2 set_blocking 切换阻塞住 shell 读循环。
-  const openSftpForConnection = async () => {
+  // SFTP 使用当前 Shell 的 SSH transport，在独立 Channel 上运行。
+  const openSftpForShell = async () => {
     const conn = props.connection;
-    if (!conn || conn.protocol !== "ssh") return;
+    const shellId = props.shellId;
+    if (!conn || conn.protocol !== "ssh" || !shellId) return;
 
-    if (currentSftpId && currentConnectionId === conn.id) {
+    if (currentSftpId && currentShellId === shellId) {
       setSftpId(currentSftpId);
       return;
     }
 
     if (currentSftpId) {
       try {
-        await api.closeSftpIndependent(currentSftpId);
+        await api.closeSftp(currentSftpId);
       } catch (_) {}
       currentSftpId = null;
       setSftpId(null);
     }
 
     try {
-      const response = await api.openSftp(conn.id);
+      const response = await api.openSftpForShell(shellId);
       currentSftpId = response.sftp_id;
-      currentConnectionId = conn.id;
+      currentShellId = shellId;
       setSftpId(response.sftp_id);
     } catch (e) {
       console.error("SFTP open error:", e);
@@ -49,13 +49,14 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
   // SFTP：仅在面板展开且活动会话是 SSH 时按需打开；切换连接时复用/重开
   createEffect(() => {
     if (uiStore.filesCollapsed()) return;
-    openSftpForConnection();
+    void props.shellId;
+    void openSftpForShell();
   });
 
   onCleanup(async () => {
     if (currentSftpId) {
       try {
-        await api.closeSftpIndependent(currentSftpId);
+        await api.closeSftp(currentSftpId);
       } catch (e) {
         console.error("Close SFTP error:", e);
       }

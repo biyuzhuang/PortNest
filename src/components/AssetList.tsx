@@ -1,5 +1,9 @@
 import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
-import { connectionStore } from "../stores/connectionStore";
+import {
+  connectionStore,
+  countFolderConnections,
+  sortAssetsByTreeOrder,
+} from "../stores/connectionStore";
 import { api, type ConnectionRecord } from "../utils/api";
 import { matchesAssetFilter, uiStore } from "../stores/uiStore";
 
@@ -48,12 +52,14 @@ export const AssetList: Component<AssetListProps> = (props) => {
 
   const visibleFolders = createMemo(() => {
     if (query().trim()) return [];
-    return connectionStore.state.folders.filter(folder => folder.parentId === folderId());
+    return sortAssetsByTreeOrder(
+      connectionStore.state.folders.filter(folder => folder.parentId === folderId())
+    );
   });
 
   const visibleConnections = createMemo(() => {
     const normalized = query().trim().toLowerCase();
-    return connectionStore.state.connections.filter(connection => {
+    return sortAssetsByTreeOrder(connectionStore.state.connections.filter(connection => {
       if (!matchesAssetFilter(connection.protocol)) return false;
       if (normalized) {
         return connection.name.toLowerCase().includes(normalized)
@@ -61,8 +67,16 @@ export const AssetList: Component<AssetListProps> = (props) => {
           || (connection.username ?? "").toLowerCase().includes(normalized);
       }
       return (connection.folder_id ?? null) === folderId();
-    });
+    }));
   });
+
+  const folderConnectionCount = (targetFolderId: string) =>
+    countFolderConnections(
+      targetFolderId,
+      connectionStore.state.connections,
+      connectionStore.state.folders,
+      connection => matchesAssetFilter(connection.protocol),
+    );
 
   const filterTitle = createMemo(() => ({
     all: "资产列表",
@@ -280,10 +294,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               <div class="asset-name-cell"><span class="asset-folder-icon">■</span>{folder.name}</div>
               <div>—</div><div>—</div><div>—</div><div>—</div><div>—</div>
               <div>
-                {connectionStore.state.connections.filter(connection =>
-                  connection.folder_id === folder.id
-                  && matchesAssetFilter(connection.protocol)
-                ).length} 个连接
+                {folderConnectionCount(folder.id)} 个连接
               </div>
             </div>
           )}
