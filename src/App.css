@@ -2521,7 +2521,7 @@ body {
 .key-picker-modal footer > span { flex: 1; }
 .key-picker-modal footer button, .key-picker-upload, .primary-btn { min-height: 32px; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); background: var(--bg-hover); cursor: pointer; font: inherit; }
 .key-picker-upload, .primary-btn { color: white; border-color: var(--accent-color); background: var(--accent-color); }
-.key-picker-upload input, .file-action input { display: none; }
+.key-picker-file-input, .file-action input { display: none; }
 .key-picker-modal button:disabled { opacity: .45; cursor: not-allowed; }
 .key-picker-modal .danger { color: #e5484d; }
 .session-transfer-modal section { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border-color); }

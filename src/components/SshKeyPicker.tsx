@@ -8,6 +8,7 @@ interface Props {
 }
 
 export const SshKeyPicker: Component<Props> = (props) => {
+  let fileInput!: HTMLInputElement;
   const [keys, setKeys] = createSignal<SshKeyRecord[]>([]);
   const [selectedId, setSelectedId] = createSignal(props.selectedId || "");
   const [error, setError] = createSignal("");
@@ -69,7 +70,8 @@ export const SshKeyPicker: Component<Props> = (props) => {
           <button type="button" class="danger" disabled={!selectedId()} onClick={() => void remove()}>删除</button>
           <span />
           <button type="button" onClick={props.onClose}>取消</button>
-          <label class="key-picker-upload">新建<input type="file" onChange={upload} /></label>
+          <input ref={fileInput} class="key-picker-file-input" type="file" onChange={upload} />
+          <button type="button" class="key-picker-upload" onClick={() => fileInput.click()}>新建上传</button>
           <button type="button" disabled={!selectedId()} onClick={choose}>选择</button>
         </footer>
       </div>
