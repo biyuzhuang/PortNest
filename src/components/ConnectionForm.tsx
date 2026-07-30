@@ -198,10 +198,8 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     <span>私钥</span>
                     <div class="ssh-key-actions">
                       <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
-                        {keyName() || (keyId() ? "已选择密钥" : "尚未选择密钥")}
-                      </button>
-                      <button type="button" class="ssh-key-manage-button" onClick={() => setShowKeyPicker(true)}>
-                        选择 / 上传密钥
+                        <span>{keyName() || (keyId() ? "已选择密钥" : "请选择私钥")}</span>
+                        <span class="ssh-key-settings-icon">⚙</span>
                       </button>
                     </div>
                   </div>

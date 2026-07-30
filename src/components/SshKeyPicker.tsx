@@ -12,6 +12,8 @@ export const SshKeyPicker: Component<Props> = (props) => {
   const [keys, setKeys] = createSignal<SshKeyRecord[]>([]);
   const [selectedId, setSelectedId] = createSignal(props.selectedId || "");
   const [error, setError] = createSignal("");
+  const [pendingFile, setPendingFile] = createSignal<File | null>(null);
+  const [pendingName, setPendingName] = createSignal("");
   const load = async () => setKeys(await api.getSshKeys());
   onMount(() => void load().catch(error => setError(String(error))));
 
@@ -19,16 +21,22 @@ export const SshKeyPicker: Component<Props> = (props) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    setPendingFile(file);
+    setPendingName(file.name.replace(/\.[^.]+$/, ""));
+    input.value = "";
+  };
+
+  const confirmUpload = async () => {
+    const file = pendingFile();
+    const name = pendingName().trim();
+    if (!file || !name) return;
     try {
-      const name = prompt("密钥名称", file.name.replace(/\.[^.]+$/, ""))?.trim();
-      if (!name) return;
       const key = await api.saveSshKey(name, file.name, await file.text());
       await load();
       setSelectedId(key.id);
+      setPendingFile(null);
     } catch (cause) {
       setError(String(cause));
-    } finally {
-      input.value = "";
     }
   };
 
@@ -75,6 +83,23 @@ export const SshKeyPicker: Component<Props> = (props) => {
           <button type="button" disabled={!selectedId()} onClick={choose}>选择</button>
         </footer>
       </div>
+      <Show when={pendingFile()}>
+        <div class="modal-overlay key-name-overlay" onClick={event => { event.stopPropagation(); setPendingFile(null); }}>
+          <div class="key-name-modal" onClick={event => event.stopPropagation()}>
+            <header><h3>新建私钥</h3><button type="button" onClick={() => setPendingFile(null)}>×</button></header>
+            <label>
+              <span>密钥名称</span>
+              <input autofocus value={pendingName()} onInput={event => setPendingName(event.currentTarget.value)}
+                onKeyDown={event => event.key === "Enter" && void confirmUpload()} />
+            </label>
+            <div class="key-name-file">文件：{pendingFile()!.name}</div>
+            <footer>
+              <button type="button" onClick={() => setPendingFile(null)}>取消</button>
+              <button type="button" class="primary-btn" disabled={!pendingName().trim()} onClick={() => void confirmUpload()}>保存</button>
+            </footer>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };

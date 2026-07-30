@@ -177,21 +177,37 @@ impl SshBackend for RusshBackend {
                     .map_err(|error| {
                         Error::AuthenticationFailed(format!("私钥解析失败: {error}"))
                     })?;
-                let hash = handle
+                let advertised_hash = handle
                     .best_supported_rsa_hash()
                     .await
                     .map_err(|error| {
                         Error::AuthenticationFailed(format!("协商 RSA 签名算法失败: {error}"))
-                    })?
-                    .flatten();
-                handle
-                    .authenticate_publickey(
-                        &target.username,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                    )
-                    .await
-                    .map_err(|error| Error::AuthenticationFailed(format!("私钥认证失败: {error}")))?
-                    .success()
+                    })?;
+                // Some OpenSSH servers do not send EXT_INFO soon enough while
+                // rejecting legacy ssh-rsa/SHA-1. In that case try the modern
+                // RSA algorithms first, then retain compatibility with old
+                // servers. Non-RSA keys ignore the hash selection.
+                let hashes = advertised_hash
+                    .map(|hash| vec![hash])
+                    .unwrap_or_else(|| vec![Some(HashAlg::Sha512), Some(HashAlg::Sha256), None]);
+                let key = Arc::new(key);
+                let mut success = false;
+                for hash in hashes {
+                    let result = handle
+                        .authenticate_publickey(
+                            &target.username,
+                            PrivateKeyWithHashAlg::new(key.clone(), hash),
+                        )
+                        .await
+                        .map_err(|error| {
+                            Error::AuthenticationFailed(format!("私钥认证失败: {error}"))
+                        })?;
+                    if result.success() {
+                        success = true;
+                        break;
+                    }
+                }
+                success
             }
             CredentialType::Agent => authenticate_agent(&mut handle, &target.username).await?,
         };
@@ -269,13 +285,17 @@ where
     })?;
     for identity in identities {
         let key = identity.public_key().into_owned();
-        let hash = handle
-            .best_supported_rsa_hash()
+                let advertised_hash = handle
+                    .best_supported_rsa_hash()
             .await
             .map_err(|error| {
                 Error::AuthenticationFailed(format!("协商 Agent 签名算法失败: {error}"))
-            })?
-            .flatten();
+                    })?;
+                // Some OpenSSH servers do not send EXT_INFO soon enough for
+                // `best_supported_rsa_hash`, while also rejecting legacy
+                // ssh-rsa/SHA-1 signatures. Prefer rsa-sha2-512 when the
+                // extension is absent, as recommended by russh.
+                let hash = advertised_hash.unwrap_or(Some(HashAlg::Sha512));
         let result = handle
             .authenticate_publickey_with(username, key, hash, agent)
             .await
