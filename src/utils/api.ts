@@ -14,6 +14,7 @@ export interface ConnectionConfig {
   password?: string;
   private_key?: string;
   passphrase?: string;
+  key_id?: string;
   options?: string;
   tags?: string;
   color?: string;
@@ -78,6 +79,15 @@ export interface AIAnalyzeResult {
 
 export interface ShellOpenResponse {
   shell_id: string;
+}
+
+export interface SshKeyRecord {
+  id: string;
+  name: string;
+  file_name: string;
+  key_type: string;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface AssetOrderItem {
@@ -237,6 +247,30 @@ export const api = {
 
   async moveConnectionToFolder(connectionId: string, folderId?: string): Promise<void> {
     return invoke("move_connection_to_folder", { connectionId, folderId: folderId ?? null });
+  },
+
+  async renameFolder(id: string, name: string): Promise<void> {
+    return invoke("rename_folder", { id, name });
+  },
+
+  async getSshKeys(): Promise<SshKeyRecord[]> {
+    return invoke("get_ssh_keys");
+  },
+
+  async saveSshKey(name: string, fileName: string, privateKey: string): Promise<SshKeyRecord> {
+    return invoke("save_ssh_key", { name, fileName, privateKey });
+  },
+
+  async deleteSshKey(id: string): Promise<void> {
+    return invoke("delete_ssh_key", { id });
+  },
+
+  async exportSessions(includePasswords: boolean, includePrivateKeys: boolean): Promise<string> {
+    return invoke("export_sessions", { includePasswords, includePrivateKeys });
+  },
+
+  async importSessions(json: string): Promise<{ folders: number; connections: number }> {
+    return invoke("import_sessions", { json });
   },
 
   async updateAssetOrder(connections: AssetOrderItem[], folders: AssetOrderItem[]): Promise<void> {

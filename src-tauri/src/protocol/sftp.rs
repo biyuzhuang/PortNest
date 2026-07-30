@@ -44,16 +44,28 @@ pub struct FileInfo {
     pub permissions: String,
     pub owner_group: String,
     #[serde(skip)]
-    uid: Option<u32>,
+    pub(crate) uid: Option<u32>,
     #[serde(skip)]
-    gid: Option<u32>,
+    pub(crate) gid: Option<u32>,
 }
 
-fn symbolic_permissions(perm: Option<u32>, is_dir: bool, is_link: bool) -> String {
-    let Some(mode) = perm else { return "----------".to_string() };
+pub(crate) fn symbolic_permissions(perm: Option<u32>, is_dir: bool, is_link: bool) -> String {
+    let Some(mode) = perm else {
+        return "----------".to_string();
+    };
     let mut result = String::with_capacity(10);
-    result.push(if is_link { 'l' } else if is_dir { 'd' } else { '-' });
-    for (read, write, execute) in [(0o400, 0o200, 0o100), (0o040, 0o020, 0o010), (0o004, 0o002, 0o001)] {
+    result.push(if is_link {
+        'l'
+    } else if is_dir {
+        'd'
+    } else {
+        '-'
+    });
+    for (read, write, execute) in [
+        (0o400, 0o200, 0o100),
+        (0o040, 0o020, 0o010),
+        (0o004, 0o002, 0o001),
+    ] {
         result.push(if mode & read != 0 { 'r' } else { '-' });
         result.push(if mode & write != 0 { 'w' } else { '-' });
         result.push(if mode & execute != 0 { 'x' } else { '-' });
@@ -132,7 +144,8 @@ impl SftpConnectionHandle {
                             format!("{}/{}", path, name)
                         };
                         let is_dir = stat.is_dir();
-                        let is_link = stat.perm
+                        let is_link = stat
+                            .perm
                             .map(|perm| perm & 0o170000 == 0o120000)
                             .unwrap_or(false);
                         entries.push(FileInfo {
@@ -172,10 +185,12 @@ impl SftpConnectionHandle {
         drop(sftp);
 
         for entry in &mut entries {
-            let user = entry.uid
+            let user = entry
+                .uid
                 .map(|uid| self.resolve_account_name("passwd", uid))
                 .unwrap_or_else(|| "-".to_string());
-            let group = entry.gid
+            let group = entry
+                .gid
                 .map(|gid| self.resolve_account_name("group", gid))
                 .unwrap_or_else(|| "-".to_string());
             entry.owner_group = format!("{}/{}", user, group);
@@ -185,7 +200,11 @@ impl SftpConnectionHandle {
     }
 
     fn resolve_account_name(&self, database: &str, id: u32) -> String {
-        let cache = if database == "passwd" { &self.user_names } else { &self.group_names };
+        let cache = if database == "passwd" {
+            &self.user_names
+        } else {
+            &self.group_names
+        };
         if let Some(name) = cache.lock().get(&id).cloned() {
             return name;
         }
@@ -205,7 +224,9 @@ impl SftpConnectionHandle {
             return fallback;
         }
         let _ = channel.wait_close();
-        let resolved = output.split(':').next()
+        let resolved = output
+            .split(':')
+            .next()
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .unwrap_or(&fallback)

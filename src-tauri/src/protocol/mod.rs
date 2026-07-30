@@ -205,8 +205,10 @@ pub mod docker;
 pub mod mysql;
 pub mod pgsql;
 pub mod rdp;
+pub mod russh_backend;
 pub mod sftp;
 pub mod ssh;
+pub mod ssh_backend;
 
 impl PluginRegistry {
     pub fn new() -> Self {

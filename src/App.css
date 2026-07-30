@@ -2499,3 +2499,28 @@ body {
 .files-toggle-fab:active {
   transform: translateY(-50%) scale(0.95);
 }
+.ssh-key-select { width: 100%; min-height: 32px; padding: 0 12px; text-align: left; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; }
+.ssh-key-select:hover { border-color: var(--accent-color); }
+.key-picker-overlay { z-index: 1200; }
+.key-picker-modal, .session-transfer-modal { width: min(620px, calc(100vw - 32px)); padding: 16px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); }
+.key-picker-modal header, .session-transfer-modal header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+.key-picker-modal h2, .session-transfer-modal h2 { margin: 0; font-size: 18px; }
+.key-picker-modal header p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.key-picker-modal header button, .session-transfer-modal header button { width: 28px; height: 28px; border: 0; border-radius: 50%; color: var(--text-primary); background: var(--bg-hover); }
+.key-picker-table { min-height: 270px; overflow: auto; border: 1px solid var(--border-color); background: var(--bg-primary); }
+.key-picker-row { display: grid; grid-template-columns: 1.2fr 1.2fr .9fr 1.2fr; padding: 7px 9px; gap: 8px; font-size: 12px; border-bottom: 1px solid var(--border-color); cursor: default; }
+.key-picker-row.selected { background: var(--accent-color); color: white; }
+.key-picker-head { color: var(--text-secondary); background: var(--bg-tertiary); font-weight: 600; }
+.key-picker-empty { padding: 40px 12px; text-align: center; color: var(--text-secondary); }
+.key-picker-error, .session-transfer-message { margin-top: 10px; color: var(--danger-color, #e5484d); }
+.key-picker-modal footer { display: flex; gap: 8px; margin-top: 14px; }
+.key-picker-modal footer > span { flex: 1; }
+.key-picker-modal footer button, .key-picker-upload, .primary-btn { min-height: 32px; padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); background: var(--bg-hover); cursor: pointer; font: inherit; }
+.key-picker-upload, .primary-btn { color: white; border-color: var(--accent-color); background: var(--accent-color); }
+.key-picker-upload input, .file-action input { display: none; }
+.key-picker-modal button:disabled { opacity: .45; cursor: not-allowed; }
+.key-picker-modal .danger { color: #e5484d; }
+.session-transfer-modal section { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border-color); }
+.session-transfer-modal h3, .session-transfer-modal p { margin: 0; }
+.session-transfer-modal p { color: var(--text-secondary); font-size: 12px; }
+.file-action { display: inline-flex; align-items: center; }

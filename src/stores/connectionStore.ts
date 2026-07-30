@@ -140,6 +140,13 @@ export const connectionStore = {
     }
   },
 
+  async renameFolder(folderId: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    await api.renameFolder(folderId, trimmed);
+    setState("folders", folder => folder.id === folderId, "name", trimmed);
+  },
+
   async saveAssetOrder(
     connections: ConnectionRecord[],
     folders: ConnectionFolder[],

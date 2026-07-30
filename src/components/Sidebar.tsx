@@ -676,6 +676,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               📂 新建子文件夹
             </div>
             <div class="context-menu-divider" />
+            <div class="context-menu-item" onClick={() => {
+              const folder = contextMenuFolder()!;
+              const nextName = prompt("请输入新的文件夹名称", folder.name);
+              if (nextName?.trim() && nextName.trim() !== folder.name) {
+                void connectionStore.renameFolder(folder.id, nextName);
+              }
+              setShowFolderMenu(false);
+            }}>
+              ✎ 重命名文件夹
+            </div>
             <div class="context-menu-item danger" onClick={() => {
               if (confirm(`确定要删除文件夹 "${contextMenuFolder()!.name}" 吗？`)) {
                 connectionStore.deleteFolder(contextMenuFolder()!.id);

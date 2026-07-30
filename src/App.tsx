@@ -6,6 +6,7 @@ import { ConnectionForm } from "./components/ConnectionForm";
 import { TerminalView } from "./components/TerminalView";
 import { AssetList } from "./components/AssetList";
 import { SettingsModal } from "./components/SettingsModal";
+import { SessionImportExport } from "./components/SessionImportExport";
 import { connectionStore, ConnectionRecord, ConnectionConfig } from "./stores/connectionStore";
 import { initTheme } from "./stores/themeStore";
 import { uiStore } from "./stores/uiStore";
@@ -35,6 +36,7 @@ const App: Component = () => {
   const appWindow = getCurrentWindow();
   const [showForm, setShowForm] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
+  const [showSessionTransfer, setShowSessionTransfer] = createSignal(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
   const [newFolderName, setNewFolderName] = createSignal("");
   const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
@@ -173,9 +175,8 @@ const App: Component = () => {
       }
     }
 
-    // SFTP is currently connection-scoped and owned by RightPanel (its onCleanup closes
-    // the sftp channel when no SSH session is active). The sftpId field is reserved for
-    // the future per-session ownership refactor (see P2-9). No action here for now.
+    // The active SFTP channel is owned by RightPanel and shares this Shell's
+    // SSH transport. RightPanel closes the channel when the active tab changes.
 
   };
 
@@ -252,9 +253,8 @@ const App: Component = () => {
     }
   };
 
-  // P1-4: SSH reconnect — close the existing shell and reopen a fresh one.
-  // SFTP is owned by RightPanel on a separate SSH session, so it stays open and
-  // does not need to be re-handled here.
+  // P1-4: SSH reconnect — close the existing transport and reopen a fresh one.
+  // Clearing shellId makes RightPanel discard the old SFTP channel as well.
   const handleReconnect = async (sessionId: string) => {
     const session = sessions().find(s => s.id === sessionId);
     setTabContextMenu(null);
@@ -510,6 +510,9 @@ const App: Component = () => {
                 <div class="app-menu-item" onClick={() => { setShowSettings(true); setShowAppMenu(false); }}>
                   ⚙️ 设置
                 </div>
+                <div class="app-menu-item" onClick={() => { setShowSessionTransfer(true); setShowAppMenu(false); }}>
+                  ⇄ 导入 / 导出会话
+                </div>
                 <div class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
                   ℹ️ 关于
                 </div>
@@ -727,6 +730,9 @@ const App: Component = () => {
 
       <Show when={showSettings()}>
         <SettingsModal onClose={() => setShowSettings(false)} />
+      </Show>
+      <Show when={showSessionTransfer()}>
+        <SessionImportExport onClose={() => setShowSessionTransfer(false)} />
       </Show>
 
       <Show when={showNewFolderDialog()}>
