@@ -1,0 +1,356 @@
+.key-picker-overlay,
+.key-import-overlay {
+  padding: 0;
+  background: rgba(30, 36, 43, 0.24);
+  backdrop-filter: blur(2px);
+}
+
+.key-picker-overlay { z-index: 1200; }
+.key-import-overlay { z-index: 1210; }
+
+.key-picker-modal,
+.key-import-modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #bfc5ca;
+  border-radius: 7px;
+  color: #383c40;
+  background: #eef0f2;
+  box-shadow: 0 16px 42px rgba(28, 33, 39, 0.24);
+  font-family: system-ui, "Microsoft YaHei", sans-serif;
+}
+
+.key-picker-modal {
+  width: min(498px, calc(100vw - 24px));
+  height: min(520px, calc(100vh - 24px));
+}
+
+.key-import-modal {
+  width: min(598px, calc(100vw - 24px));
+  height: min(558px, calc(100vh - 24px));
+}
+
+.key-dialog-header {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 62px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: 0;
+  padding: 12px 9px 7px 19px;
+}
+
+.key-dialog-header h2 {
+  margin: 0;
+  color: #34383c;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.key-dialog-header p {
+  margin: 1px 0 0;
+  color: #8a8e92;
+  font-size: 12px;
+}
+
+.key-dialog-close,
+.ssh-config-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #50555a;
+  background: #d8dcdf;
+  cursor: pointer;
+}
+
+.key-dialog-close:hover,
+.ssh-config-close:hover { background: #cdd2d6; }
+
+.key-dialog-close svg,
+.ssh-config-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.key-picker-body {
+  min-height: 0;
+  flex: 1;
+  margin: 0 15px;
+  padding: 15px 16px 17px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.key-picker-table {
+  min-height: 100%;
+  overflow: auto;
+  border: 1px solid #e3e5e7;
+  background: #fff;
+  font: 12px "Cascadia Code", Consolas, monospace;
+}
+
+.key-picker-row {
+  display: grid;
+  min-height: 26px;
+  grid-template-columns: 1.1fr 1.1fr 0.95fr 1.45fr;
+  align-items: center;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  cursor: default;
+  outline: none;
+}
+
+.key-picker-row > span {
+  min-width: 0;
+  padding: 0 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.key-picker-row:nth-child(odd):not(.key-picker-head):not(.selected) { background: #f4f5f6; }
+.key-picker-row.selected,
+.key-picker-row.selected:nth-child(odd) {
+  color: #ffffff !important;
+  background: #8fb2f1 !important;
+  font-weight: 600;
+}
+.key-picker-row:focus-visible { box-shadow: inset 0 0 0 2px #4d90fe; }
+
+.key-picker-head {
+  min-height: 28px;
+  color: #4c5054;
+  background: #f6f7f8;
+  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  font-weight: 500;
+}
+
+.key-picker-head button {
+  display: flex;
+  height: 28px;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px;
+  border: 0;
+  border-right: 1px solid #e7e9eb;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sort-mark { color: #c7c9cb; font-size: 11px; }
+.sort-mark.active { color: #55595d; }
+.key-picker-empty { padding: 50px 12px; text-align: center; color: #989ca0; }
+.key-picker-error { margin-top: 7px; color: #e43b28; font: 12px "Cascadia Code", Consolas, monospace; }
+
+.key-picker-footer {
+  display: flex;
+  min-height: 56px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 28px;
+  padding: 0 35px 0 22px;
+}
+
+.key-picker-footer > span { flex: 1; }
+
+.text-action {
+  padding: 5px 0;
+  border: 0;
+  color: #33b8af;
+  background: transparent;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.text-action.cancel { color: #f29b00; }
+.text-action.choose { color: #3987ea; }
+.text-action.danger { color: #e54b3a; }
+.text-action:disabled { opacity: 0; pointer-events: none; }
+
+.key-import-card {
+  min-height: 0;
+  flex: 1;
+  margin: 0 15px;
+  padding: 24px 16px 16px;
+  overflow: auto;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.key-import-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.key-import-field > span {
+  display: block;
+  margin: 0 0 7px 2px;
+  color: #404448;
+  font-size: 14px;
+}
+
+.key-import-field input,
+.key-import-field textarea {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 4px;
+  outline: 0;
+  color: #34383c;
+  background: #eef0f2;
+  font: 13px "Cascadia Code", Consolas, monospace;
+}
+
+.key-import-field input { height: 32px; padding: 0 8px; }
+.key-import-field textarea { height: 130px; padding: 9px; resize: none; }
+.key-import-field input:focus,
+.key-import-field textarea:focus { border-bottom-color: #1685df; }
+.key-import-field.invalid > span { color: #ec3b26; }
+.key-import-field.invalid input,
+.key-import-field.invalid textarea { border-bottom-color: #ec3b26; }
+
+.key-import-field small {
+  display: none;
+  margin-top: 5px;
+  color: #e93620;
+  font: 12px "Cascadia Code", Consolas, monospace;
+}
+
+.key-import-field.invalid small { display: block; }
+.key-picker-file-input { display: none; }
+
+.key-file-drop {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 5px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 4px;
+  color: #8c9094;
+  background: #eef0f2;
+  font: 12px system-ui, "Microsoft YaHei", sans-serif;
+  cursor: pointer;
+}
+
+.key-file-drop.dragging {
+  border-color: #2a8df2;
+  background: #e2edff;
+}
+
+.key-file-icon { color: #42474b; font-size: 18px; }
+.key-passphrase-input { position: relative; }
+.key-passphrase-input input { padding-right: 38px; }
+
+.key-passphrase-input button,
+.ssh-secret-input button {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  color: #3e4347;
+  background: transparent;
+  cursor: pointer;
+}
+
+.key-passphrase-input svg,
+.ssh-secret-input svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.key-import-footer {
+  display: flex;
+  min-height: 56px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 23px;
+}
+
+.key-import-footer > div { display: flex; align-items: center; gap: 9px; }
+.key-import-footer button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 3px;
+  color: #3f4448;
+  background: #dfe2e4;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.key-import-footer .generate-action { color: #23a69d; background: #d7efed; }
+.key-import-footer .cancel { color: #f29b00; background: transparent; }
+.key-import-footer .save { color: #3987ea; background: transparent; }
+.key-import-footer button:disabled { color: #b9d2d0; background: #e7efee; cursor: not-allowed; }
+.key-import-footer .save:disabled { color: #c4d6ef; background: transparent; }
+
+.ssh-key-field.invalid .ssh-key-select { border-bottom-color: #ec3b26; }
+.ssh-key-field.invalid small { display: block; }
+
+.ssh-key-field .ssh-key-actions {
+  display: block;
+  width: 100%;
+}
+
+.ssh-key-field .ssh-key-select {
+  display: flex;
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 7px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 4px;
+  color: #858a8e;
+  background: #eef0f2;
+  font: 12px system-ui, "Microsoft YaHei", sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ssh-key-field .ssh-key-select:hover,
+.ssh-key-field .ssh-key-select:focus {
+  border-bottom-color: #1685df;
+  outline: 0;
+}
+
+.ssh-key-field .ssh-key-settings-icon {
+  color: #3f4448;
+  font-size: 18px;
+}
+
+@media (max-width: 620px) {
+  .key-import-footer { align-items: flex-start; flex-direction: column; padding: 8px 15px; }
+  .key-import-footer > div { flex-wrap: wrap; }
+}

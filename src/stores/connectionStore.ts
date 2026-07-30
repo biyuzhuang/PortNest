@@ -18,6 +18,38 @@ interface ConnectionState {
   selectedConnection: ConnectionRecord | null;
 }
 
+export const sortAssetsByTreeOrder = <T extends { sort_order: number; name: string }>(items: readonly T[]) =>
+  [...items].sort((left, right) =>
+    left.sort_order - right.sort_order || left.name.localeCompare(right.name)
+  );
+
+export const countFolderConnections = (
+  folderId: string,
+  connections: readonly ConnectionRecord[],
+  folders: readonly ConnectionFolder[],
+  include: (connection: ConnectionRecord) => boolean = () => true,
+  visited = new Set<string>(),
+): number => {
+  if (visited.has(folderId)) return 0;
+  const nextVisited = new Set(visited);
+  nextVisited.add(folderId);
+  const directCount = connections.filter(connection =>
+    connection.folder_id === folderId && include(connection)
+  ).length;
+  return folders
+    .filter(folder => folder.parentId === folderId)
+    .reduce(
+      (total, folder) => total + countFolderConnections(
+        folder.id,
+        connections,
+        folders,
+        include,
+        nextVisited,
+      ),
+      directCount,
+    );
+};
+
 const [state, setState] = createStore<ConnectionState>({
   connections: [],
   folders: [],

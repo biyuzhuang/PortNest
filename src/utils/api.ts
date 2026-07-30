@@ -129,6 +129,10 @@ export const api = {
     return invoke("get_connections");
   },
 
+  async getConnectionConfig(id: string): Promise<ConnectionConfig> {
+    return invoke("get_connection_config", { id });
+  },
+
   async deleteConnection(id: string): Promise<void> {
     return invoke("delete_connection", { id });
   },

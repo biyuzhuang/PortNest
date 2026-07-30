@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { api, type ConnectionConfig } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
@@ -43,6 +43,14 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
 
+  onMount(() => {
+    if (!keyId()) return;
+    void api.getSshKeys().then(keys => {
+      const selected = keys.find(key => key.id === keyId());
+      if (selected) setKeyName(selected.name);
+    });
+  });
+
   const isValid = () => {
     if (!name().trim() || !host().trim()) return false;
     if (authType() === "password" && !password() && !props.connection?.id) return false;
@@ -58,11 +66,11 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     host: host().trim(),
     port: port(),
     username: username().trim(),
-    auth_type: authType(),
+    auth_type: authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
     password: authType() === "password" ? password() : undefined,
     private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
     key_id: authType() === "key" || authType() === "key_with_passphrase" ? keyId() || undefined : undefined,
-    passphrase: authType() === "key_with_passphrase" ? passphrase() : undefined,
+    passphrase: authType() === "key" ? passphrase() || undefined : undefined,
     color: color(),
     tags: remark(),
     folder_id: folderId() || undefined,
@@ -176,7 +184,6 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                 <div class="ssh-auth-options">
                   {authButton("password", "密码")}
                   {authButton("key", "私钥")}
-                  {authButton("key_with_passphrase", "私钥+密码")}
                   {authButton("credential", "凭据", true)}
                   {authButton("template", "模板机私钥", true)}
                   {authButton("agent", "SSH Agent")}
@@ -193,7 +200,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                   </label>
                 </Show>
 
-                <Show when={authType() === "key" || authType() === "key_with_passphrase"}>
+                <Show when={authType() === "key"}>
                   <div class="ssh-field ssh-key-field">
                     <span>私钥</span>
                     <div class="ssh-key-actions">
@@ -203,12 +210,10 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       </button>
                     </div>
                   </div>
-                  <Show when={authType() === "key_with_passphrase"}>
-                    <label class="ssh-field">
-                      <span>私钥密码</span>
-                      <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
-                    </label>
-                  </Show>
+                  <label class="ssh-field">
+                    <span>私钥密码</span>
+                    <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
+                  </label>
                 </Show>
 
                 <label class="ssh-field ssh-remark-field">

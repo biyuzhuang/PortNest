@@ -42,7 +42,7 @@ const App: Component = () => {
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
   const [newFolderName, setNewFolderName] = createSignal("");
   const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
-  const [editingConnection, setEditingConnection] = createSignal<ConnectionRecord | null>(null);
+  const [editingConnection, setEditingConnection] = createSignal<ConnectionConfig | null>(null);
   const [newConnectionDefaultFolderId, setNewConnectionDefaultFolderId] = createSignal<string | undefined>(undefined);
   const [protocols, setProtocols] = createSignal<ProtocolInfo[]>([]);
   const [sessions, setSessions] = createSignal<SessionTab[]>([]);
@@ -386,9 +386,15 @@ const App: Component = () => {
     setShowForm(true);
   };
 
-  const handleEdit = (conn: ConnectionRecord) => {
-    setEditingConnection(conn);
-    setShowForm(true);
+  const handleEdit = async (conn: ConnectionRecord) => {
+    try {
+      const config = await api.getConnectionConfig(conn.id);
+      setEditingConnection(config);
+      setShowForm(true);
+    } catch (error) {
+      console.error("Load connection credentials error:", error);
+      alert("读取会话凭据失败：" + error);
+    }
   };
 
   const handleSave = async (config: ConnectionConfig) => {
@@ -438,7 +444,7 @@ const App: Component = () => {
       id: undefined as unknown as string,
       name: conn.name + " (副本)",
     };
-    setEditingConnection(newConn as ConnectionRecord);
+    setEditingConnection(newConn as unknown as ConnectionConfig);
     setShowForm(true);
   };
 
@@ -725,7 +731,7 @@ const App: Component = () => {
 
       <Show when={showForm()}>
         <ConnectionForm
-          connection={editingConnection() as unknown as ConnectionConfig}
+          connection={editingConnection() || undefined}
           protocols={protocols()}
           onSave={handleSave}
           onCancel={handleCancel}

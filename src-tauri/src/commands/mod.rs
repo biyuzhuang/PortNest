@@ -299,24 +299,40 @@ pub async fn save_connection(
         Some(key_id) => Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?),
         None => None,
     };
-    let cred_data = CredentialData {
-        auth_type: auth_type.to_string(),
-        password: config
-            .password
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.password.clone()),
-        private_key: managed_private_key.or_else(|| config
-            .private_key
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.private_key.clone())),
-        passphrase: config
-            .passphrase
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.passphrase.clone()),
-        key_id: config
-            .key_id
-            .clone()
-            .or_else(|| previous_credential.as_ref()?.key_id.clone()),
+    let cred_data = match auth_type {
+        "password" => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: config
+                .password
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.password.clone()),
+            private_key: None,
+            passphrase: None,
+            key_id: None,
+        },
+        "key" | "key_with_passphrase" => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: None,
+            private_key: managed_private_key.or_else(|| config
+                .private_key
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.private_key.clone())),
+            passphrase: config
+                .passphrase
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.passphrase.clone()),
+            key_id: config
+                .key_id
+                .clone()
+                .or_else(|| previous_credential.as_ref()?.key_id.clone()),
+        },
+        _ => CredentialData {
+            auth_type: auth_type.to_string(),
+            password: None,
+            private_key: None,
+            passphrase: None,
+            key_id: None,
+        },
     };
 
     state
@@ -404,6 +420,74 @@ pub async fn get_connections(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<ConnectionRecord>, String> {
     state.db.get_connections().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_connection_config(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<ConnectionConfigRequest, String> {
+    let connection = state
+        .db
+        .get_connections()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|connection| connection.id == id)
+        .ok_or_else(|| "连接不存在".to_string())?;
+    let credential = state
+        .db
+        .get_credential_structured(&connection.credential_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut proxy_type = None;
+    let mut proxy_host = None;
+    let mut proxy_port = None;
+    let mut proxy_username = None;
+    let mut proxy_password = None;
+    let mut encoding = None;
+    let mut timeout_ms = None;
+
+    if let Some(options) = connection.options.as_deref() {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(options) {
+            encoding = value.get("encoding").and_then(|item| item.as_str()).map(str::to_string);
+            timeout_ms = value.get("timeout_ms").and_then(|item| item.as_u64());
+            if let Some(proxy) = value.get("proxy") {
+                proxy_type = proxy.get("type").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_host = proxy.get("host").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_port = proxy.get("port").and_then(|item| item.as_u64()).and_then(|port| u16::try_from(port).ok());
+                proxy_username = proxy.get("username").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_password = proxy.get("password").and_then(|item| item.as_str()).map(str::to_string);
+            }
+        }
+    }
+
+    Ok(ConnectionConfigRequest {
+        id: connection.id,
+        name: connection.name,
+        protocol: connection.protocol,
+        host: connection.host,
+        port: connection.port,
+        username: connection.username.unwrap_or_else(|| "root".to_string()),
+        auth_type: match credential.auth_type.as_str() {
+            "key_with_passphrase" => "key".to_string(),
+            value => value.to_string(),
+        },
+        password: credential.password,
+        private_key: credential.private_key,
+        passphrase: credential.passphrase,
+        key_id: credential.key_id,
+        options: connection.options,
+        tags: connection.tags,
+        color: connection.color,
+        folder_id: connection.folder_id,
+        proxy_type,
+        proxy_host,
+        proxy_port,
+        proxy_username,
+        proxy_password,
+        encoding,
+        timeout_ms,
+    })
 }
 
 #[tauri::command]

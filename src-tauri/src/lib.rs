@@ -85,6 +85,7 @@ pub fn run() {
             commands::delete_connection,
             commands::analyze_connection,
             commands::get_protocols,
+            commands::get_connection_config,
             commands::ping_host,
             commands::open_shell,
             commands::write_shell,
