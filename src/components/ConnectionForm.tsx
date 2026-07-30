@@ -196,9 +196,14 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                 <Show when={authType() === "key" || authType() === "key_with_passphrase"}>
                   <div class="ssh-field ssh-key-field">
                     <span>私钥</span>
-                    <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
-                      {keyName() || (keyId() ? "已选择密钥" : "点击选择或上传密钥")}
-                    </button>
+                    <div class="ssh-key-actions">
+                      <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
+                        {keyName() || (keyId() ? "已选择密钥" : "尚未选择密钥")}
+                      </button>
+                      <button type="button" class="ssh-key-manage-button" onClick={() => setShowKeyPicker(true)}>
+                        选择 / 上传密钥
+                      </button>
+                    </div>
                   </div>
                   <Show when={authType() === "key_with_passphrase"}>
                     <label class="ssh-field">

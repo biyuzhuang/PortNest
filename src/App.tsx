@@ -7,6 +7,7 @@ import { TerminalView } from "./components/TerminalView";
 import { AssetList } from "./components/AssetList";
 import { SettingsModal } from "./components/SettingsModal";
 import { SessionImportExport } from "./components/SessionImportExport";
+import { SshKeyPicker } from "./components/SshKeyPicker";
 import { connectionStore, ConnectionRecord, ConnectionConfig } from "./stores/connectionStore";
 import { initTheme } from "./stores/themeStore";
 import { uiStore } from "./stores/uiStore";
@@ -37,6 +38,7 @@ const App: Component = () => {
   const [showForm, setShowForm] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
   const [showSessionTransfer, setShowSessionTransfer] = createSignal(false);
+  const [showKeyManager, setShowKeyManager] = createSignal(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
   const [newFolderName, setNewFolderName] = createSignal("");
   const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
@@ -513,6 +515,9 @@ const App: Component = () => {
                 <div class="app-menu-item" onClick={() => { setShowSessionTransfer(true); setShowAppMenu(false); }}>
                   ⇄ 导入 / 导出会话
                 </div>
+                <div class="app-menu-item" onClick={() => { setShowKeyManager(true); setShowAppMenu(false); }}>
+                  🔑 密钥管理器
+                </div>
                 <div class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
                   ℹ️ 关于
                 </div>
@@ -733,6 +738,9 @@ const App: Component = () => {
       </Show>
       <Show when={showSessionTransfer()}>
         <SessionImportExport onClose={() => setShowSessionTransfer(false)} />
+      </Show>
+      <Show when={showKeyManager()}>
+        <SshKeyPicker onClose={() => setShowKeyManager(false)} onSelect={() => setShowKeyManager(false)} />
       </Show>
 
       <Show when={showNewFolderDialog()}>

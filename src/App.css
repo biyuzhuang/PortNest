@@ -2501,6 +2501,10 @@ body {
 }
 .ssh-key-select { width: 100%; min-height: 32px; padding: 0 12px; text-align: left; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; }
 .ssh-key-select:hover { border-color: var(--accent-color); }
+.ssh-key-actions { display: flex; gap: 8px; width: 100%; }
+.ssh-key-actions .ssh-key-select { flex: 1; }
+.ssh-key-manage-button { min-height: 32px; padding: 0 12px; white-space: nowrap; color: white; background: var(--accent-color); border: 1px solid var(--accent-color); border-radius: 6px; }
+.ssh-key-manage-button:hover { filter: brightness(1.08); }
 .key-picker-overlay { z-index: 1200; }
 .key-picker-modal, .session-transfer-modal { width: min(620px, calc(100vw - 32px)); padding: 16px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); }
 .key-picker-modal header, .session-transfer-modal header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
