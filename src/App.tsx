@@ -955,7 +955,7 @@ const App: Component = () => {
             <h2>PortNest</h2>
             <p style={{ color: "var(--text-secondary)", "margin-bottom": "12px" }}>安全、专注的 SSH / SFTP 工作区</p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px", "margin-bottom": "8px" }}>
-              版本 0.1.0 · 基于 Tauri 2.0 + SolidJS
+              版本 0.0.3 · 基于 Tauri 2.0 + SolidJS
             </p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
               当前专注 SSH · SFTP，数据库与容器能力将在后续版本开放
