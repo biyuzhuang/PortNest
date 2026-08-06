@@ -1,11 +1,11 @@
 {
-  "version": "0.0.2",
-  "notes": "PortNest 0.0.2 Windows installer supports a custom installation directory and preserves existing user data during in-place upgrades.",
-  "pub_date": "2026-08-06T01:48:07Z",
+  "version": "0.0.3",
+  "notes": "PortNest 0.0.3 Windows installer supports a custom installation directory and preserves existing user data during in-place upgrades.",
+  "pub_date": "2026-08-06T06:24:08Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjBScFZENGtMNGlwYXlkVjYrUkR6NXFqeGdhUFBoNnpDNG8yd0trUFAvOFA1eUsvS3l1WkZoNkRKTjVoNG84TDlTSXd6dGdRV2ZBdmc2aG9VcHJta2c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1OTgwODg3CWZpbGU6UG9ydE5lc3RfMC4wLjJfeDY0LXNldHVwLmV4ZQp6ekt2MXFXckFuci8rSGQxeUx3TWkwamVRYytyTERZOW9Bdk13MXQ5dkRuMHl5OW14RTRYK3BXV3R0RWkreTJYcUZzcW9BaDJnTmUrSHpkZUVmaXFCQT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.2/PortNest_0.0.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTi9DTVYwWENyRXpScUlrOHgrTE50b2owUGNWbjNSckppWlVNNmo2MzNlN3dQcUR2ZGpiRUFIQmgrYlZTNktHaWhlZ0pCN3gxYkhKcU9YTGhFODQ0VFFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1OTk3NDM3CWZpbGU6UG9ydE5lc3RfMC4wLjNfeDY0LXNldHVwLmV4ZQowdXZmZ25Ub3dVTzY5aEMxOTNhUGd3T2RZeWJnNjMrVlRXeVZEVnNKcTg5OXJNa1N4SHpSNHFndDFzSGZqU3R6dDhMYzJDbHJnUkdEN0VzN2l3SzBDUT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.3/PortNest_0.0.3_x64-setup.exe"
     }
   }
 }
