@@ -45,6 +45,8 @@ pub struct ConnectionOptions {
     pub keepalive_interval: Option<u32>,
     /// 压缩
     pub compression: Option<bool>,
+    /// 交互终端字符编码
+    pub encoding: Option<String>,
     /// 代理设置
     pub proxy: Option<ProxyConfig>,
     /// 协议特定选项
@@ -57,6 +59,7 @@ impl Default for ConnectionOptions {
             timeout_ms: Some(30000),
             keepalive_interval: None,
             compression: None,
+            encoding: Some("UTF-8".to_string()),
             proxy: None,
             protocol_options: HashMap::new(),
         }
@@ -209,6 +212,8 @@ pub mod russh_backend;
 pub mod sftp;
 pub mod ssh;
 pub mod ssh_backend;
+pub mod terminal_codec;
+pub mod tunnel;
 
 impl PluginRegistry {
     pub fn new() -> Self {

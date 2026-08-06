@@ -1,8 +1,71 @@
 import { invoke } from "@tauri-apps/api/core";
 
-const shellDecoders = new Map<string, TextDecoder>();
+export type SshErrorCode = "AUTHENTICATION" | "HOST_KEY" | "ENCODING" | "PORT_IN_USE" | "FORWARD_REJECTED" | "PROXY" | "REMOTE_CLOSED" | "SSH_ERROR";
+
+export class SshApiError extends Error {
+  constructor(
+    public readonly code: SshErrorCode,
+    message: string,
+    public readonly retryable: boolean,
+    public readonly detail?: unknown,
+  ) {
+    super(message);
+    this.name = "SshError";
+  }
+}
+
+const normalizeSshError = (cause: unknown): SshApiError => {
+  if (cause instanceof SshApiError) return cause;
+  const structured = typeof cause === "object" && cause !== null ? cause as Record<string, unknown> : undefined;
+  const message = typeof structured?.message === "string" ? structured.message : String(cause);
+  if (/authentication|permission denied|认证|密码错误/i.test(message)) return new SshApiError("AUTHENTICATION", message, false, cause);
+  if (/host key|主机密钥|known_hosts/i.test(message)) return new SshApiError("HOST_KEY", message, false, cause);
+  if (/编码|encoding|无法使用.*字符/i.test(message)) return new SshApiError("ENCODING", message, false, cause);
+  if (/address.*in use|端口.*占用|监听.*失败/i.test(message)) return new SshApiError("PORT_IN_USE", message, false, cause);
+  if (/forward.*reject|转发.*拒绝|不支持.*转发/i.test(message)) return new SshApiError("FORWARD_REJECTED", message, false, cause);
+  if (/proxy|代理/i.test(message)) return new SshApiError("PROXY", message, true, cause);
+  if (/remote.*closed|远端.*关闭|connection.*closed|broken pipe|连接已关闭/i.test(message)) return new SshApiError("REMOTE_CLOSED", message, true, cause);
+  return new SshApiError("SSH_ERROR", message, typeof structured?.retryable === "boolean" ? structured.retryable : true, cause);
+};
+
+const sshInvoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+  try { return await invoke<T>(command, args); }
+  catch (cause) { throw normalizeSshError(cause); }
+};
 
 // Connection types
+export type TunnelType = "local" | "remote" | "dynamic";
+
+export interface TunnelRule {
+  id: string;
+  name: string;
+  tunnel_type: TunnelType;
+  enabled: boolean;
+  auto_start: boolean;
+  bind_host: string;
+  bind_port: number;
+  target_host?: string;
+  target_port?: number;
+  allow_public_bind?: boolean;
+}
+
+export type TunnelStatus = "starting" | "running" | "stopping" | "stopped" | "error";
+
+export interface TunnelRuntimeInfo {
+  id: string;
+  connection_id: string;
+  rule_id: string;
+  name: string;
+  tunnel_type: TunnelType;
+  bind_host: string;
+  bind_port: number;
+  target_host?: string;
+  target_port?: number;
+  status: TunnelStatus;
+  active_connections: number;
+  error?: string;
+}
+
 export interface ConnectionConfig {
   id?: string;
   name: string;
@@ -26,6 +89,7 @@ export interface ConnectionConfig {
   proxy_password?: string;
   encoding?: string;
   timeout_ms?: number;
+  tunnel_rules?: TunnelRule[];
 }
 
 export interface ConnectionRecord {
@@ -79,6 +143,7 @@ export interface AIAnalyzeResult {
 
 export interface ShellOpenResponse {
   shell_id: string;
+  encoding: string;
 }
 
 export interface SshKeyRecord {
@@ -151,35 +216,47 @@ export const api = {
 
   // Shell operations
   async openShell(connectionId: string, cols: number, rows: number): Promise<ShellOpenResponse> {
-    return invoke("open_shell", { connectionId, cols, rows });
+    return sshInvoke("open_shell", { connectionId, cols, rows });
   },
 
   async writeShell(shellId: string, data: string): Promise<void> {
-    return invoke("write_shell", { shellId, data });
+    return sshInvoke("write_shell", { shellId, data });
   },
 
   async readShell(shellId: string): Promise<string> {
-    const bytes = await invoke<number[]>("read_shell", { shellId });
-    let decoder = shellDecoders.get(shellId);
-    if (!decoder) {
-      decoder = new TextDecoder("utf-8");
-      shellDecoders.set(shellId, decoder);
-    }
-    return decoder.decode(new Uint8Array(bytes), { stream: true });
+    return sshInvoke("read_shell", { shellId });
+  },
+
+  async setShellEncoding(shellId: string, encoding: string): Promise<string> {
+    return sshInvoke("set_shell_encoding", { shellId, encoding });
   },
 
   async resizeShell(shellId: string, cols: number, rows: number): Promise<void> {
-    return invoke("resize_shell", { shellId, cols, rows });
+    return sshInvoke("resize_shell", { shellId, cols, rows });
   },
 
   async closeShell(shellId: string): Promise<void> {
-    shellDecoders.delete(shellId);
-    return invoke("close_shell", { shellId });
+    return sshInvoke("close_shell", { shellId });
   },
 
   async disconnectShell(shellId: string): Promise<void> {
-    shellDecoders.delete(shellId);
-    return invoke("disconnect_shell", { shellId });
+    return sshInvoke("disconnect_shell", { shellId });
+  },
+
+  async startTunnel(connectionId: string, ruleId: string): Promise<TunnelRuntimeInfo> {
+    return sshInvoke("start_tunnel", { connectionId, ruleId });
+  },
+
+  async stopTunnel(tunnelId: string): Promise<void> {
+    return sshInvoke("stop_tunnel", { tunnelId });
+  },
+
+  async listTunnels(connectionId?: string): Promise<TunnelRuntimeInfo[]> {
+    return sshInvoke("list_tunnels", { connectionId: connectionId ?? null });
+  },
+
+  async stopAllTunnels(connectionId?: string): Promise<void> {
+    return sshInvoke("stop_all_tunnels", { connectionId: connectionId ?? null });
   },
 
   // Query operations
@@ -194,46 +271,46 @@ export const api = {
 
   // SFTP operations
   async openSftp(connectionId: string): Promise<{ sftp_id: string }> {
-    return invoke("open_sftp", { connectionId });
+    return sshInvoke("open_sftp", { connectionId });
   },
 
   async openSftpForShell(shellId: string): Promise<{ sftp_id: string }> {
-    return invoke("open_sftp_for_shell", { shellId });
+    return sshInvoke("open_sftp_for_shell", { shellId });
   },
 
   async listSftpDir(sftpId: string, path: string): Promise<FileInfo[]> {
-    return invoke("list_sftp_dir", { sftpId, path });
+    return sshInvoke("list_sftp_dir", { sftpId, path });
   },
 
   async sftpDownload(sftpId: string, remotePath: string, localPath: string): Promise<number> {
-    return invoke("sftp_download", { sftpId, remotePath, localPath });
+    return sshInvoke("sftp_download", { sftpId, remotePath, localPath });
   },
 
   async sftpUpload(sftpId: string, localPath: string, remotePath: string): Promise<number> {
-    return invoke("sftp_upload", { sftpId, localPath, remotePath });
+    return sshInvoke("sftp_upload", { sftpId, localPath, remotePath });
   },
 
   async sftpCreateDir(sftpId: string, path: string): Promise<void> {
-    return invoke("sftp_create_dir", { sftpId, path });
+    return sshInvoke("sftp_create_dir", { sftpId, path });
   },
 
   async sftpDeleteFile(sftpId: string, path: string): Promise<void> {
-    return invoke("sftp_delete_file", { sftpId, path });
+    return sshInvoke("sftp_delete_file", { sftpId, path });
   },
 
   async sftpDeleteDir(sftpId: string, path: string): Promise<void> {
-    return invoke("sftp_delete_dir", { sftpId, path });
+    return sshInvoke("sftp_delete_dir", { sftpId, path });
   },
 
   async sftpRename(sftpId: string, oldPath: string, newPath: string): Promise<void> {
-    return invoke("sftp_rename", { sftpId, oldPath, newPath });
+    return sshInvoke("sftp_rename", { sftpId, oldPath, newPath });
   },
 
   async closeSftp(sftpId: string): Promise<void> {
-    return invoke("close_sftp", { sftpId });
+    return sshInvoke("close_sftp", { sftpId });
   },
   async closeSftpIndependent(sftpId: string): Promise<void> {
-    return invoke("close_sftp_independent", { sftpId });
+    return sshInvoke("close_sftp_independent", { sftpId });
   },
 
   // Folder operations
@@ -291,7 +368,7 @@ export const api = {
 
   // Test connection
   async testConnection(config: ConnectionConfig): Promise<string> {
-    return invoke("test_connection", { config });
+    return sshInvoke("test_connection", { config });
   },
 };
 

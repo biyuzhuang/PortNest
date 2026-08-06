@@ -5,8 +5,11 @@
 //! during the migration.
 
 use async_trait::async_trait;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio::sync::oneshot;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -134,6 +137,30 @@ pub trait SshSession: Send + Sync {
     async fn open_shell(&self, size: TerminalSize) -> Result<Arc<dyn ShellHandle>>;
     async fn open_sftp(&self) -> Result<Arc<dyn SftpHandle>>;
     async fn exec(&self, command: &str) -> Result<ExecResult>;
+    async fn relay_direct_tcpip(
+        &self,
+        _stream: TcpStream,
+        _target_host: &str,
+        _target_port: u16,
+    ) -> Result<()> {
+        Err(Error::ProtocolError(
+            "当前 SSH 后端不支持端口转发".to_string(),
+        ))
+    }
+    async fn serve_remote_forward(
+        &self,
+        _bind_host: &str,
+        _bind_port: u16,
+        _target_host: &str,
+        _target_port: u16,
+        _cancellation: CancellationToken,
+        ready: oneshot::Sender<std::result::Result<u16, String>>,
+        _active_connections: Arc<AtomicUsize>,
+    ) -> Result<()> {
+        let message = "当前 SSH 后端不支持远程端口转发".to_string();
+        let _ = ready.send(Err(message.clone()));
+        Err(Error::ProtocolError(message))
+    }
     async fn disconnect(&self) -> Result<()>;
     fn status(&self) -> SessionStatus;
 }
@@ -162,6 +189,9 @@ struct Ssh2ShellHandle {
     session: Arc<dyn ConnectionHandle>,
     shell_id: Uuid,
 }
+
+const SHELL_READ_CHUNK_SIZE: usize = 64 * 1024;
+const SHELL_READ_LIMIT: usize = 256 * 1024;
 
 struct Ssh2SftpHandle {
     handle: Arc<SftpConnectionHandle>,
@@ -274,10 +304,18 @@ impl ShellHandle for Ssh2ShellHandle {
         let handle = self.session.clone();
         let shell_id = self.shell_id;
         tokio::task::spawn_blocking(move || {
-            let mut buffer = vec![0; 4096];
-            let count = handle.read_shell(&shell_id, &mut buffer)?;
-            buffer.truncate(count);
-            Ok(buffer)
+            let mut output = Vec::new();
+            let mut chunk = vec![0; SHELL_READ_CHUNK_SIZE];
+
+            while output.len() < SHELL_READ_LIMIT {
+                let count = handle.read_shell(&shell_id, &mut chunk)?;
+                if count == 0 {
+                    break;
+                }
+                output.extend_from_slice(&chunk[..count]);
+            }
+
+            Ok(output)
         })
         .await
         .map_err(|error| Error::ProtocolError(format!("读取 Shell 任务失败: {error}")))?

@@ -79,17 +79,14 @@ export const AssetList: Component<AssetListProps> = (props) => {
     );
 
   const filterTitle = createMemo(() => ({
-    all: "资产列表",
-    terminal: "终端连接",
-    database: "数据库连接",
-    container: "容器连接",
-    remote: "远程桌面",
+    all: "SSH 资产",
+    terminal: "SSH 终端",
   })[uiStore.assetFilter()]);
 
   createEffect(() => {
     uiStore.assetFilter();
     folderId();
-    setSelectedIds(new Set());
+    setSelectedIds(new Set<string>());
     setSelectionAnchorId(null);
   });
 
@@ -228,7 +225,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
 
   const clearSelectionFromBlankArea = (event: MouseEvent) => {
     if (event.target !== event.currentTarget) return;
-    setSelectedIds(new Set());
+    setSelectedIds(new Set<string>());
     setSelectionAnchorId(null);
   };
 
@@ -287,7 +284,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               class="asset-row asset-folder-row"
               onDblClick={() => {
                 setFolderId(folder.id);
-                setSelectedIds(new Set());
+                setSelectedIds(new Set<string>());
                 setSelectionAnchorId(null);
               }}
             >

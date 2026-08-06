@@ -1,5 +1,6 @@
 import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { api, type SshKeyRecord } from "../utils/api";
+import { feedback } from "../stores/feedbackStore";
 import "./SshKeyPicker.css";
 
 interface Props {
@@ -129,7 +130,7 @@ export const SshKeyPicker: Component<Props> = (props) => {
   };
 
   const remove = async () => {
-    if (!selectedId() || !confirm("确定删除所选私钥吗？使用该私钥的会话可能无法继续连接。")) return;
+    if (!selectedId() || !await feedback.confirm("确定删除所选私钥吗？使用该私钥的会话可能无法继续连接。", "删除私钥")) return;
     try {
       await api.deleteSshKey(selectedId());
       setSelectedId("");

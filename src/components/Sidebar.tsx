@@ -7,16 +7,18 @@ import {
   sortAssetsByTreeOrder,
 } from "../stores/connectionStore";
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
+import { feedback } from "../stores/feedbackStore";
 
 interface SidebarProps {
+  width?: number;
   onConnect: (conn: ConnectionRecord) => void;
-  onOpenAI: (conn: ConnectionRecord) => void;
   onEdit: (conn: ConnectionRecord) => void;
   onDelete: (conn: ConnectionRecord) => void;
   onOpenSettings?: () => void;
-  onNewConnection?: () => void;
+  onNewConnection?: (folderId?: string) => void;
   onNewFolder?: (parentId?: string) => void;
   onCopyConnection?: (conn: ConnectionRecord) => void;
+  onOpenTunnels?: (conn: ConnectionRecord) => void;
   selectedId?: string;
 }
 
@@ -174,7 +176,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     event.preventDefault();
     event.stopPropagation();
     const asset = getDraggedAsset(event);
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const ratio = (event.clientY - rect.top) / Math.max(rect.height, 1);
     handleDragEnded();
     if (!asset) return;
@@ -197,7 +199,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     event.preventDefault();
     event.stopPropagation();
     const asset = getDraggedAsset(event);
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const after = event.clientY > rect.top + rect.height / 2;
     handleDragEnded();
     if (!asset || asset.kind !== "connection" || asset.id === target.id) return;
@@ -206,7 +208,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
   const handleDropZoneLeave = (event: DragEvent, folderId: string | null) => {
     const nextTarget = event.relatedTarget as Node | null;
-    if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+    if (nextTarget && (event.currentTarget as HTMLElement).contains(nextTarget)) return;
     if (folderId === null) {
       setDragOverRoot(false);
     } else if (dragOverFolderId() === folderId) {
@@ -261,28 +263,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const selectAssetFilter = (filter: AssetFilter) => {
     uiStore.setAssetFilter(filter);
     uiStore.setAssetTreeVisible(true);
-  };
-
-  const getProtocolIcon = (protocol: string) => {
-    switch (protocol) {
-      case "ssh": return "🖥";
-      case "rdp": return "⊟";
-      case "sftp": return "📂";
-      case "mysql": return "🗄";
-      case "postgresql": return "🐘";
-      default: return "●";
-    }
-  };
-
-  const getProtocolColor = (protocol: string) => {
-    switch (protocol) {
-      case "ssh": return "#4ade80";
-      case "rdp": return "#60a5fa";
-      case "sftp": return "#fbbf24";
-      case "mysql": return "#f472b6";
-      case "postgresql": return "#3b82f6";
-      default: return "#9ca3af";
-    }
   };
 
   const [contextMenuPos, setContextMenuPos] = createSignal<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -389,7 +369,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   });
 
   return (
-    <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
+    <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} style={`--asset-sidebar-width:${props.width || 292}px`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
       <nav class="module-rail" aria-label="功能导航">
         <button class="module-rail-brand" title="PortNest">P</button>
         <div class="module-rail-primary">
@@ -405,16 +385,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </button>
           <button class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => selectAssetFilter("terminal")}>
             <span>›_</span><small>终端</small>
-          </button>
-          <div class="module-rail-divider" />
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => selectAssetFilter("database")}>
-            <span>◉</span><small>数据</small>
-          </button>
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "container" ? "active" : ""}`} title="只显示容器" onClick={() => selectAssetFilter("container")}>
-            <span>◇</span><small>容器</small>
-          </button>
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "remote" ? "active" : ""}`} title="只显示远程桌面" onClick={() => selectAssetFilter("remote")}>
-            <span>↗</span><small>远程</small>
           </button>
         </div>
         <div class="module-rail-bottom">
@@ -573,6 +543,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <div class="context-menu-item" onClick={() => { props.onConnect(contextMenuConn()!); setShowContextMenu(false); }}>
             连接
           </div>
+          <div class="context-menu-item" onClick={() => { props.onOpenTunnels?.(contextMenuConn()!); setShowContextMenu(false); }}>
+            SSH 隧道
+          </div>
           <div class="context-menu-item has-submenu">
             <span>移动此会话</span>
             <span class="submenu-arrow">›</span>
@@ -673,22 +646,23 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               📂 新建子文件夹
             </div>
             <div class="context-menu-divider" />
-            <div class="context-menu-item" onClick={() => {
+            <div class="context-menu-item" onClick={() => { void (async () => {
               const folder = contextMenuFolder()!;
-              const nextName = prompt("请输入新的文件夹名称", folder.name);
+              const nextName = await feedback.prompt("请输入新的文件夹名称", folder.name, "重命名文件夹");
               if (nextName?.trim() && nextName.trim() !== folder.name) {
-                void connectionStore.renameFolder(folder.id, nextName);
+                await connectionStore.renameFolder(folder.id, nextName.trim());
               }
               setShowFolderMenu(false);
-            }}>
+            })(); }}>
               ✎ 重命名文件夹
             </div>
-            <div class="context-menu-item danger" onClick={() => {
-              if (confirm(`确定要删除文件夹 "${contextMenuFolder()!.name}" 吗？`)) {
-                connectionStore.deleteFolder(contextMenuFolder()!.id);
+            <div class="context-menu-item danger" onClick={() => { void (async () => {
+              const folder = contextMenuFolder()!;
+              if (await feedback.confirm(`确定要删除文件夹“${folder.name}”吗？`, "删除文件夹")) {
+                await connectionStore.deleteFolder(folder.id);
               }
               setShowFolderMenu(false);
-            }}>
+            })(); }}>
               删除文件夹
             </div>
           </Show>

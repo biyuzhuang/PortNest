@@ -122,18 +122,15 @@ impl SshConnectionHandle {
         if let Some(entry) = entry {
             // Lock only this specific channel
             let mut channel = entry.channel.lock();
-            let mut temp_buf = [0u8; 4096];
-            match channel.read(&mut temp_buf) {
+            match channel.read(buf) {
                 Ok(0) => {
                     // No data available - this is normal for non-blocking
                     tracing::trace!("read_shell: no data");
                     Ok(0)
                 }
                 Ok(n) => {
-                    let len = std::cmp::min(n, buf.len());
-                    buf[..len].copy_from_slice(&temp_buf[..len]);
-                    tracing::info!("read_shell: got {} bytes", len);
-                    Ok(len)
+                    tracing::trace!("read_shell: got {} bytes", n);
+                    Ok(n)
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     tracing::trace!("read_shell: WouldBlock");

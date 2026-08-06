@@ -14,11 +14,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn app_data_dir() -> PathBuf {
-    let directory_name = if cfg!(dev) {
-        "PortNestDev"
-    } else {
-        "PortNest"
-    };
+    let directory_name = if cfg!(dev) { "PortNestDev" } else { "PortNest" };
 
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -90,6 +86,11 @@ pub fn run() {
             commands::open_shell,
             commands::write_shell,
             commands::read_shell,
+            commands::set_shell_encoding,
+            commands::start_tunnel,
+            commands::stop_tunnel,
+            commands::list_tunnels,
+            commands::stop_all_tunnels,
             commands::resize_shell,
             commands::close_shell,
             commands::disconnect_shell,

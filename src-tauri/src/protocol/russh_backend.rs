@@ -10,16 +10,19 @@ use russh_sftp::client::SftpSession;
 use sha2::Digest;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
+use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
 use crate::protocol::sftp::{symbolic_permissions, FileInfo};
 use crate::protocol::ssh_backend::{
-    ConnectionTarget, ExecResult, SftpHandle, ShellHandle, SshBackend, SshSession, TerminalSize,
+    CancellationToken, ConnectionTarget, ExecResult, SftpHandle, ShellHandle, SshBackend,
+    SshSession, TerminalSize,
 };
 use crate::protocol::{ConnectionOptions, Credential, CredentialType, SessionStatus};
 
@@ -31,6 +34,13 @@ struct HostKeyVerifier {
     host: String,
     port: u16,
     rejection: Arc<StdMutex<Option<String>>>,
+    forwarded_channels: ForwardRegistry,
+}
+
+type ForwardRegistry = Arc<StdMutex<HashMap<u32, mpsc::UnboundedSender<ForwardedTcpip>>>>;
+
+struct ForwardedTcpip {
+    channel: Channel<client::Msg>,
 }
 
 impl client::Handler for HostKeyVerifier {
@@ -87,6 +97,29 @@ impl client::Handler for HostKeyVerifier {
             }
         }
     }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> std::result::Result<(), Self::Error> {
+        let sender = self
+            .forwarded_channels
+            .lock()
+            .expect("forward registry lock")
+            .get(&connected_port)
+            .cloned();
+        if let Some(sender) = sender {
+            reply.accept().await;
+            let _ = sender.send(ForwardedTcpip { channel });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -95,12 +128,16 @@ pub struct RusshBackend;
 pub struct RusshSession {
     id: Uuid,
     handle: Arc<Mutex<client::Handle<HostKeyVerifier>>>,
+    forwarded_channels: ForwardRegistry,
 }
 
 struct RusshShellHandle {
     id: Uuid,
     channel: Mutex<Channel<client::Msg>>,
 }
+
+const SHELL_READ_WAIT: Duration = Duration::from_millis(10);
+const SHELL_READ_LIMIT: usize = 256 * 1024;
 
 struct RusshSftpHandle {
     id: Uuid,
@@ -124,10 +161,12 @@ impl SshBackend for RusshBackend {
             .map_err(|_| Error::Timeout(format!("连接 {}:{} 超时", target.host, target.port)))??;
 
         let rejection = Arc::new(StdMutex::new(None));
+        let forwarded_channels: ForwardRegistry = Arc::new(StdMutex::new(HashMap::new()));
         let handler = HostKeyVerifier {
             host: target.host.clone(),
             port: target.port,
             rejection: rejection.clone(),
+            forwarded_channels: forwarded_channels.clone(),
         };
         let mut preferred = russh::Preferred::default();
         if has_legacy_host_key_record(&target.host, target.port) {
@@ -177,12 +216,9 @@ impl SshBackend for RusshBackend {
                     .map_err(|error| {
                         Error::AuthenticationFailed(format!("私钥解析失败: {error}"))
                     })?;
-                let advertised_hash = handle
-                    .best_supported_rsa_hash()
-                    .await
-                    .map_err(|error| {
-                        Error::AuthenticationFailed(format!("协商 RSA 签名算法失败: {error}"))
-                    })?;
+                let advertised_hash = handle.best_supported_rsa_hash().await.map_err(|error| {
+                    Error::AuthenticationFailed(format!("协商 RSA 签名算法失败: {error}"))
+                })?;
                 // Some OpenSSH servers do not send EXT_INFO soon enough while
                 // rejecting legacy ssh-rsa/SHA-1. In that case try the modern
                 // RSA algorithms first, then retain compatibility with old
@@ -219,6 +255,7 @@ impl SshBackend for RusshBackend {
         Ok(Arc::new(RusshSession {
             id: Uuid::new_v4(),
             handle: Arc::new(Mutex::new(handle)),
+            forwarded_channels,
         }))
     }
 }
@@ -285,17 +322,14 @@ where
     })?;
     for identity in identities {
         let key = identity.public_key().into_owned();
-                let advertised_hash = handle
-                    .best_supported_rsa_hash()
-            .await
-            .map_err(|error| {
-                Error::AuthenticationFailed(format!("协商 Agent 签名算法失败: {error}"))
-                    })?;
-                // Some OpenSSH servers do not send EXT_INFO soon enough for
-                // `best_supported_rsa_hash`, while also rejecting legacy
-                // ssh-rsa/SHA-1 signatures. Prefer rsa-sha2-512 when the
-                // extension is absent, as recommended by russh.
-                let hash = advertised_hash.unwrap_or(Some(HashAlg::Sha512));
+        let advertised_hash = handle.best_supported_rsa_hash().await.map_err(|error| {
+            Error::AuthenticationFailed(format!("协商 Agent 签名算法失败: {error}"))
+        })?;
+        // Some OpenSSH servers do not send EXT_INFO soon enough for
+        // `best_supported_rsa_hash`, while also rejecting legacy
+        // ssh-rsa/SHA-1 signatures. Prefer rsa-sha2-512 when the
+        // extension is absent, as recommended by russh.
+        let hash = advertised_hash.unwrap_or(Some(HashAlg::Sha512));
         let result = handle
             .authenticate_publickey_with(username, key, hash, agent)
             .await
@@ -365,6 +399,114 @@ impl SshSession for RusshSession {
         exec_on_transport(&self.handle, command).await
     }
 
+    async fn relay_direct_tcpip(
+        &self,
+        stream: TcpStream,
+        target_host: &str,
+        target_port: u16,
+    ) -> Result<()> {
+        let origin = stream
+            .peer_addr()
+            .map(|address| (address.ip().to_string(), address.port() as u32))
+            .unwrap_or_else(|_| ("127.0.0.1".to_string(), 0));
+        let channel = self
+            .handle
+            .lock()
+            .await
+            .channel_open_direct_tcpip(target_host, target_port as u32, origin.0, origin.1)
+            .await
+            .map_err(|error| protocol_error("打开 direct-tcpip Channel 失败", error))?;
+        relay_tcp_channel(stream, channel).await
+    }
+
+    async fn serve_remote_forward(
+        &self,
+        bind_host: &str,
+        bind_port: u16,
+        target_host: &str,
+        target_port: u16,
+        cancellation: CancellationToken,
+        ready: oneshot::Sender<std::result::Result<u16, String>>,
+        active_connections: Arc<AtomicUsize>,
+    ) -> Result<()> {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        self.forwarded_channels
+            .lock()
+            .expect("forward registry lock")
+            .insert(bind_port as u32, sender);
+
+        let allocated = match self
+            .handle
+            .lock()
+            .await
+            .tcpip_forward(bind_host, bind_port as u32)
+            .await
+        {
+            Ok(port) => {
+                if port == 0 {
+                    bind_port
+                } else {
+                    port as u16
+                }
+            }
+            Err(error) => {
+                self.forwarded_channels
+                    .lock()
+                    .expect("forward registry lock")
+                    .remove(&(bind_port as u32));
+                let message = format!("服务端拒绝远程转发 {bind_host}:{bind_port}: {error}");
+                let _ = ready.send(Err(message.clone()));
+                return Err(Error::ProtocolError(message));
+            }
+        };
+
+        if allocated != bind_port {
+            let mut registry = self
+                .forwarded_channels
+                .lock()
+                .expect("forward registry lock");
+            if let Some(sender) = registry.remove(&(bind_port as u32)) {
+                registry.insert(allocated as u32, sender);
+            }
+        }
+        let _ = ready.send(Ok(allocated));
+
+        loop {
+            tokio::select! {
+                _ = cancellation.cancelled() => break,
+                forwarded = receiver.recv() => {
+                    let Some(forwarded) = forwarded else { break; };
+                    let target_host = target_host.to_string();
+                    let active_connections = active_connections.clone();
+                    active_connections.fetch_add(1, Ordering::AcqRel);
+                    tokio::spawn(async move {
+                        let result = async {
+                            let stream = TcpStream::connect((target_host.as_str(), target_port)).await
+                                .map_err(Error::IoError)?;
+                            relay_tcp_channel(stream, forwarded.channel).await
+                        }.await;
+                        if let Err(error) = result {
+                            tracing::warn!("远程转发连接失败: {error}");
+                        }
+                        active_connections.fetch_sub(1, Ordering::AcqRel);
+                    });
+                }
+            }
+        }
+
+        let _ = self
+            .handle
+            .lock()
+            .await
+            .cancel_tcpip_forward(bind_host, allocated as u32)
+            .await;
+        self.forwarded_channels
+            .lock()
+            .expect("forward registry lock")
+            .remove(&(allocated as u32));
+        Ok(())
+    }
+
     async fn disconnect(&self) -> Result<()> {
         self.handle
             .lock()
@@ -387,6 +529,36 @@ impl SshSession for RusshSession {
     }
 }
 
+async fn relay_tcp_channel(mut stream: TcpStream, mut channel: Channel<client::Msg>) -> Result<()> {
+    let mut socket_closed = false;
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        tokio::select! {
+            read = stream.read(&mut buffer), if !socket_closed => {
+                match read {
+                    Ok(0) => {
+                        socket_closed = true;
+                        channel.eof().await.map_err(|error| protocol_error("关闭隧道输入失败", error))?;
+                    }
+                    Ok(count) => channel.data(&buffer[..count]).await
+                        .map_err(|error| protocol_error("写入隧道 Channel 失败", error))?,
+                    Err(error) => return Err(Error::IoError(error)),
+                }
+            }
+            message = channel.wait() => {
+                match message {
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                        stream.write_all(&data).await.map_err(Error::IoError)?;
+                    }
+                    Some(ChannelMsg::Eof | ChannelMsg::Close) | None => break,
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl ShellHandle for RusshShellHandle {
     fn id(&self) -> Uuid {
@@ -395,13 +567,36 @@ impl ShellHandle for RusshShellHandle {
 
     async fn read(&self) -> Result<Vec<u8>> {
         let mut channel = self.channel.lock().await;
-        match tokio::time::timeout(Duration::from_millis(10), channel.wait()).await {
-            Ok(Some(ChannelMsg::Data { data })) => Ok(data.to_vec()),
-            Ok(Some(ChannelMsg::ExtendedData { data, .. })) => Ok(data.to_vec()),
-            Ok(Some(ChannelMsg::Eof | ChannelMsg::Close)) | Ok(None) => {
-                Err(Error::ConnectionFailed("远端 Shell 已关闭".to_string()))
+        let deadline = tokio::time::Instant::now() + SHELL_READ_WAIT;
+        let mut output = Vec::new();
+
+        // A terminal refresh is commonly split over many SSH channel messages.
+        // Returning only one message per UI poll creates an artificial backlog:
+        // full-screen programs appear frozen and command output trickles in. Drain
+        // everything that is already available, while keeping a per-call cap so a
+        // busy shell cannot monopolize the async runtime.
+        loop {
+            let Some(remaining) = deadline.checked_duration_since(tokio::time::Instant::now())
+            else {
+                return Ok(output);
+            };
+
+            match tokio::time::timeout(remaining, channel.wait()).await {
+                Ok(Some(ChannelMsg::Data { data }))
+                | Ok(Some(ChannelMsg::ExtendedData { data, .. })) => {
+                    output.extend_from_slice(&data);
+                    if output.len() >= SHELL_READ_LIMIT {
+                        return Ok(output);
+                    }
+                }
+                Ok(Some(ChannelMsg::Eof | ChannelMsg::Close)) | Ok(None) => {
+                    return Err(Error::ConnectionFailed("远端 Shell 已关闭".to_string()));
+                }
+                // Ignore channel bookkeeping messages and keep looking for data
+                // within the same short polling window.
+                Ok(Some(_)) => continue,
+                Err(_) => return Ok(output),
             }
-            Ok(Some(_)) | Err(_) => Ok(Vec::new()),
         }
     }
 

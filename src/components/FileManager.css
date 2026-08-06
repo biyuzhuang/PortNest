@@ -353,6 +353,10 @@
 .file-options-caption { padding: 7px 20px 4px; color: #989da1; font-size: 12px; }
 .file-options-overlay { position: fixed; z-index: 1001; inset: 0; }
 .nav-btn.active { background: #e5e8eb; }
+.nav-btn:disabled { opacity: .3; cursor: default; }
+.file-filter-input { width: 110px; height: 24px; padding: 0 7px; border: 1px solid #dfe3e7; border-radius: 4px; color: #20252a; background: #fff; font-size: 11px; outline: none; }
+.file-filter-input:focus { border-color: #2589e8; box-shadow: 0 0 0 2px rgba(37, 137, 232, .12); }
+.file-list > .error button { margin-left: 8px; padding: 3px 9px; border: 1px solid currentColor; border-radius: 4px; color: inherit; background: transparent; cursor: pointer; }
 
 .file-cell.permissions,
 .file-cell.owner {

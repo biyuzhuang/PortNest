@@ -204,3 +204,21 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.broadcast-session-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.broadcast-session-row:hover { background: var(--bg-tertiary); }
+.broadcast-session-row.disabled { opacity: .55; cursor: not-allowed; }
+.broadcast-session-main { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+.broadcast-session-main small { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.broadcast-session-row code { color: var(--text-secondary); font-size: 11px; }
+.broadcast-command-box { display: flex; flex-direction: column; gap: 7px; padding: 14px; border-top: 1px solid var(--border); }
+.broadcast-command-box > label { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 12px; }
+.broadcast-command-box > label span { color: var(--text-muted); font-size: 11px; }
+.broadcast-command-box > textarea { min-height: 124px; max-height: 320px; padding: 10px 11px; resize: vertical; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 7px; font: 13px/1.55 "Cascadia Code", Consolas, monospace; outline: none; tab-size: 2; }
+.broadcast-command-box > textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
+.broadcast-send { min-height: 36px; color: white; background: var(--accent); border: 0; border-radius: 7px; font-weight: 600; }
+.broadcast-send:disabled { opacity: .45; }
+.broadcast-send kbd { margin-left: 6px; padding: 1px 5px; color: rgba(255,255,255,.8); background: rgba(0,0,0,.18); border-radius: 4px; font: inherit; font-size: 10px; }
+.broadcast-summary { padding: 11px 14px; color: var(--success); background: color-mix(in srgb, var(--success) 9%, transparent); border-top: 1px solid var(--border); font-size: 12px; }
+.broadcast-summary.has-error { color: var(--warning); }
+.broadcast-summary p { margin: 5px 0 0; color: var(--error); overflow-wrap: anywhere; }

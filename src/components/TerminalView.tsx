@@ -1,21 +1,26 @@
-import { Component, onMount, onCleanup, createEffect, on } from "solid-js";
+import { Component, onMount, onCleanup, createEffect, on, createSignal, Show } from "solid-js";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 import { api, ConnectionRecord } from "../utils/api";
 import { getTerminalThemeConfig, getTerminalSettings, terminalBackgroundStyle, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
+import { sessionStore } from "../stores/sessionStore";
 
 interface TerminalViewProps {
   connection: ConnectionRecord;
   sessionKey?: string;
   visible?: boolean | (() => boolean);
   shellId?: string;
-  onDisconnected?: () => void;
+  onDisconnected?: (error?: unknown) => void;
 }
 
 interface TerminalState {
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   shellId: string;
   readInterval: number | null;
   stopPolling: () => void;
@@ -42,7 +47,7 @@ export function hasTerminalState(sessionKey: string): boolean {
 }
 
 export function disposeAllTerminals() {
-  for (const [key, state] of terminalStates) {
+  for (const state of terminalStates.values()) {
     if (state.resizeObserver) {
       state.resizeObserver.disconnect();
       state.resizeObserver = null;
@@ -63,6 +68,9 @@ export function disposeAllTerminals() {
 
 export const TerminalView: Component<TerminalViewProps> = (props) => {
   let containerRef: HTMLDivElement | undefined;
+  let searchInputRef: HTMLInputElement | undefined;
+  const [showSearch, setShowSearch] = createSignal(false);
+  const [searchTerm, setSearchTerm] = createSignal("");
 
   const isVisible = () => {
     if (typeof props.visible === "function") {
@@ -73,7 +81,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
   const doFit = (state: TerminalState) => {
     try {
-      if (state.terminal.element?.isConnected && containerRef?.offsetWidth > 0 && containerRef?.offsetHeight > 0) {
+      const container = containerRef;
+      if (state.terminal.element?.isConnected && container && container.offsetWidth > 0 && container.offsetHeight > 0) {
         const prevCols = state.terminal.cols;
         const prevRows = state.terminal.rows;
         state.fitAddon.fit();
@@ -184,13 +193,17 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       },
       cursorBlink: true,
       cursorStyle: "block",
-      bellStyle: settings.terminalBell ? "sound" : "none",
       scrollback: settings.scrollback,
-      convertEol: true,
+      // SSH PTYs already provide the cursor movement they need. Rewriting every
+      // LF as CRLF corrupts cursor positioning in full-screen programs such as vi.
+      convertEol: false,
     });
 
     const fitAddon = new FitAddon();
+    const searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(searchAddon);
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
 
     terminal.open(containerRef);
 
@@ -204,10 +217,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       console.error("[TerminalView] SSH session disconnected:", error);
       terminal.writeln("");
       terminal.writeln("\x1b[1;31m连接已中断，请重新连接。\x1b[0m");
-      if (getTerminalSettings().reconnectOnDisconnect) {
-        terminal.writeln("\x1b[33m正在尝试自动重连…\x1b[0m");
-        props.onDisconnected?.();
-      }
+      if (getTerminalSettings().reconnectOnDisconnect) terminal.writeln("\x1b[33m正在尝试自动重连…\x1b[0m");
+      props.onDisconnected?.(error);
     };
 
     const pollShell = async () => {
@@ -215,17 +226,24 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       if (!currentState || shellId !== currentState.shellId) {
         return;
       }
+      let hadData = false;
       try {
         const data = await api.readShell(shellId);
+        hadData = data.length > 0;
         if (data && terminal.element?.isConnected) {
-          terminal.write(data);
+          // Wait until xterm has parsed this batch. This provides backpressure for
+          // very large output and ensures terminal query replies are emitted before
+          // the next batch is fetched.
+          await new Promise<void>((resolve) => terminal.write(data, resolve));
         }
       } catch (error) {
         handleShellFailure(error);
         return;
       }
       if (!stopped) {
-        readTimer = window.setTimeout(pollShell, 50);
+        // Continue immediately while data is flowing. Use a short idle delay to
+        // avoid a hot invoke loop when the remote shell has nothing to send.
+        readTimer = window.setTimeout(pollShell, hadData ? 0 : 16);
         currentState.readInterval = readTimer;
       }
     };
@@ -260,12 +278,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     terminal.writeln(`\x1b[32mHost: ${props.connection.host}:${props.connection.port}\x1b[0m`);
     terminal.writeln("");
 
-    let writeQueue = Promise.resolve();
     const sendData = (data: string) => {
-      writeQueue = writeQueue
-        .then(() => api.writeShell(shellId, data))
-        .catch(error => handleShellFailure(error));
-      return writeQueue;
+      return sessionStore.sendText(sessionKey, data).catch(error => {
+        handleShellFailure(error);
+        throw error;
+      });
     };
 
     terminal.onData((data) => {
@@ -274,6 +291,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
     // Ctrl+C: 有选中文本时复制，否则发送到远程
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        setShowSearch(true);
+        queueMicrotask(() => searchInputRef?.focus());
+        return false;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         const selection = terminal.getSelection();
         if (selection) {
@@ -328,6 +350,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const state: TerminalState = {
       terminal,
       fitAddon,
+      searchAddon,
       shellId,
       readInterval: null,
       stopPolling: () => {
@@ -391,7 +414,6 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     state.terminal.options.lineHeight = settings.lineHeight;
     state.terminal.options.letterSpacing = settings.letterSpacing;
     state.terminal.options.scrollback = settings.scrollback;
-    state.terminal.options.bellStyle = settings.terminalBell ? "sound" : "none";
     doFit(state);
   });
 
@@ -431,12 +453,27 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }
   });
 
+  const search = (previous = false) => {
+    const state = props.sessionKey ? terminalStates.get(props.sessionKey) : undefined;
+    if (!state || !searchTerm()) return;
+    if (previous) state.searchAddon.findPrevious(searchTerm(), { incremental: true });
+    else state.searchAddon.findNext(searchTerm(), { incremental: true });
+  };
+
   return (
-    <div
-      ref={containerRef}
-      class={`terminal-container terminal-background-${terminalBackgroundStyle()}`}
-      style={{ width: "100%", height: "100%" }}
-    />
+    <div class="terminal-view">
+      <Show when={showSearch()}>
+        <div class="terminal-search-bar">
+          <input ref={searchInputRef} value={searchTerm()} placeholder="搜索终端输出" onInput={event => { setSearchTerm(event.currentTarget.value); search(); }} onKeyDown={event => {
+            if (event.key === "Enter") search(event.shiftKey);
+            if (event.key === "Escape") { setShowSearch(false); terminalStates.get(props.sessionKey || "")?.terminal.focus(); }
+          }} />
+          <button onClick={() => search(true)} title="上一个">↑</button><button onClick={() => search(false)} title="下一个">↓</button>
+          <button onClick={() => setShowSearch(false)} title="关闭">×</button>
+        </div>
+      </Show>
+      <div ref={containerRef} class={`terminal-container terminal-background-${terminalBackgroundStyle()}`} />
+    </div>
   );
 };
 

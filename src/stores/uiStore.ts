@@ -4,19 +4,14 @@ import { createSignal } from "solid-js";
 // 默认展开，SSH 连接成功后自动打开 SFTP 并加载文件列表
 const [filesCollapsed, setFilesCollapsed] = createSignal(false);
 const [filesStacked, setFilesStackedSignal] = createSignal(localStorage.getItem("portnest-files-stacked") === "true");
-export type AssetFilter = "all" | "terminal" | "database" | "container" | "remote";
+export type AssetFilter = "all" | "terminal";
 const [assetFilter, setAssetFilter] = createSignal<AssetFilter>("all");
 const [assetTreeVisible, setAssetTreeVisible] = createSignal(true);
 const [selectedAssetFolderId, setSelectedAssetFolderId] = createSignal<string | null>(null);
 
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
-  if (filter === "all") return true;
-  if (filter === "terminal") return protocol === "ssh" || protocol === "sftp";
-  if (filter === "database") {
-    return ["mysql", "postgresql", "sqlite", "redis", "mongodb"].includes(protocol);
-  }
-  if (filter === "container") return protocol === "docker";
-  return protocol === "rdp";
+  void filter;
+  return protocol === "ssh" || protocol === "sftp";
 };
 
 export const uiStore = {

@@ -1,6 +1,8 @@
 import { Component, createSignal, createMemo, For, Show, onMount, onCleanup, createEffect, on } from "solid-js";
 import { api, FileInfo, ConnectionRecord } from "../utils/api";
 import { uiStore } from "../stores/uiStore";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { feedback } from "../stores/feedbackStore";
 import "./FileManager.css";
 
 interface FileManagerProps {
@@ -59,6 +61,9 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       ? localStorage.getItem(`portnest-favorite-path-${props.connection.id}`) || defaultPath
       : defaultPath;
   const [currentPath, setCurrentPath] = createSignal(initialPath);
+  const [pathHistory, setPathHistory] = createSignal([initialPath]);
+  const [historyIndex, setHistoryIndex] = createSignal(0);
+  const [fileFilter, setFileFilter] = createSignal("");
   const [files, setFiles] = createSignal<FileInfo[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -96,7 +101,10 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     persistOptions();
   };
 
-  const visibleFiles = createMemo(() => showHidden() ? files() : files().filter(file => !file.name.startsWith(".")));
+  const visibleFiles = createMemo(() => {
+    const query = fileFilter().trim().toLowerCase();
+    return files().filter(file => (showHidden() || !file.name.startsWith(".")) && (!query || file.name.toLowerCase().includes(query)));
+  });
   const columnTemplate = createMemo(() => [
     columns().name && "minmax(175px, 1.35fr)",
     columns().modified && "125px",
@@ -106,13 +114,20 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     columns().owner && "90px",
   ].filter(Boolean).join(" "));
 
-  const loadDirectory = async (path: string) => {
+  const loadDirectory = async (path: string, recordHistory = true) => {
     const id = getSftpId();
     if (!id) return;
 
     const requestId = ++directoryRequestId;
     const cached = directoryCache.get(path);
+    if (recordHistory && path !== currentPath()) {
+      const next = pathHistory().slice(0, historyIndex() + 1);
+      if (next[next.length - 1] !== path) next.push(path);
+      setPathHistory(next);
+      setHistoryIndex(next.length - 1);
+    }
     setCurrentPath(path);
+    setFileFilter("");
     setSelectedFile(null);
     if (cached) {
       setFiles(cached);
@@ -171,6 +186,19 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     loadDirectory(parent);
   };
 
+  const navigateHistory = (direction: -1 | 1) => {
+    const nextIndex = historyIndex() + direction;
+    const path = pathHistory()[nextIndex];
+    if (!path) return;
+    setHistoryIndex(nextIndex);
+    void loadDirectory(path, false);
+  };
+
+  const refreshDirectory = () => {
+    directoryCache.delete(currentPath());
+    void loadDirectory(currentPath(), false);
+  };
+
   const handleFileClick = (file: FileInfo) => {
     setSelectedFile(file);
   };
@@ -191,13 +219,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     const id = getSftpId();
     if (!file || !id) return;
 
-    const localPath = prompt("保存到本地路径:", file.name);
+    const localPath = await save({ defaultPath: file.name, title: `下载 ${file.name}` });
     if (localPath) {
       try {
         await api.sftpDownload(id, file.path, localPath);
-        alert("下载完成");
+        setError(null);
       } catch (e) {
-        alert("下载失败: " + e);
+        setError("下载失败: " + e);
       }
     }
     setContextMenu(null);
@@ -207,15 +235,14 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     const id = getSftpId();
     if (!id) return;
 
-    const localPath = prompt("请输入本地文件路径:");
+    const localPath = await open({ multiple: false, directory: false, title: "选择要上传的文件" });
     if (localPath) {
       const remotePath = currentPath() === "/" ? "/" + localPath.split(/[/\\]/).pop()! : currentPath() + "/" + localPath.split(/[/\\]/).pop()!;
       try {
         await api.sftpUpload(id, localPath, remotePath);
-        alert("上传完成");
         loadDirectory(currentPath());
       } catch (e) {
-        alert("上传失败: " + e);
+        setError("上传失败: " + e);
       }
     }
     setContextMenu(null);
@@ -232,7 +259,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       setNewFolderName("");
       loadDirectory(currentPath());
     } catch (e) {
-      alert("创建失败: " + e);
+      feedback.error("创建失败: " + e);
     }
   };
 
@@ -241,7 +268,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     const id = getSftpId();
     if (!file || !id) return;
 
-    if (confirm(`确定删除 ${file.is_dir ? "目录" : "文件"} "${file.name}" 吗？`)) {
+    if (await feedback.confirm(`确定删除${file.is_dir ? "目录" : "文件"}“${file.name}”吗？`, "删除远程文件")) {
       try {
         if (file.is_dir) {
           await api.sftpDeleteDir(id, file.path);
@@ -250,7 +277,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         }
         loadDirectory(currentPath());
       } catch (e) {
-        alert("删除失败: " + e);
+        feedback.error("删除失败: " + e);
       }
     }
     setContextMenu(null);
@@ -280,8 +307,10 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     <div class="file-manager">
       <div class="file-manager-header">
         <div class="path-bar">
-          <button class="nav-btn" onClick={navigateUp} title="返回上级目录">‹</button>
-          <button class="nav-btn" onClick={() => navigateTo(currentPath())} title="刷新">↻</button>
+          <button class="nav-btn" disabled={historyIndex() === 0} onClick={() => navigateHistory(-1)} title="返回">←</button>
+          <button class="nav-btn" disabled={historyIndex() >= pathHistory().length - 1} onClick={() => navigateHistory(1)} title="前进">→</button>
+          <button class="nav-btn" onClick={navigateUp} title="返回上级目录">↑</button>
+          <button class="nav-btn" onClick={refreshDirectory} title="刷新">↻</button>
           <input
             type="text"
             class="path-input"
@@ -289,14 +318,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             onKeyDown={(e) => e.key === "Enter" && navigateTo(e.currentTarget.value)}
             onBlur={(e) => navigateTo(e.currentTarget.value)}
           />
-          <button class="nav-btn" title="搜索">⌕</button>
-          <button class="nav-btn" title="历史记录">◷</button>
           <button class={`nav-btn ${showOptions() ? "active" : ""}`} title="更多操作" onClick={() => setShowOptions(!showOptions())}>⋮</button>
         </div>
       </div>
       <div class="file-manager-summary">
         共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
         <span>
+          <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
           <button onClick={() => setShowNewFolderDialog(true)} title="新建文件夹">＋文件夹</button>
           <button onClick={handleUpload} title="上传文件">上传</button>
         </span>
@@ -307,7 +335,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <div class="loading">加载中...</div>
         </Show>
         <Show when={error()}>
-          <div class="error">{error()}</div>
+          <div class="error">{error()} <button onClick={refreshDirectory}>重试</button></div>
         </Show>
         <Show when={!loading() && !error()}>
           <div class="file-table">

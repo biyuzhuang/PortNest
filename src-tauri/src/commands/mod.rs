@@ -1,6 +1,6 @@
 //! Tauri 命令接口
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -15,6 +15,8 @@ use crate::protocol::docker::{
 use crate::protocol::ssh_backend::{
     ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend, SshBackend, SshSession, TerminalSize,
 };
+use crate::protocol::terminal_codec::{normalize_encoding, TerminalCodec};
+use crate::protocol::tunnel::{TunnelManager, TunnelRule, TunnelRuntimeInfo};
 use crate::protocol::PluginRegistry;
 use crate::protocol::{ConnectionHandle, Credential, CredentialType};
 use crate::storage::{ConnectionRecord, CredentialData, Database, SshKeyRecord};
@@ -36,6 +38,7 @@ struct ShellSessionInfo {
     _connection_id: String,
     session: Arc<dyn SshSession>,
     shell: Arc<dyn ShellHandle>,
+    codec: Arc<Mutex<TerminalCodec>>,
 }
 
 /// Shell 会话管理器
@@ -56,15 +59,19 @@ impl ShellManager {
         connection_id: String,
         session: Arc<dyn SshSession>,
         shell: Arc<dyn ShellHandle>,
-    ) {
+        encoding: &str,
+    ) -> crate::Result<()> {
+        let codec = Arc::new(Mutex::new(TerminalCodec::new(encoding)?));
         self.sessions.write().insert(
             shell_id,
             ShellSessionInfo {
                 _connection_id: connection_id,
                 session,
                 shell,
+                codec,
             },
         );
+        Ok(())
     }
 
     fn get(&self, shell_id: &str) -> Option<(Arc<dyn SshSession>, Arc<dyn ShellHandle>)> {
@@ -76,6 +83,13 @@ impl ShellManager {
 
     fn remove(&self, shell_id: &str) {
         self.sessions.write().remove(shell_id);
+    }
+
+    fn codec(&self, shell_id: &str) -> Option<Arc<Mutex<TerminalCodec>>> {
+        self.sessions
+            .read()
+            .get(shell_id)
+            .map(|entry| entry.codec.clone())
     }
 }
 
@@ -185,6 +199,7 @@ pub struct AppState {
     russh_backend: Arc<dyn SshBackend>,
     pub(crate) shell_manager: Arc<ShellManager>,
     pub(crate) sftp_manager: Arc<SftpManager>,
+    pub(crate) tunnel_manager: Arc<TunnelManager>,
     pub(crate) docker_manager: Arc<DockerManager>,
 }
 
@@ -208,6 +223,7 @@ impl AppState {
             russh_backend: Arc::new(crate::protocol::russh_backend::RusshBackend),
             shell_manager: Arc::new(ShellManager::new()),
             sftp_manager: Arc::new(SftpManager::new()),
+            tunnel_manager: Arc::new(TunnelManager::new()),
             docker_manager: Arc::new(DockerManager::new()),
         })
     }
@@ -258,6 +274,8 @@ pub struct ConnectionConfigRequest {
     pub proxy_password: Option<String>,
     pub encoding: Option<String>,
     pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub tunnel_rules: Vec<TunnelRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,7 +314,12 @@ pub async fn save_connection(
             .ok()
     });
     let managed_private_key = match config.key_id.as_deref() {
-        Some(key_id) => Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?),
+        Some(key_id) => Some(
+            state
+                .db
+                .get_ssh_key_material(key_id)
+                .map_err(|e| e.to_string())?,
+        ),
         None => None,
     };
     let cred_data = match auth_type {
@@ -313,10 +336,12 @@ pub async fn save_connection(
         "key" | "key_with_passphrase" => CredentialData {
             auth_type: auth_type.to_string(),
             password: None,
-            private_key: managed_private_key.or_else(|| config
-                .private_key
-                .clone()
-                .or_else(|| previous_credential.as_ref()?.private_key.clone())),
+            private_key: managed_private_key.or_else(|| {
+                config
+                    .private_key
+                    .clone()
+                    .or_else(|| previous_credential.as_ref()?.private_key.clone())
+            }),
             passphrase: config
                 .passphrase
                 .clone()
@@ -384,6 +409,12 @@ pub async fn save_connection(
             serde_json::Value::Number(timeout_ms.into()),
         );
     }
+    if !config.tunnel_rules.is_empty() {
+        options_map.insert(
+            "tunnel_rules".to_string(),
+            serde_json::to_value(&config.tunnel_rules).map_err(|error| error.to_string())?,
+        );
+    }
     let options_json = if options_map.is_empty() {
         None
     } else {
@@ -446,17 +477,41 @@ pub async fn get_connection_config(
     let mut proxy_password = None;
     let mut encoding = None;
     let mut timeout_ms = None;
+    let mut tunnel_rules = Vec::new();
 
     if let Some(options) = connection.options.as_deref() {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(options) {
-            encoding = value.get("encoding").and_then(|item| item.as_str()).map(str::to_string);
+            encoding = value
+                .get("encoding")
+                .and_then(|item| item.as_str())
+                .map(str::to_string);
             timeout_ms = value.get("timeout_ms").and_then(|item| item.as_u64());
+            tunnel_rules = value
+                .get("tunnel_rules")
+                .cloned()
+                .and_then(|item| serde_json::from_value(item).ok())
+                .unwrap_or_default();
             if let Some(proxy) = value.get("proxy") {
-                proxy_type = proxy.get("type").and_then(|item| item.as_str()).map(str::to_string);
-                proxy_host = proxy.get("host").and_then(|item| item.as_str()).map(str::to_string);
-                proxy_port = proxy.get("port").and_then(|item| item.as_u64()).and_then(|port| u16::try_from(port).ok());
-                proxy_username = proxy.get("username").and_then(|item| item.as_str()).map(str::to_string);
-                proxy_password = proxy.get("password").and_then(|item| item.as_str()).map(str::to_string);
+                proxy_type = proxy
+                    .get("type")
+                    .and_then(|item| item.as_str())
+                    .map(str::to_string);
+                proxy_host = proxy
+                    .get("host")
+                    .and_then(|item| item.as_str())
+                    .map(str::to_string);
+                proxy_port = proxy
+                    .get("port")
+                    .and_then(|item| item.as_u64())
+                    .and_then(|port| u16::try_from(port).ok());
+                proxy_username = proxy
+                    .get("username")
+                    .and_then(|item| item.as_str())
+                    .map(str::to_string);
+                proxy_password = proxy
+                    .get("password")
+                    .and_then(|item| item.as_str())
+                    .map(str::to_string);
             }
         }
     }
@@ -487,6 +542,7 @@ pub async fn get_connection_config(
         proxy_password,
         encoding,
         timeout_ms,
+        tunnel_rules,
     })
 }
 
@@ -549,6 +605,7 @@ pub struct ProtocolInfoResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellOpenResponse {
     pub shell_id: String,
+    pub encoding: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -618,6 +675,7 @@ pub async fn open_shell(
             cred_data.private_key,
             cred_data.passphrase,
         ),
+        "agent" => (CredentialType::Agent, None, None, None),
         _ => return Err("不支持的认证类型".to_string()),
     };
 
@@ -648,11 +706,150 @@ pub async fn open_shell(
     tracing::info!("Shell opened successfully: id={}", shell.id());
     let shell_id = shell.id().to_string();
 
+    let encoding = normalize_encoding(options.encoding.as_deref().unwrap_or("UTF-8"))
+        .map_err(|error| error.to_string())?;
     state
         .shell_manager
-        .insert(shell_id.clone(), connection_id, session, shell);
+        .insert(
+            shell_id.clone(),
+            connection_id.clone(),
+            session,
+            shell,
+            &encoding,
+        )
+        .map_err(|error| error.to_string())?;
+    if let Err(error) = state.db.mark_connection_used(&connection_id) {
+        tracing::warn!("更新最近连接时间失败: {error}");
+    }
 
-    Ok(ShellOpenResponse { shell_id })
+    let auto_rules: Vec<TunnelRule> = conn
+        .options
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| value.get("tunnel_rules").cloned())
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default();
+    for rule in auto_rules
+        .into_iter()
+        .filter(|rule: &TunnelRule| rule.enabled && rule.auto_start)
+    {
+        let manager = state.tunnel_manager.clone();
+        let backend = state.russh_backend.clone();
+        let target = target.clone();
+        let credential = credential.clone();
+        let options = options.clone();
+        let connection_id = connection_id.clone();
+        tokio::spawn(async move {
+            if let Err(error) = manager
+                .start(connection_id, rule, backend, target, credential, options)
+                .await
+            {
+                tracing::warn!("自动启动 SSH 隧道失败: {error}");
+            }
+        });
+    }
+
+    Ok(ShellOpenResponse { shell_id, encoding })
+}
+
+#[tauri::command]
+pub async fn start_tunnel(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    rule_id: String,
+) -> Result<TunnelRuntimeInfo, String> {
+    let connections = state
+        .db
+        .get_connections()
+        .map_err(|error| error.to_string())?;
+    let connection = connections
+        .iter()
+        .find(|item| item.id == connection_id)
+        .ok_or_else(|| "连接未找到".to_string())?;
+    if connection.protocol != "ssh" {
+        return Err("隧道仅支持 SSH 连接".to_string());
+    }
+    let options = parse_connection_options(connection.options.as_deref())?;
+    let value = connection
+        .options
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .unwrap_or_default();
+    let rules: Vec<TunnelRule> = value
+        .get("tunnel_rules")
+        .cloned()
+        .and_then(|item| serde_json::from_value(item).ok())
+        .unwrap_or_default();
+    let rule = rules
+        .into_iter()
+        .find(|item| item.id == rule_id)
+        .ok_or_else(|| "隧道规则不存在".to_string())?;
+    let stored = state
+        .db
+        .get_credential_structured(&connection.credential_id)
+        .map_err(|error| error.to_string())?;
+    let credential_type = match stored.auth_type.as_str() {
+        "password" => CredentialType::Password,
+        "key" => CredentialType::PrivateKey,
+        "key_with_passphrase" => CredentialType::PrivateKeyWithPassphrase,
+        "agent" => CredentialType::Agent,
+        _ => return Err("不支持的认证类型".to_string()),
+    };
+    let credential = Credential {
+        credential_type,
+        password: stored.password,
+        private_key: stored.private_key,
+        passphrase: stored.passphrase,
+    };
+    let target = ConnectionTarget {
+        host: connection.host.clone(),
+        port: connection.port,
+        username: connection.username.clone().unwrap_or_default(),
+    };
+    state
+        .tunnel_manager
+        .start(
+            connection_id,
+            rule,
+            state.russh_backend.clone(),
+            target,
+            credential,
+            options,
+        )
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn stop_tunnel(
+    state: tauri::State<'_, AppState>,
+    tunnel_id: String,
+) -> Result<(), String> {
+    state
+        .tunnel_manager
+        .stop(&tunnel_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_tunnels(
+    state: tauri::State<'_, AppState>,
+    connection_id: Option<String>,
+) -> Vec<TunnelRuntimeInfo> {
+    state.tunnel_manager.list(connection_id.as_deref())
+}
+
+#[tauri::command]
+pub async fn stop_all_tunnels(
+    state: tauri::State<'_, AppState>,
+    connection_id: Option<String>,
+) -> Result<(), String> {
+    state
+        .tunnel_manager
+        .stop_all(connection_id.as_deref())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -665,7 +862,14 @@ pub async fn write_shell(
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-    let data = data.into_bytes();
+    let codec = state
+        .shell_manager
+        .codec(&shell_id)
+        .ok_or_else(|| "Shell 会话未找到".to_string())?;
+    let data = codec
+        .lock()
+        .encode(&data)
+        .map_err(|error| error.to_string())?;
     shell.write(&data).await.map_err(|e| e.to_string())?;
 
     Ok(())
@@ -675,12 +879,39 @@ pub async fn write_shell(
 pub async fn read_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
-) -> Result<Vec<u8>, String> {
+) -> Result<String, String> {
     let (_, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-    shell.read().await.map_err(|e| e.to_string())
+    let bytes = shell.read().await.map_err(|e| e.to_string())?;
+    let codec = state
+        .shell_manager
+        .codec(&shell_id)
+        .ok_or_else(|| "Shell 会话未找到".to_string())?;
+    let result = codec
+        .lock()
+        .decode(&bytes)
+        .map_err(|error| error.to_string());
+    result
+}
+
+#[tauri::command]
+pub async fn set_shell_encoding(
+    state: tauri::State<'_, AppState>,
+    shell_id: String,
+    encoding: String,
+) -> Result<String, String> {
+    let codec = state
+        .shell_manager
+        .codec(&shell_id)
+        .ok_or_else(|| "Shell 会话未找到".to_string())?;
+    codec
+        .lock()
+        .reset(&encoding)
+        .map_err(|error| error.to_string())?;
+    let label = codec.lock().label().to_string();
+    Ok(label)
 }
 
 #[tauri::command]
@@ -1207,7 +1438,10 @@ pub async fn rename_folder(
     id: String,
     name: String,
 ) -> Result<(), String> {
-    state.db.rename_folder(&id, &name).map_err(|e| e.to_string())
+    state
+        .db
+        .rename_folder(&id, &name)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1235,10 +1469,16 @@ pub async fn save_ssh_key(
         return Err("无法识别私钥格式".to_string());
     };
     let id = Uuid::new_v4();
-    state.db.save_ssh_key(id, &name, &file_name, key_type, &private_key)
+    state
+        .db
+        .save_ssh_key(id, &name, &file_name, key_type, &private_key)
         .map_err(|e| e.to_string())?;
-    state.db.get_ssh_keys().map_err(|e| e.to_string())?
-        .into_iter().find(|key| key.id == id.to_string())
+    state
+        .db
+        .get_ssh_keys()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|key| key.id == id.to_string())
         .ok_or_else(|| "保存后读取密钥失败".to_string())
 }
 
@@ -1276,7 +1516,9 @@ pub async fn export_sessions(
 ) -> Result<String, String> {
     let mut exported = Vec::new();
     for connection in state.db.get_connections().map_err(|e| e.to_string())? {
-        let mut credential = state.db.get_credential_structured(&connection.credential_id)
+        let mut credential = state
+            .db
+            .get_credential_structured(&connection.credential_id)
             .map_err(|e| e.to_string())?;
         if !include_passwords {
             credential.password = None;
@@ -1287,18 +1529,27 @@ pub async fn export_sessions(
             credential.key_id = None;
         } else if credential.private_key.is_none() {
             if let Some(key_id) = credential.key_id.as_deref() {
-                credential.private_key = Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?);
+                credential.private_key = Some(
+                    state
+                        .db
+                        .get_ssh_key_material(key_id)
+                        .map_err(|e| e.to_string())?,
+                );
             }
             credential.key_id = None;
         }
-        exported.push(SessionExportConnection { connection, credential });
+        exported.push(SessionExportConnection {
+            connection,
+            credential,
+        });
     }
     serde_json::to_string_pretty(&SessionExportBundle {
         version: 1,
         exported_at: chrono::Utc::now().timestamp(),
         folders: state.db.get_folders().map_err(|e| e.to_string())?,
         connections: exported,
-    }).map_err(|e| e.to_string())
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1306,8 +1557,8 @@ pub async fn import_sessions(
     state: tauri::State<'_, AppState>,
     json: String,
 ) -> Result<SessionImportResult, String> {
-    let bundle: SessionExportBundle = serde_json::from_str(&json)
-        .map_err(|e| format!("会话 JSON 格式无效: {}", e))?;
+    let bundle: SessionExportBundle =
+        serde_json::from_str(&json).map_err(|e| format!("会话 JSON 格式无效: {}", e))?;
     if bundle.version != 1 {
         return Err(format!("不支持的导出版本: {}", bundle.version));
     }
@@ -1317,10 +1568,14 @@ pub async fn import_sessions(
     }
     for folder in &bundle.folders {
         let id = folder_ids[&folder.id];
-        let parent = folder.parent_id.as_ref()
+        let parent = folder
+            .parent_id
+            .as_ref()
             .and_then(|old| folder_ids.get(old))
             .map(|id| id.to_string());
-        state.db.save_folder(id, &folder.name, parent.as_deref(), folder.sort_order)
+        state
+            .db
+            .save_folder(id, &folder.name, parent.as_deref(), folder.sort_order)
             .map_err(|e| e.to_string())?;
     }
     let count = bundle.connections.len();
@@ -1329,19 +1584,42 @@ pub async fn import_sessions(
         let credential_id = Uuid::new_v4();
         let mut credential = item.credential;
         credential.key_id = None;
-        state.db.save_credential_structured(credential_id, &item.connection.name, &credential.auth_type, &credential)
+        state
+            .db
+            .save_credential_structured(
+                credential_id,
+                &item.connection.name,
+                &credential.auth_type,
+                &credential,
+            )
             .map_err(|e| e.to_string())?;
-        let folder_id = item.connection.folder_id.as_ref()
+        let folder_id = item
+            .connection
+            .folder_id
+            .as_ref()
             .and_then(|old| folder_ids.get(old))
             .map(|id| id.to_string());
-        state.db.save_connection(
-            connection_id, &item.connection.name, &item.connection.protocol,
-            &item.connection.host, item.connection.port, item.connection.username.as_deref(),
-            credential_id, item.connection.options.as_deref(), item.connection.tags.as_deref(),
-            item.connection.color.as_deref(), folder_id.as_deref(),
-        ).map_err(|e| e.to_string())?;
+        state
+            .db
+            .save_connection(
+                connection_id,
+                &item.connection.name,
+                &item.connection.protocol,
+                &item.connection.host,
+                item.connection.port,
+                item.connection.username.as_deref(),
+                credential_id,
+                item.connection.options.as_deref(),
+                item.connection.tags.as_deref(),
+                item.connection.color.as_deref(),
+                folder_id.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
     }
-    Ok(SessionImportResult { folders: bundle.folders.len(), connections: count })
+    Ok(SessionImportResult {
+        folders: bundle.folders.len(),
+        connections: count,
+    })
 }
 
 #[tauri::command]
@@ -1401,7 +1679,12 @@ pub async fn test_connection(
     mut config: ConnectionConfigRequest,
 ) -> Result<String, String> {
     if let Some(key_id) = config.key_id.as_deref() {
-        config.private_key = Some(state.db.get_ssh_key_material(key_id).map_err(|e| e.to_string())?);
+        config.private_key = Some(
+            state
+                .db
+                .get_ssh_key_material(key_id)
+                .map_err(|e| e.to_string())?,
+        );
     }
     let plugin = state
         .plugin_registry

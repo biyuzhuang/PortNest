@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { api, ConnectionRecord, ConnectionConfig, FolderRecord } from "../utils/api";
+export type { ConnectionRecord, ConnectionConfig } from "../utils/api";
 
 export interface ConnectionFolder {
   id: string;

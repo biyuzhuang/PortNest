@@ -84,8 +84,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
           <h4>通用</h4>
           {navItem("general", "基础")}
           {navItem("ssh", "SSH / 终端")}
-          <h4 class="muted">后续计划</h4>
-          <span>数据库</span><span>AI 模型配置</span><span>快捷键</span><span>编辑器</span>
         </aside>
 
         <main class="settings-main">
@@ -96,20 +94,13 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 <div class="preview-layout"><aside /><section><nav /><div class="preview-table" /></section></div>
               </div>
               <h3>基础</h3>
-              <div class="settings-grid">
-                <div class="settings-card">
-                  <label><span>主题模式</span>
-                    <select value={themeMode()} onChange={event => setThemeMode(event.currentTarget.value as ThemeMode)}>
-                      <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
-                    </select>
-                  </label>
-                  <label><span>整体缩放</span><select><option>100%</option><option>90%</option><option>110%</option><option>125%</option></select></label>
-                </div>
-                <div class="settings-card">
-                  <label><span>主题配色</span><select><option>PortNest</option><option>经典蓝</option></select></label>
-                  <label><span>UI 字体</span><select><option>JetBrains Mono, Noto Sans SC</option><option>系统默认</option></select></label>
-                </div>
-              </div>
+              <div class="settings-grid"><div class="settings-card">
+                <label><span>主题模式</span>
+                  <select value={themeMode()} onChange={event => setThemeMode(event.currentTarget.value as ThemeMode)}>
+                    <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
+                  </select>
+                </label>
+              </div></div>
             </div>
           </Show>
 
@@ -160,16 +151,8 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>基础</h3>
               <div class="settings-grid">
                 <div class="settings-card">
-                  <label><span>界面动画</span><Toggle checked onChange={() => {}} /></label>
-                  <label><span>服务器指标</span><Toggle checked={false} onChange={() => {}} /></label>
-                  <label><span>关闭到托盘</span><select><option>关闭</option><option>开启</option></select></label>
-                  <label><span>滚轮缩放</span><Toggle checked onChange={() => {}} /></label>
-                </div>
-                <div class="settings-card">
-                  <label><span>语言</span><select><option>简体中文</option></select></label>
-                  <label><span>更新通道</span><select><option>稳定通道</option></select></label>
                   <label><span>应用更新</span><button class="settings-inline-button" disabled={checkingUpdate()} onClick={handleCheckUpdate}>{updateStatus()}</button></label>
-                  <label><span>恢复上次标签</span><Toggle checked={false} onChange={() => {}} /></label>
+                  <p class="settings-note">会话标签、顺序、固定状态和活动标签会自动保存；应用启动后以离线标签恢复，不会自动批量连接。</p>
                 </div>
               </div>
             </div>
@@ -180,10 +163,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>终端</h3>
               <div class="settings-grid">
                 <div class="settings-card">
-                  <label><span>SSH / SFTP 路径联动</span><Toggle checked onChange={() => {}} /></label>
                   <label><span>鼠标选中自动复制</span><Toggle checked={terminalSettings().copyOnSelect} onChange={value => updateSetting("copyOnSelect", value)} /></label>
-                  <label><span>终端命令输入提示</span><Toggle checked={terminalSettings().commandHints} onChange={value => updateSetting("commandHints", value)} /></label>
-                  <label><span>SSH 历史命令</span><Toggle checked={terminalSettings().sshHistory} onChange={value => updateSetting("sshHistory", value)} /></label>
                 </div>
                 <div class="settings-card">
                   <label><span>连接断开自动重连</span><Toggle checked={terminalSettings().reconnectOnDisconnect} onChange={value => updateSetting("reconnectOnDisconnect", value)} /></label>
@@ -197,7 +177,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                       <option value="paste">粘贴</option><option value="none">不执行</option>
                     </select>
                   </label>
-                  <label><span>终端声音</span><Toggle checked={terminalSettings().terminalBell} onChange={value => updateSetting("terminalBell", value)} /></label>
                   <label><span>Ctrl+V 粘贴</span><Toggle checked={terminalSettings().ctrlVPaste} onChange={value => updateSetting("ctrlVPaste", value)} /></label>
                 </div>
               </div>

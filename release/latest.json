@@ -1,11 +1,11 @@
 {
-  "version": "0.1.1",
-  "notes": "PortNest 0.1.1 improves SSH stability, asset tree ordering, clipboard handling, and file panel interactions.",
-  "pub_date": "2026-07-29T06:18:38Z",
+  "version": "0.0.1",
+  "notes": "PortNest 0.0.1 Windows installer supports a custom installation directory and preserves existing user data during in-place upgrades.",
+  "pub_date": "2026-08-03T01:44:16Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjVMUTUvcG41RUlXbGNOTktzMFJ3c2M5YWZqSml0ODFyWnkzemhndkthcWhEUkhTbzJod25Rd3RCN3ZyV2NBZDNxdVFLaWJkWkx0SFo4MFIwajNCemdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1MzA1ODczCWZpbGU6UG9ydE5lc3RfMC4xLjFfeDY0LXNldHVwLmV4ZQprTXFRendyOStMaU4xeXRyb3BnY0R4bWZFbmxOd2s2WmVRb2NEQjZTOWpERWFhMVIvNGRXYy91ZllxejNYQ01LcGpuS2JvRkorZmFUa202Sms3bXNCQT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.1.1/PortNest_0.1.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjVheUxkYU4rMGMva0hxVGFxcnBKUm5vZ2FyaVJIWmNFcjFoVS9qYlJxRC8xNWl6ekZjV2k0dWNLRStZSkt4OU9nNzZWZDY4T0JtRHV4NmR6KzY2WEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1NzIxNDMyCWZpbGU6UG9ydE5lc3RfMC4wLjFfeDY0LXNldHVwLmV4ZQorak9SS2ZZTTJ1T0QrUWVwT2lVUWdpdk14cEs2WU0wVzFCU3dWaWJ2d1hXQkZjVHNkb1pYb2ZBR2lDRjRBSTVJSFNaK3R1RDZpQXViZFp2VThQRGNCQT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.1/PortNest_0.0.1_x64-setup.exe"
     }
   }
 }

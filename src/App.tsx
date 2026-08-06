@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount, Show, For, createEffect, on, createMemo } from "solid-js";
+import { Component, createSignal, onMount, onCleanup, Show, For, createEffect, createMemo } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
@@ -8,24 +8,16 @@ import { AssetList } from "./components/AssetList";
 import { SettingsModal } from "./components/SettingsModal";
 import { SessionImportExport } from "./components/SessionImportExport";
 import { SshKeyPicker } from "./components/SshKeyPicker";
-import { connectionStore, ConnectionRecord, ConnectionConfig } from "./stores/connectionStore";
-import { initTheme } from "./stores/themeStore";
+import { CommandBroadcast } from "./components/CommandBroadcast";
+import { TunnelPanel } from "./components/TunnelPanel";
+import { FeedbackHost } from "./components/FeedbackHost";
+import { connectionStore } from "./stores/connectionStore";
+import { initTheme, getTerminalSettings } from "./stores/themeStore";
+import { sessionStore, type SessionTab } from "./stores/sessionStore";
 import { uiStore } from "./stores/uiStore";
-import { api, ProtocolInfo } from "./utils/api";
+import { feedback } from "./stores/feedbackStore";
+import { api, ProtocolInfo, SshApiError, type ConnectionRecord, type ConnectionConfig, type TunnelRuntimeInfo } from "./utils/api";
 import "./App.css";
-
-type ViewMode = "terminal";
-
-type SessionTab = {
-  id: string;
-  connection: ConnectionRecord;
-  viewMode: ViewMode;
-  activeTab: "query" | "structure" | "security" | "monitor" | "ai";
-  displayName?: string;
-  shellId?: string;
-  sftpId?: string;
-  pinned?: boolean;
-};
 
 type ContextMenuState = {
   x: number;
@@ -34,7 +26,12 @@ type ContextMenuState = {
 } | null;
 
 const App: Component = () => {
-  const appWindow = getCurrentWindow();
+  const isTauriRuntime = () => Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+  const withAppWindow = (action: (appWindow: ReturnType<typeof getCurrentWindow>) => Promise<unknown>) => {
+    if (isTauriRuntime()) {
+      void action(getCurrentWindow());
+    }
+  };
   const [showForm, setShowForm] = createSignal(false);
   const [showSettings, setShowSettings] = createSignal(false);
   const [showSessionTransfer, setShowSessionTransfer] = createSignal(false);
@@ -45,15 +42,32 @@ const App: Component = () => {
   const [editingConnection, setEditingConnection] = createSignal<ConnectionConfig | null>(null);
   const [newConnectionDefaultFolderId, setNewConnectionDefaultFolderId] = createSignal<string | undefined>(undefined);
   const [protocols, setProtocols] = createSignal<ProtocolInfo[]>([]);
-  const [sessions, setSessions] = createSignal<SessionTab[]>([]);
-  const [activeSessionId, setActiveSessionId] = createSignal<string | null>(null);
+  const sessions = sessionStore.sessions;
+  const setSessions = sessionStore.setSessions;
+  const activeSessionId = sessionStore.activeSessionId;
+  const setActiveSessionId = sessionStore.setActiveSessionId;
   const [assetListActive, setAssetListActive] = createSignal(false);
-  const [rightPanelWidth, setRightPanelWidth] = createSignal(390);
+  const [rightPanelWidth, setRightPanelWidth] = createSignal(Number(localStorage.getItem("portnest-right-panel-width")) || 390);
+  const [sidebarWidth, setSidebarWidth] = createSignal(Number(localStorage.getItem("portnest-sidebar-width")) || 292);
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
+  const [showBroadcast, setShowBroadcast] = createSignal(false);
+  const [showTunnels, setShowTunnels] = createSignal(false);
+  const [tunnelConnection, setTunnelConnection] = createSignal<ConnectionRecord | null>(null);
+  const [showQuickSwitcher, setShowQuickSwitcher] = createSignal(false);
+  const [quickQuery, setQuickQuery] = createSignal("");
+  const [tunnelRuntimes, setTunnelRuntimes] = createSignal<TunnelRuntimeInfo[]>([]);
+  const reconnectTimers = new Map<string, number>();
 
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
+  const quickConnections = createMemo(() => {
+    const query = quickQuery().trim().toLowerCase();
+    return [...connectionStore.state.connections]
+      .filter(connection => !query || `${connection.name} ${connection.host} ${connection.username || ""}`.toLowerCase().includes(query))
+      .sort((a, b) => (b.last_connected_at || 0) - (a.last_connected_at || 0))
+      .slice(0, 12);
+  });
   const showRightPanel = () => {
     const session = activeSession();
     return !assetListActive() && session?.connection.protocol === "ssh";
@@ -89,8 +103,15 @@ const App: Component = () => {
   onMount(async () => {
     initTheme();
 
+    if (!isTauriRuntime()) {
+      setProtocols([{ id: "ssh", name: "SSH" }]);
+      sessionStore.hydrate([]);
+      return;
+    }
+
     // Load connections from database first
     await connectionStore.loadConnections();
+    sessionStore.hydrate(connectionStore.state.connections);
 
     try {
       const supportedProtocols = await api.getProtocols();
@@ -101,20 +122,68 @@ const App: Component = () => {
 
   });
 
+  createEffect(() => {
+    void sessions();
+    void activeSessionId();
+    sessionStore.persist();
+  });
+
+  const handleGlobalKeyDown = (event: KeyboardEvent) => {
+    const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && event.key.toLowerCase() === "k") {
+      event.preventDefault(); setQuickQuery(""); setShowQuickSwitcher(true); return;
+    }
+    if (showQuickSwitcher() && event.key === "Escape") { event.preventDefault(); setShowQuickSwitcher(false); return; }
+    const element = event.target as HTMLElement | null;
+    if (element?.matches("input, textarea, select, [contenteditable=true]")) return;
+    if (modifier && event.key.toLowerCase() === "w" && activeSessionId()) {
+      event.preventDefault(); void handleCloseSession(activeSessionId()!); return;
+    }
+    if (modifier && event.shiftKey && event.key.toLowerCase() === "t") {
+      event.preventDefault(); sessionStore.restoreClosed(); setAssetListActive(false); return;
+    }
+    if (event.ctrlKey && event.key === "Tab" && sessions().length > 1) {
+      event.preventDefault();
+      const current = sessions().findIndex(session => session.id === activeSessionId());
+      const direction = event.shiftKey ? -1 : 1;
+      const next = (current + direction + sessions().length) % sessions().length;
+      handleSwitchSession(sessions()[next].id);
+    }
+  };
+  onMount(() => window.addEventListener("keydown", handleGlobalKeyDown));
+  onCleanup(() => window.removeEventListener("keydown", handleGlobalKeyDown));
+
+  onMount(() => {
+    const keepTerminalUsable = () => {
+      if (window.innerWidth < 960 && !uiStore.filesCollapsed()) uiStore.setFilesCollapsed(true);
+    };
+    keepTerminalUsable();
+    window.addEventListener("resize", keepTerminalUsable);
+    onCleanup(() => window.removeEventListener("resize", keepTerminalUsable));
+  });
+
+  onMount(() => {
+    if (!isTauriRuntime()) return;
+    const refreshTunnels = () => void api.listTunnels().then(setTunnelRuntimes).catch(error => console.error("[tunnels] refresh failed:", error));
+    refreshTunnels();
+    const timer = window.setInterval(refreshTunnels, 2000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  const runningTunnelCount = (connectionId: string) => tunnelRuntimes().filter(runtime => runtime.connection_id === connectionId && runtime.status === "running").length;
+
+  const chooseQuickConnection = (connection: ConnectionRecord) => {
+    const existing = sessions().find(session => session.connection.id === connection.id);
+    setShowQuickSwitcher(false);
+    if (existing) handleSwitchSession(existing.id); else void handleConnect(connection);
+  };
+
   const isBuiltinConnection = (connId: string) => connId.startsWith("builtin-");
 
-  const createSession = (conn: ConnectionRecord, viewMode: ViewMode = "terminal") => {
-    const sessionId = `${conn.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newSession: SessionTab = {
-      id: sessionId,
-      connection: conn,
-      viewMode,
-      activeTab: "query",
-    };
-    setSessions(prev => [...prev, newSession]);
-    setActiveSessionId(sessionId);
+  const createSession = (conn: ConnectionRecord) => {
+    const newSession = sessionStore.create(conn, "connecting");
     setAssetListActive(false);
-    return sessionId;
+    return newSession.id;
   };
 
   const openShellForSession = async (sessionId: string, conn: ConnectionRecord) => {
@@ -122,6 +191,7 @@ const App: Component = () => {
     const rows = 30;
 
     console.log("[openShell] Opening shell for:", conn.name, conn.id);
+    sessionStore.update(sessionId, { status: "connecting", error: undefined });
     const response = await api.openShell(conn.id, cols, rows);
     console.log("[openShell] Shell opened:", response.shell_id);
 
@@ -131,8 +201,20 @@ const App: Component = () => {
       return;
     }
 
+    const encodingOverride = sessions().find(session => session.id === sessionId)?.encodingOverride;
+    const effectiveEncoding = encodingOverride
+      ? await api.setShellEncoding(response.shell_id, encodingOverride)
+      : response.encoding;
+
     setSessions(prev => prev.map(s =>
-      s.id === sessionId ? { ...s, shellId: response.shell_id } : s
+      s.id === sessionId ? {
+        ...s,
+        shellId: response.shell_id,
+        status: "connected",
+        error: undefined,
+        reconnectAttempt: undefined,
+        encoding: effectiveEncoding,
+      } : s
     ));
   };
 
@@ -140,7 +222,7 @@ const App: Component = () => {
     console.log("[handleConnect] Starting connection:", conn.name, conn.id, "builtin:", isBuiltinConnection(conn.id));
 
     if (conn.protocol === "ssh") {
-      const sessionId = createSession(conn, "terminal");
+      const sessionId = createSession(conn);
       console.log("[handleConnect] Created session:", sessionId);
 
       (async () => {
@@ -148,19 +230,11 @@ const App: Component = () => {
           await openShellForSession(sessionId, conn);
         } catch (e) {
           console.error("SSH connection failed:", e);
-          const currentSessions = sessions();
-          if (currentSessions.some(s => s.id === sessionId)) {
-            const newSessions = currentSessions.filter(s => s.id !== sessionId);
-            setSessions(newSessions);
-            if (activeSessionId() === sessionId) {
-              setActiveSessionId(newSessions.length > 0 ? newSessions[newSessions.length - 1].id : null);
-            }
-          }
-          alert("SSH 连接失败: " + e);
+          sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
         }
       })();
     } else {
-      alert("当前版本专注于 SSH / SFTP，其他连接能力将在后续版本开放。");
+      feedback.info("当前版本专注于 SSH / SFTP，其他连接能力将在后续版本开放。");
     }
   };
 
@@ -216,18 +290,23 @@ const App: Component = () => {
 
     const currentSessions = sessions();
     const session = currentSessions.find(s => s.id === sessionId);
+    const closingIndex = currentSessions.findIndex(s => s.id === sessionId);
     const closingActive = activeSessionId() === sessionId;
     const newSessions = currentSessions.filter(s => s.id !== sessionId);
 
     if (session) {
+      const timer = reconnectTimers.get(sessionId);
+      if (timer !== undefined) window.clearTimeout(timer);
+      reconnectTimers.delete(sessionId);
       await closeSessionResources(session, newSessions);
+      sessionStore.pushClosed(session);
     }
 
     // 先切换活跃会话，再更新 sessions 列表，避免短暂的无活跃会话状态
     if (closingActive) {
       if (newSessions.length > 0) {
-        const lastSession = newSessions[newSessions.length - 1];
-        setActiveSessionId(lastSession.id);
+        const adjacentSession = newSessions[Math.min(Math.max(closingIndex, 0), newSessions.length - 1)];
+        setActiveSessionId(adjacentSession.id);
       } else {
         setActiveSessionId(null);
       }
@@ -257,10 +336,16 @@ const App: Component = () => {
 
   // P1-4: SSH reconnect — close the existing transport and reopen a fresh one.
   // Clearing shellId makes RightPanel discard the old SFTP channel as well.
-  const handleReconnect = async (sessionId: string) => {
+  const handleReconnect = async (sessionId: string, automatic = false, attempt = 0) => {
     const session = sessions().find(s => s.id === sessionId);
     setTabContextMenu(null);
     if (!session || session.connection.protocol !== "ssh") return;
+    const nextAttempt = automatic ? attempt + 1 : 0;
+    sessionStore.update(sessionId, {
+      status: automatic ? "reconnecting" : "connecting",
+      reconnectAttempt: nextAttempt || undefined,
+      error: undefined,
+    });
     if (session.shellId) {
       try { await api.disconnectShell(session.shellId); } catch (e) { console.error("[handleReconnect] disconnectShell failed:", e); }
     }
@@ -269,16 +354,47 @@ const App: Component = () => {
       await openShellForSession(sessionId, session.connection);
     } catch (e) {
       console.error("[handleReconnect] openShell failed:", e);
+      const message = String(e);
+      sessionStore.update(sessionId, { status: "error", error: message, shellId: undefined });
+      const retryable = e instanceof SshApiError ? e.retryable : !/认证|主机密钥|Authentication|host key/i.test(message);
+      if (automatic && retryable && nextAttempt < 5 && sessions().some(item => item.id === sessionId)) {
+        const delays = [1000, 2000, 5000, 10000, 15000];
+        const timer = window.setTimeout(() => {
+          reconnectTimers.delete(sessionId);
+          void handleReconnect(sessionId, true, nextAttempt);
+        }, delays[nextAttempt] ?? 15000);
+        reconnectTimers.set(sessionId, timer);
+        sessionStore.update(sessionId, { status: "reconnecting", reconnectAttempt: nextAttempt });
+      }
+    }
+  };
+
+  const handleSessionDisconnected = (sessionId: string, error?: unknown) => {
+    const message = error ? String(error) : "远端连接已关闭";
+    sessionStore.update(sessionId, { status: "disconnected", error: message, shellId: undefined });
+    if (getTerminalSettings().reconnectOnDisconnect) {
+      void handleReconnect(sessionId, true, 0);
+    }
+  };
+
+  const handleSetEncoding = async (sessionId: string, encoding: string) => {
+    const session = sessions().find(item => item.id === sessionId);
+    if (!session?.shellId) return;
+    try {
+      const normalized = await api.setShellEncoding(session.shellId, encoding);
+      sessionStore.update(sessionId, { encodingOverride: normalized });
+    } catch (error) {
+      sessionStore.update(sessionId, { error: String(error) });
     }
   };
 
   // P1-4: rename tab. P0-3 keeps displayName as the override slot, so writing
   // here takes effect on the tab label immediately.
-  const handleRename = (sessionId: string) => {
+  const handleRename = async (sessionId: string) => {
     const session = sessions().find(s => s.id === sessionId);
     if (!session) return;
     const currentName = session.displayName || session.connection.name;
-    const next = window.prompt("重命名标签", currentName);
+    const next = await feedback.prompt("输入新的标签名称", currentName, "重命名标签");
     setTabContextMenu(null);
     if (next === null) return;
     const trimmed = next.trim();
@@ -330,7 +446,7 @@ const App: Component = () => {
 
   // P1-4: close every non-pinned tab. Pinned tabs (including the right-clicked
   // one if it happens to be pinned) stay open.
-  const handleCloseAll = (sessionId: string) => {
+  const handleCloseAll = () => {
     setTabContextMenu(null);
     const idsToClose = sessions().filter(s => !s.pinned).map(s => s.id);
     void closeSessions(idsToClose);
@@ -345,20 +461,15 @@ const App: Component = () => {
     const session = sessions().find(s => s.id === sessionId);
     if (!session || !session.connection?.id) return;
 
-    const newSessionId = `${session.connection.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newSession: SessionTab = {
-      id: newSessionId,
-      connection: { ...session.connection },
-      viewMode: session.viewMode,
-      activeTab: session.activeTab,
-    };
-    setSessions(prev => [...prev, newSession]);
-    setActiveSessionId(newSessionId);
+    const newSession = sessionStore.create({ ...session.connection }, "connecting");
+    const newSessionId = newSession.id;
     setAssetListActive(false);
     setTabContextMenu(null);
 
     if (session.connection.protocol === "ssh") {
-      openShellForSession(newSessionId, session.connection);
+      void openShellForSession(newSessionId, session.connection).catch(error => {
+        sessionStore.update(newSessionId, { status: "error", error: String(error), shellId: undefined });
+      });
     }
   };
 
@@ -393,19 +504,24 @@ const App: Component = () => {
       setShowForm(true);
     } catch (error) {
       console.error("Load connection credentials error:", error);
-      alert("读取会话凭据失败：" + error);
+      feedback.error("读取会话凭据失败：" + error);
     }
   };
 
-  const handleSave = async (config: ConnectionConfig) => {
+  const handleSave = async (config: ConnectionConfig, mode: "save" | "save-connect" = "save") => {
     try {
-      await api.saveConnection(config);
+      const result = await api.saveConnection(config);
       await connectionStore.loadConnections();
       setShowForm(false);
       setEditingConnection(null);
+      if (mode === "save-connect") {
+        const connection = connectionStore.state.connections.find(item => item.id === result.id);
+        if (connection) void handleConnect(connection);
+      }
+      feedback.success(mode === "save-connect" ? "连接已保存，正在连接" : "连接已保存");
     } catch (e) {
       console.error("Save connection error:", e);
-      alert("保存连接失败: " + e);
+      feedback.error("保存连接失败: " + e);
     }
   };
 
@@ -415,26 +531,26 @@ const App: Component = () => {
   };
 
   const handleDelete = async (conn: ConnectionRecord) => {
-    if (confirm(`确定删除连接 "${conn.name}" 吗？`)) {
+    if (await feedback.confirm(`确定删除连接“${conn.name}”吗？`, "删除连接")) {
       try {
         await connectionStore.deleteConnection(conn.id);
       } catch (e) {
         console.error("Delete connection error:", e);
-        alert("删除连接失败: " + e);
+        feedback.error("删除连接失败: " + e);
       }
     }
   };
 
   const handleDeleteMany = async (connections: ConnectionRecord[]) => {
     if (connections.length === 0) return;
-    if (!confirm(`确定删除选中的 ${connections.length} 个连接吗？此操作不可撤销。`)) return;
+    if (!await feedback.confirm(`确定删除选中的 ${connections.length} 个连接吗？此操作不可撤销。`, "批量删除")) return;
     try {
       await Promise.all(connections.map(connection => api.deleteConnection(connection.id)));
       await connectionStore.loadConnections();
     } catch (e) {
       console.error("Batch delete connections error:", e);
       await connectionStore.loadConnections();
-      alert("批量删除未能全部完成，列表已刷新，请检查剩余连接。错误: " + e);
+      feedback.error("批量删除未能全部完成，列表已刷新，请检查剩余连接。错误: " + e);
     }
   };
 
@@ -458,7 +574,7 @@ const App: Component = () => {
       setNewFolderParentId(null);
     } catch (e) {
       console.error("Create folder error:", e);
-      alert("创建文件夹失败: " + e);
+      feedback.error("创建文件夹失败: " + e);
     }
   };
 
@@ -483,12 +599,31 @@ const App: Component = () => {
     };
 
     const onMouseUp = () => {
+      localStorage.setItem("portnest-right-panel-width", String(rightPanelWidth()));
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
 
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const startSidebarResize = (event: MouseEvent) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth();
+    const onMouseMove = (moveEvent: MouseEvent) => setSidebarWidth(Math.min(480, Math.max(220, startWidth + moveEvent.clientX - startX)));
+    const onMouseUp = () => {
+      localStorage.setItem("portnest-sidebar-width", String(sidebarWidth()));
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
     document.body.style.cursor = "col-resize";
@@ -532,13 +667,13 @@ const App: Component = () => {
             </Show>
           </div>
           <div class="titlebar-window-controls">
-            <button class="titlebar-btn titlebar-btn-win" onClick={() => appWindow.minimize()} title="最小化">
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => withAppWindow(appWindow => appWindow.minimize())} title="最小化">
               ─
             </button>
-            <button class="titlebar-btn titlebar-btn-win" onClick={() => appWindow.toggleMaximize()} title="最大化">
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => withAppWindow(appWindow => appWindow.toggleMaximize())} title="最大化">
               □
             </button>
-            <button class="titlebar-btn titlebar-btn-win titlebar-btn-close" onClick={() => appWindow.close()} title="关闭">
+            <button class="titlebar-btn titlebar-btn-win titlebar-btn-close" onClick={() => withAppWindow(appWindow => appWindow.close())} title="关闭">
               ✕
             </button>
           </div>
@@ -546,15 +681,17 @@ const App: Component = () => {
       </div>
       <div class={`app-body ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() ? "files-layout-stacked" : ""}`}>
         <Sidebar
+          width={sidebarWidth()}
           onConnect={handleConnect}
           onEdit={handleEdit}
           onDelete={handleDelete}
-          onOpenAI={() => alert("AI 运维助手已列入后续计划。")}
         onOpenSettings={() => setShowSettings(true)}
         onNewConnection={handleNewConnection}
         onNewFolder={handleNewFolder}
         onCopyConnection={handleCopyConnection}
+        onOpenTunnels={(connection) => { setTunnelConnection(connection); setShowTunnels(true); }}
       />
+      <div class="sidebar-splitter" hidden={!uiStore.assetTreeVisible()} onMouseDown={startSidebarResize} />
 
       <Show when={sessions().length === 0}>
         <main class="main-content">
@@ -585,7 +722,7 @@ const App: Component = () => {
                   const isActive = () => activeSessionId() === session.id;
                   return (
                     <div
-                      class={`session-tab ${isActive() ? "active" : ""}`}
+                      class={`session-tab ${isActive() ? "active" : ""} status-${session.status}`}
                       onClick={() => handleSwitchSession(session.id)}
                       onContextMenu={(e) => handleTabContextMenu(e, session.id)}
                     >
@@ -593,12 +730,18 @@ const App: Component = () => {
                         <span class="session-tab-pin" title="已固定">📌</span>
                       </Show>
                       <span class="session-tab-terminal-icon">›_</span>
+                      <span class={`session-tab-status status-${session.status}`} title={session.status} />
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
+                      <Show when={runningTunnelCount(session.connection.id) > 0}>
+                        <span class="session-tab-tunnel" title={`${runningTunnelCount(session.connection.id)} 条隧道运行中`}>⇄{runningTunnelCount(session.connection.id)}</span>
+                      </Show>
                       <Show when={(tabPosition().get(session.id)?.index ?? 0) > 1}>
                         <span class="session-tab-badge">{tabPosition().get(session.id)?.index}</span>
                       </Show>
                       <button
                         class="session-tab-close"
+                        title={`关闭 ${session.displayName || session.connection.name}`}
+                        aria-label={`关闭 ${session.displayName || session.connection.name}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleCloseSession(session.id);
@@ -640,7 +783,7 @@ const App: Component = () => {
               <div class="tab-context-menu-item" onClick={() => handleCloseRight(tabContextMenu()!.sessionId)}>
                 关闭右侧
               </div>
-              <div class="tab-context-menu-item" onClick={() => handleCloseAll(tabContextMenu()!.sessionId)}>
+              <div class="tab-context-menu-item" onClick={() => handleCloseAll()}>
                 关闭全部
               </div>
               <div class="tab-context-menu-divider" />
@@ -657,6 +800,24 @@ const App: Component = () => {
             </div>
             <div class="tab-context-menu-overlay" onClick={() => setTabContextMenu(null)} />
           </Show>
+
+          <Show when={!assetListActive() && activeSession()}>{session => (
+            <div class="session-action-bar">
+              <div class="session-action-identity">
+                <span class={`session-status-dot status-${session().status}`} />
+                <strong>{session().status === "connected" ? "已连接" : session().status === "connecting" ? "连接中" : session().status === "reconnecting" ? `重连中 ${session().reconnectAttempt || ""}` : session().status === "restored" ? "离线恢复" : session().status === "error" ? "连接错误" : "已断开"}</strong>
+                <span>{session().connection.username}@{session().connection.host}:{session().connection.port}</span>
+              </div>
+              <div class="session-action-controls">
+                <label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
+                  <option>UTF-8</option><option>GBK</option><option>GB2312</option><option>GB18030</option><option>Big5</option><option>Shift-JIS</option><option>EUC-KR</option><option>ISO-8859-1</option><option>Windows-1252</option><option>CP437</option>
+                </select></label>
+                <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
+                <button disabled={sessions().filter(item => item.status === "connected").length === 0} onClick={() => setShowBroadcast(true)}>⌁ 命令广播</button>
+                <button onClick={() => void handleReconnect(session().id)}>↻ 重连</button>
+              </div>
+            </div>
+          )}</Show>
 
           <Show when={assetListActive()}>
             <div class="session-asset-list">
@@ -687,7 +848,6 @@ const App: Component = () => {
                 const sessionVisible = createMemo(() => sessionActive() && !assetListActive());
                 return (
                   <div
-                    key={session.id}
                     class="session-content-wrapper"
                     style={{
                       display: sessionActive() ? "flex" : "none",
@@ -703,9 +863,22 @@ const App: Component = () => {
                         connection={session.connection}
                         visible={sessionVisible}
                         shellId={session.shellId}
-                        onDisconnected={() => void handleReconnect(session.id)}
+                        onDisconnected={(error) => handleSessionDisconnected(session.id, error)}
                       />
                     )}
+                    <Show when={!session.shellId || session.status !== "connected"}>
+                      <div class={`session-state-overlay state-${session.status}`}>
+                        <span class={`session-state-icon status-${session.status}`}>{session.status === "connecting" || session.status === "reconnecting" ? "◌" : session.status === "error" ? "!" : "›_"}</span>
+                        <h3>{session.status === "restored" ? "会话已从上次工作区恢复" : session.status === "connecting" ? "正在建立 SSH 连接" : session.status === "reconnecting" ? "正在重新连接" : session.status === "error" ? "SSH 连接失败" : "SSH 会话已断开"}</h3>
+                        <Show when={session.error}><p>{session.error}</p></Show>
+                        <div>
+                          <button class="primary" disabled={session.status === "connecting" || session.status === "reconnecting"} onClick={() => void handleReconnect(session.id)}>{session.status === "restored" ? "连接" : "重试"}</button>
+                          <button onClick={() => void handleEdit(session.connection)}>编辑连接</button>
+                          <Show when={session.error}><button onClick={() => void navigator.clipboard.writeText(session.error || "").then(() => feedback.success("错误信息已复制"), error => feedback.error("复制失败：" + error))}>复制错误</button></Show>
+                          <button onClick={() => void handleCloseSession(session.id)}>关闭标签</button>
+                        </div>
+                      </div>
+                    </Show>
                   </div>
                 );
               }}
@@ -792,6 +965,33 @@ const App: Component = () => {
           </div>
         </div>
       </Show>
+      <Show when={showBroadcast()}>
+        <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowBroadcast(false)} />
+      </Show>
+      <Show when={showTunnels() && (tunnelConnection() || activeSession()?.connection)}>
+        <TunnelPanel connection={(tunnelConnection() || activeSession()!.connection)!} onClose={() => { setShowTunnels(false); setTunnelConnection(null); }} />
+      </Show>
+      <Show when={showQuickSwitcher()}>
+        <div class="quick-switcher-overlay" onClick={() => setShowQuickSwitcher(false)}>
+          <div class="quick-switcher" onClick={event => event.stopPropagation()}>
+            <input autofocus value={quickQuery()} placeholder="搜索连接、主机或用户…" onInput={event => setQuickQuery(event.currentTarget.value)} onKeyDown={event => {
+              if (event.key === "Enter" && quickConnections()[0]) chooseQuickConnection(quickConnections()[0]);
+            }} />
+            <div class="quick-switcher-results">
+              <For each={quickConnections()}>{connection => {
+                const opened = () => sessions().find(session => session.connection.id === connection.id);
+                return <button onClick={() => chooseQuickConnection(connection)}>
+                  <span class={`session-status-dot status-${opened()?.status || "restored"}`} />
+                  <span><strong>{connection.name}</strong><small>{connection.username}@{connection.host}:{connection.port}</small></span>
+                  <em>{opened() ? "切换标签" : "新建会话"}</em>
+                </button>;
+              }}</For>
+            </div>
+            <footer><kbd>Enter</kbd> 打开　<kbd>Esc</kbd> 关闭　<kbd>Ctrl K</kbd> 快速切换</footer>
+          </div>
+        </div>
+      </Show>
+      <FeedbackHost />
       </div>
     </div>
   );

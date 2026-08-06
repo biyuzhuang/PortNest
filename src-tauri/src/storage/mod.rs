@@ -356,6 +356,17 @@ impl Database {
         Ok(records)
     }
 
+    pub fn mark_connection_used(&self, id: &str) -> Result<()> {
+        self.conn
+            .lock()
+            .execute(
+                "UPDATE connections SET last_connected_at = ?1 WHERE id = ?2",
+                params![chrono::Utc::now().timestamp(), id],
+            )
+            .map_err(|error| Error::StorageError(format!("更新最近连接时间失败: {error}")))?;
+        Ok(())
+    }
+
     /// 删除连接
     pub fn delete_connection(&self, id: &str) -> Result<()> {
         let mut conn = self.conn.lock();
@@ -469,7 +480,10 @@ impl Database {
         }
         let conn = self.conn.lock();
         let changed = conn
-            .execute("UPDATE folders SET name = ?1 WHERE id = ?2", params![name, id])
+            .execute(
+                "UPDATE folders SET name = ?1 WHERE id = ?2",
+                params![name, id],
+            )
             .map_err(|e| Error::StorageError(format!("重命名文件夹失败: {}", e)))?;
         if changed == 0 {
             return Err(Error::StorageError("文件夹不存在".to_string()));
@@ -477,7 +491,14 @@ impl Database {
         Ok(())
     }
 
-    pub fn save_ssh_key(&self, id: Uuid, name: &str, file_name: &str, key_type: &str, private_key: &str) -> Result<()> {
+    pub fn save_ssh_key(
+        &self,
+        id: Uuid,
+        name: &str,
+        file_name: &str,
+        key_type: &str,
+        private_key: &str,
+    ) -> Result<()> {
         let (encrypted, iv) = self.vault.encrypt(private_key.as_bytes())?;
         let conn = self.conn.lock();
         let now = chrono::Utc::now().timestamp();
@@ -486,9 +507,14 @@ impl Database {
              (id, name, file_name, key_type, encrypted_data, iv, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                id.to_string(), name.trim(), file_name, key_type,
+                id.to_string(),
+                name.trim(),
+                file_name,
+                key_type,
                 base64::engine::general_purpose::STANDARD.encode(encrypted),
-                base64::engine::general_purpose::STANDARD.encode(iv), now, now
+                base64::engine::general_purpose::STANDARD.encode(iv),
+                now,
+                now
             ],
         )
         .map_err(|e| Error::StorageError(format!("保存密钥失败: {}", e)))?;
@@ -501,10 +527,16 @@ impl Database {
             .prepare("SELECT id, name, file_name, key_type, created_at, updated_at FROM ssh_keys ORDER BY name")
             .map_err(|e| Error::StorageError(e.to_string()))?;
         let rows = stmt
-            .query_map([], |row| Ok(SshKeyRecord {
-                id: row.get(0)?, name: row.get(1)?, file_name: row.get(2)?,
-                key_type: row.get(3)?, created_at: row.get(4)?, updated_at: row.get(5)?,
-            }))
+            .query_map([], |row| {
+                Ok(SshKeyRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    file_name: row.get(2)?,
+                    key_type: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })
             .map_err(|e| Error::StorageError(e.to_string()))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::StorageError(e.to_string()))?;
@@ -514,19 +546,26 @@ impl Database {
     pub fn get_ssh_key_material(&self, id: &str) -> Result<String> {
         let conn = self.conn.lock();
         let (encrypted, iv): (String, String) = conn
-            .query_row("SELECT encrypted_data, iv FROM ssh_keys WHERE id = ?1", params![id],
-                |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_row(
+                "SELECT encrypted_data, iv FROM ssh_keys WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .map_err(|e| Error::StorageError(format!("读取密钥失败: {}", e)))?;
-        let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted)
+        let encrypted = base64::engine::general_purpose::STANDARD
+            .decode(encrypted)
             .map_err(|e| Error::EncryptionError(e.to_string()))?;
-        let iv = base64::engine::general_purpose::STANDARD.decode(iv)
+        let iv = base64::engine::general_purpose::STANDARD
+            .decode(iv)
             .map_err(|e| Error::EncryptionError(e.to_string()))?;
         String::from_utf8(self.vault.decrypt(&encrypted, &iv)?)
             .map_err(|e| Error::EncryptionError(e.to_string()))
     }
 
     pub fn delete_ssh_key(&self, id: &str) -> Result<()> {
-        self.conn.lock().execute("DELETE FROM ssh_keys WHERE id = ?1", params![id])
+        self.conn
+            .lock()
+            .execute("DELETE FROM ssh_keys WHERE id = ?1", params![id])
             .map_err(|e| Error::StorageError(format!("删除密钥失败: {}", e)))?;
         Ok(())
     }

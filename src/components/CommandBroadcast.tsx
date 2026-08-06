@@ -1,195 +1,94 @@
-import { Component, createSignal, For, Show } from "solid-js";
-import { api, ConnectionRecord } from "../utils/api";
+import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { sessionStore, type SessionTab } from "../stores/sessionStore";
 import "./CommandBroadcast.css";
 
-interface BroadcastSession {
-  connection: ConnectionRecord;
-  shellId: string | null;
-  output: string[];
-  isConnected: boolean;
-}
-
 interface CommandBroadcastProps {
-  connections: ConnectionRecord[];
+  sessions: SessionTab[];
+  activeSessionId: string | null;
+  onClose: () => void;
 }
 
 export const CommandBroadcast: Component<CommandBroadcastProps> = (props) => {
-  const [sessions, setSessions] = createSignal<BroadcastSession[]>([]);
+  let initialized = false;
+  const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set<string>());
   const [command, setCommand] = createSignal("");
-  const [isBroadcasting, setIsBroadcasting] = createSignal(false);
-  const [executingSessions, setExecutingSessions] = createSignal<Set<string>>(new Set());
+  const [sending, setSending] = createSignal(false);
+  const [summary, setSummary] = createSignal<{ sent: number; failed: Array<{ name: string; error: string }>; skipped: number } | null>(null);
 
-  const connectAll = async () => {
-    const newSessions: BroadcastSession[] = [];
+  const connected = createMemo(() => props.sessions.filter(session => session.status === "connected" && session.shellId));
 
-    for (const conn of props.connections.filter(c => c.protocol === "ssh")) {
-      try {
-        const response = await api.openShell(conn.id, 80, 24);
-        newSessions.push({
-          connection: conn,
-          shellId: response.shell_id,
-          output: [`[${conn.name}] 已连接`],
-          isConnected: true,
-        });
-      } catch (e) {
-        newSessions.push({
-          connection: conn,
-          shellId: null,
-          output: [`[${conn.name}] 连接失败: ${e}`],
-          isConnected: false,
-        });
-      }
+  createEffect(() => {
+    if (initialized) return;
+    const active = connected().find(session => session.id === props.activeSessionId);
+    if (active) {
+      setSelectedIds(new Set<string>([active.id]));
+      initialized = true;
+    } else if (props.sessions.length > 0) {
+      initialized = true;
     }
+  });
 
-    setSessions(newSessions);
-  };
+  const toggle = (sessionId: string) => setSelectedIds(previous => {
+    const next = new Set<string>(previous);
+    if (next.has(sessionId)) next.delete(sessionId); else next.add(sessionId);
+    return next;
+  });
 
-  const disconnectAll = async () => {
-    for (const session of sessions()) {
-      if (session.shellId) {
-        try {
-          await api.closeShell(session.shellId);
-        } catch (e) {
-          console.error("Close shell error:", e);
-        }
-      }
-    }
-    setSessions([]);
-  };
-
-  const executeCommand = async () => {
-    const cmd = command();
-    if (!cmd.trim()) return;
-
-    setIsBroadcasting(true);
-    setExecutingSessions(new Set(sessions().filter(s => s.isConnected).map(s => s.shellId!)));
-
-    const updatedSessions = [...sessions()];
-
-    for (let i = 0; i < updatedSessions.length; i++) {
-      const session = updatedSessions[i];
-      if (!session.isConnected || !session.shellId) continue;
-
-      try {
-        await api.writeShell(session.shellId, cmd + "\r");
-        updatedSessions[i] = {
-          ...session,
-          output: [...session.output, `$ ${cmd}`],
-        };
-      } catch (e) {
-        updatedSessions[i] = {
-          ...session,
-          output: [...session.output, `[${session.connection.name}] 发送失败: ${e}`],
-        };
-      }
-    }
-
-    setSessions(updatedSessions);
-    setCommand("");
-    setIsBroadcasting(false);
-    setExecutingSessions(new Set());
-
-    // Start polling for output
-    pollOutputs();
-  };
-
-  const pollOutputs = async () => {
-    const updatedSessions = [...sessions()];
-    let hasChanges = false;
-
-    for (let i = 0; i < updatedSessions.length; i++) {
-      const session = updatedSessions[i];
-      if (!session.isConnected || !session.shellId) continue;
-
-      try {
-        const data = await api.readShell(session.shellId);
-        if (data) {
-          updatedSessions[i] = {
-            ...session,
-            output: [...session.output, data],
-          };
-          hasChanges = true;
-        }
-      } catch (e) {
-        // Ignore read errors during polling
-      }
-    }
-
-    if (hasChanges) {
-      setSessions(updatedSessions);
-      setTimeout(pollOutputs, 100);
-    }
-  };
-
-  const clearOutput = (index: number) => {
-    const updatedSessions = [...sessions()];
-    updatedSessions[index] = {
-      ...updatedSessions[index],
-      output: [],
-    };
-    setSessions(updatedSessions);
+  const send = async () => {
+    if (!command().trim() || sending()) return;
+    const normalized = command().replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n/g, "\r");
+    const payload = normalized.endsWith("\r") ? normalized : `${normalized}\r`;
+    setSending(true);
+    setSummary(null);
+    const selected = props.sessions.filter(session => selectedIds().has(session.id));
+    const writable = selected.filter(session => session.status === "connected" && session.shellId);
+    const results = await Promise.allSettled(writable.map(session => sessionStore.sendText(session.id, payload)));
+    const failed = results.flatMap((result, index) => result.status === "rejected"
+      ? [{ name: writable[index].displayName || writable[index].connection.name, error: String(result.reason) }]
+      : []);
+    setSummary({ sent: writable.length - failed.length, failed, skipped: selected.length - writable.length });
+    if (failed.length === 0) setCommand("");
+    setSending(false);
   };
 
   return (
-    <div class="command-broadcast">
-      <div class="broadcast-header">
-        <h3>命令广播</h3>
-        <div class="broadcast-actions">
-          <button class="btn-connect" onClick={connectAll}>连接所有</button>
-          <button class="btn-disconnect" onClick={disconnectAll}>断开所有</button>
+    <div class="workspace-drawer-overlay" onClick={props.onClose}>
+      <aside class="workspace-drawer broadcast-drawer" onClick={event => event.stopPropagation()}>
+        <header class="workspace-drawer-header">
+          <div><h3>命令广播</h3><p>向选中的已连接终端发送单行或多行命令</p></div>
+          <button onClick={props.onClose} aria-label="关闭命令广播">×</button>
+        </header>
+        <div class="broadcast-select-actions">
+          <span>目标会话 <strong>{selectedIds().size}</strong></span>
+          <button onClick={() => setSelectedIds(new Set<string>(connected().map(session => session.id)))}>全选已连接</button>
+          <button onClick={() => setSelectedIds(new Set<string>())}>取消全选</button>
         </div>
-      </div>
-
-      <Show when={sessions().length === 0}>
-        <div class="broadcast-empty">
-          <p>点击"连接所有"以连接到所有 SSH 服务器</p>
-          <p class="hint">支持同时向多个服务器发送相同命令</p>
+        <div class="broadcast-session-list">
+          <For each={props.sessions}>{session => (
+            <label class={`broadcast-session-row ${session.status !== "connected" ? "disabled" : ""}`}>
+              <input type="checkbox" checked={selectedIds().has(session.id)} disabled={session.status !== "connected" || !session.shellId} onChange={() => toggle(session.id)} />
+              <span class={`session-status-dot status-${session.status}`} />
+              <span class="broadcast-session-main"><strong>{session.displayName || session.connection.name}</strong><small>{session.connection.username}@{session.connection.host}:{session.connection.port}</small></span>
+              <code>{session.encodingOverride || session.encoding || "UTF-8"}</code>
+            </label>
+          )}</For>
         </div>
-      </Show>
-
-      <Show when={sessions().length > 0}>
-        <div class="command-input-area">
-          <input
-            type="text"
-            class="command-input"
-            placeholder="输入命令后按 Enter 广播到所有会话..."
-            value={command()}
-            onInput={(e) => setCommand(e.currentTarget.value)}
-            onKeyDown={(e) => e.key === "Enter" && !isBroadcasting() && executeCommand()}
-            disabled={isBroadcasting()}
-          />
-          <button
-            class="btn-execute"
-            onClick={executeCommand}
-            disabled={isBroadcasting() || !command().trim()}
-          >
-            {isBroadcasting() ? "执行中..." : "广播"}
+        <div class="broadcast-command-box">
+          <label>命令内容 <span>Enter 换行，Ctrl+Enter 发送</span></label>
+          <textarea value={command()} autofocus rows={6} placeholder={"例如：\ncd /opt/app\ngit pull\nnpm run build"} onInput={event => { setCommand(event.currentTarget.value); setSummary(null); }} onKeyDown={event => {
+            if (event.key === "Enter" && event.ctrlKey) void send();
+          }} />
+          <button class="broadcast-send" disabled={sending() || selectedIds().size === 0 || !command().trim()} onClick={() => void send()}>
+            {sending() ? "发送中…" : `发送到 ${selectedIds().size} 个会话`} <kbd>Ctrl+Enter</kbd>
           </button>
         </div>
-
-        <div class="sessions-grid">
-          <For each={sessions()}>
-            {(session, index) => (
-              <div class={`session-panel ${session.isConnected ? "connected" : "disconnected"}`}>
-                <div class="session-header">
-                  <div class="session-title">
-                    <span class="status-dot" style={{ background: session.isConnected ? "var(--success)" : "var(--error)" }} />
-                    <span class="session-name">{session.connection.name}</span>
-                  </div>
-                  <button class="btn-clear" onClick={() => clearOutput(index())}>清空</button>
-                </div>
-                <div class="session-output">
-                  <For each={session.output}>
-                    {(line) => (
-                      <div class="output-line" innerHTML={line.replace(/\r?\n/g, "<br/>")} />
-                    )}
-                  </For>
-                </div>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
+        <Show when={summary()}>{result => (
+          <div class={`broadcast-summary ${result().failed.length ? "has-error" : ""}`}>
+            已发送 {result().sent}，失败 {result().failed.length}，跳过 {result().skipped}
+            <For each={result().failed}>{failure => <p><strong>{failure.name}</strong>：{failure.error}</p>}</For>
+          </div>
+        )}</Show>
+      </aside>
     </div>
   );
 };

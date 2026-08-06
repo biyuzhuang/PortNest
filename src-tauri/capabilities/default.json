@@ -9,6 +9,7 @@
     "shell:default",
     "dialog:default",
     "fs:default",
+    "fs:allow-write-text-file",
     "notification:default",
     "clipboard-manager:default",
     "core:window:default",

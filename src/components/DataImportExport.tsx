@@ -179,7 +179,7 @@ export const DataImportExport: Component<DataImportExportProps> = (props) => {
               class="data-textarea"
               readonly
               value={importData()}
-              placeholder="点击"导出数据"按钮获取数据"
+              placeholder="点击“导出数据”按钮获取数据"
               rows={10}
             />
           </div>

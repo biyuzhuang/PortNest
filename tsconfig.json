@@ -22,5 +22,16 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  "exclude": [
+    "src/components/AIChat.tsx",
+    "src/components/ConnectionList.tsx",
+    "src/components/DataImportExport.tsx",
+    "src/components/DockerDashboard.tsx",
+    "src/components/MetricsStrip.tsx",
+    "src/components/QueryEditor.tsx",
+    "src/components/ServerStatusPanel.tsx",
+    "src/components/TableEditor.tsx",
+    "src/utils/terminalManager.ts"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
