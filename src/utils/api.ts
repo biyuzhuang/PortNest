@@ -294,6 +294,14 @@ export const api = {
     return sshInvoke("sftp_create_dir", { sftpId, path });
   },
 
+  async sftpCreateFile(sftpId: string, path: string): Promise<void> {
+    return sshInvoke("sftp_create_file", { sftpId, path });
+  },
+
+  async cancelSftpTransfer(sftpId: string, transferId: string): Promise<void> {
+    return sshInvoke("sftp_cancel_transfer", { sftpId, transferId });
+  },
+
   async sftpDeleteFile(sftpId: string, path: string): Promise<void> {
     return sshInvoke("sftp_delete_file", { sftpId, path });
   },

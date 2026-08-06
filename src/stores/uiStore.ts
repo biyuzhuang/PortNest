@@ -9,6 +9,19 @@ const [assetFilter, setAssetFilter] = createSignal<AssetFilter>("all");
 const [assetTreeVisible, setAssetTreeVisible] = createSignal(true);
 const [selectedAssetFolderId, setSelectedAssetFolderId] = createSignal<string | null>(null);
 
+const readFileViewOptions = (): Record<string, unknown> => {
+  try { return JSON.parse(localStorage.getItem("portnest-file-view-options") || "{}"); }
+  catch { return {}; }
+};
+const [pathLinked, setPathLinkedSignal] = createSignal(readFileViewOptions().pathLinked === true);
+
+const setPathLinked = (value: boolean) => {
+  setPathLinkedSignal(value);
+  const options = readFileViewOptions();
+  options.pathLinked = value;
+  localStorage.setItem("portnest-file-view-options", JSON.stringify(options));
+};
+
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
   void filter;
   return protocol === "ssh" || protocol === "sftp";
@@ -30,4 +43,6 @@ export const uiStore = {
   toggleAssetTree: () => setAssetTreeVisible(!assetTreeVisible()),
   selectedAssetFolderId,
   setSelectedAssetFolderId,
+  pathLinked,
+  setPathLinked,
 };

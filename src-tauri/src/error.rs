@@ -39,6 +39,9 @@ pub enum Error {
 
     #[error("Docker API错误: {0}")]
     DockerError(String),
+
+    #[error("传输已取消")]
+    TransferCancelled,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

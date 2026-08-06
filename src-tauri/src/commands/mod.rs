@@ -13,13 +13,15 @@ use crate::protocol::docker::{
     NetworkInfo, VolumeInfo,
 };
 use crate::protocol::ssh_backend::{
-    ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend, SshBackend, SshSession, TerminalSize,
+    CancellationToken, ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend, SshBackend,
+    SshSession, TerminalSize,
 };
 use crate::protocol::terminal_codec::{normalize_encoding, TerminalCodec};
 use crate::protocol::tunnel::{TunnelManager, TunnelRule, TunnelRuntimeInfo};
 use crate::protocol::PluginRegistry;
 use crate::protocol::{ConnectionHandle, Credential, CredentialType};
 use crate::storage::{ConnectionRecord, CredentialData, Database, SshKeyRecord};
+use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 fn parse_connection_options(
@@ -98,17 +100,22 @@ struct SftpSessionInfo {
     _connection_id: String,
     handle: Arc<dyn SftpHandle>,
     session: Arc<dyn SshSession>,
+    /// 是否为独立建立的 SSH 会话（`open_sftp` 创建）。关闭时需要主动断开传输；
+    /// 复用 Shell 会话（`open_sftp_for_shell`）创建的不能断开，否则会连带终端。
+    owns_session: bool,
 }
 
 /// SFTP 会话管理器
 pub(crate) struct SftpManager {
     sessions: RwLock<HashMap<String, SftpSessionInfo>>,
+    transfers: parking_lot::Mutex<HashMap<String, CancellationToken>>,
 }
 
 impl SftpManager {
     fn new() -> Self {
         Self {
             sessions: RwLock::new(HashMap::new()),
+            transfers: parking_lot::Mutex::new(HashMap::new()),
         }
     }
 
@@ -118,6 +125,7 @@ impl SftpManager {
         connection_id: String,
         handle: Arc<dyn SftpHandle>,
         session: Arc<dyn SshSession>,
+        owns_session: bool,
     ) {
         self.sessions.write().insert(
             sftp_id,
@@ -125,6 +133,7 @@ impl SftpManager {
                 _connection_id: connection_id,
                 handle,
                 session,
+                owns_session,
             },
         );
     }
@@ -137,8 +146,33 @@ impl SftpManager {
         self.sessions.read().get(sftp_id).map(|s| s.session.clone())
     }
 
+    fn owns_session(&self, sftp_id: &str) -> bool {
+        self.sessions
+            .read()
+            .get(sftp_id)
+            .map(|s| s.owns_session)
+            .unwrap_or(false)
+    }
+
     fn remove(&self, sftp_id: &str) {
         self.sessions.write().remove(sftp_id);
+    }
+
+    fn register_transfer(&self, transfer_id: String, token: CancellationToken) {
+        self.transfers.lock().insert(transfer_id, token);
+    }
+
+    fn cancel_transfer(&self, transfer_id: &str) -> bool {
+        if let Some(token) = self.transfers.lock().get(transfer_id).cloned() {
+            token.cancel();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn remove_transfer(&self, transfer_id: &str) {
+        self.transfers.lock().remove(transfer_id);
     }
 }
 
@@ -1235,17 +1269,24 @@ pub async fn open_sftp(
         .connect(&target, &credential, &options)
         .await
         .map_err(|e| e.to_string())?;
-    let sftp_handle = session.open_sftp().await.map_err(|e| e.to_string())?;
+    let sftp_handle = match session.open_sftp().await {
+        Ok(handle) => handle,
+        Err(error) => {
+            // 清理刚建立的 SSH 会话，避免 SFTP 初始化失败后遗留连接
+            let _ = session.disconnect().await;
+            return Err(error.to_string());
+        }
+    };
     let sftp_id = sftp_handle.id().to_string();
 
     state
         .sftp_manager
-        .insert(sftp_id.clone(), connection_id, sftp_handle, session);
+        .insert(sftp_id.clone(), connection_id, sftp_handle, session, true);
 
     Ok(SftpOpenResponse { sftp_id })
 }
 
-/// 通过已有 Shell 会话打开 SFTP（复用 SSH 连接，不创建新连接）
+/// 通过已有 Shell 会话打开 SFTP（复用同一 SSH 传输，仅新建 SFTP 通道）
 #[tauri::command]
 pub async fn open_sftp_for_shell(
     state: tauri::State<'_, AppState>,
@@ -1260,9 +1301,61 @@ pub async fn open_sftp_for_shell(
 
     state
         .sftp_manager
-        .insert(sftp_id.clone(), String::new(), sftp_handle, session);
+        .insert(sftp_id.clone(), String::new(), sftp_handle, session, false);
 
     Ok(SftpOpenResponse { sftp_id })
+}
+
+/// 传输进度事件载荷
+#[derive(Debug, Clone, Serialize)]
+pub struct TransferProgressPayload {
+    pub sftp_id: String,
+    pub transfer_id: String,
+    pub direction: String,
+    pub file_name: String,
+    pub transferred: u64,
+    pub total: u64,
+    /// running / done / cancelled / error
+    pub status: String,
+    pub error: Option<String>,
+}
+
+fn emit_transfer_event(app: &tauri::AppHandle, payload: &TransferProgressPayload) {
+    let _ = app.emit("sftp-transfer-progress", payload);
+}
+
+/// 构造节流的进度回调（≥100ms 一次，末次必然发出）
+fn transfer_progress_callback(
+    app: tauri::AppHandle,
+    payload_base: TransferProgressPayload,
+) -> crate::protocol::ssh_backend::TransferProgress {
+    let last_emit = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+    std::sync::Arc::new(move |transferred: u64, total: u64| {
+        let mut last = last_emit
+            .lock()
+            .expect("transfer throttle mutex poisoned");
+        let due = last.elapsed().as_millis() >= 100 || transferred == total;
+        if !due {
+            return;
+        }
+        *last = std::time::Instant::now();
+        let payload = TransferProgressPayload {
+            transferred,
+            total,
+            status: "running".to_string(),
+            error: None,
+            ..payload_base.clone()
+        };
+        let _ = app.emit("sftp-transfer-progress", &payload);
+    })
+}
+
+fn transfer_file_name(path: &str) -> String {
+    path.rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 /// 列出 SFTP 目录
@@ -1283,6 +1376,7 @@ pub async fn list_sftp_dir(
 /// 下载文件
 #[tauri::command]
 pub async fn sftp_download(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     sftp_id: String,
     remote_path: String,
@@ -1292,15 +1386,70 @@ pub async fn sftp_download(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    handle
-        .download(&remote_path, &local_path)
-        .await
-        .map_err(|e| e.to_string())
+    let transfer_id = Uuid::new_v4().to_string();
+    let cancel = CancellationToken::default();
+    state
+        .sftp_manager
+        .register_transfer(transfer_id.clone(), cancel.clone());
+    let base = TransferProgressPayload {
+        sftp_id: sftp_id.clone(),
+        transfer_id: transfer_id.clone(),
+        direction: "download".to_string(),
+        file_name: transfer_file_name(&remote_path),
+        transferred: 0,
+        total: 0,
+        status: "running".to_string(),
+        error: None,
+    };
+    emit_transfer_event(&app, &base);
+    let progress = transfer_progress_callback(app.clone(), base.clone());
+    let result = handle
+        .download(&remote_path, &local_path, Some(progress), cancel.clone())
+        .await;
+    let outcome = match result {
+        Ok(bytes) => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    transferred: bytes,
+                    total: bytes,
+                    status: "done".to_string(),
+                    ..base
+                },
+            );
+            Ok(bytes)
+        }
+        Err(_) if cancel.is_cancelled() => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    status: "cancelled".to_string(),
+                    error: Some("传输已取消".to_string()),
+                    ..base
+                },
+            );
+            Err("传输已取消".to_string())
+        }
+        Err(e) => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    status: "error".to_string(),
+                    error: Some(e.to_string()),
+                    ..base
+                },
+            );
+            Err(e.to_string())
+        }
+    };
+    state.sftp_manager.remove_transfer(&transfer_id);
+    outcome
 }
 
 /// 上传文件
 #[tauri::command]
 pub async fn sftp_upload(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     sftp_id: String,
     local_path: String,
@@ -1310,10 +1459,93 @@ pub async fn sftp_upload(
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
-    handle
-        .upload(&local_path, &remote_path)
-        .await
-        .map_err(|e| e.to_string())
+    let transfer_id = Uuid::new_v4().to_string();
+    let cancel = CancellationToken::default();
+    state
+        .sftp_manager
+        .register_transfer(transfer_id.clone(), cancel.clone());
+    let base = TransferProgressPayload {
+        sftp_id: sftp_id.clone(),
+        transfer_id: transfer_id.clone(),
+        direction: "upload".to_string(),
+        file_name: transfer_file_name(&local_path),
+        transferred: 0,
+        total: 0,
+        status: "running".to_string(),
+        error: None,
+    };
+    emit_transfer_event(&app, &base);
+    let progress = transfer_progress_callback(app.clone(), base.clone());
+    let result = handle
+        .upload(&local_path, &remote_path, Some(progress), cancel.clone())
+        .await;
+    let outcome = match result {
+        Ok(bytes) => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    transferred: bytes,
+                    total: bytes,
+                    status: "done".to_string(),
+                    ..base
+                },
+            );
+            Ok(bytes)
+        }
+        Err(_) if cancel.is_cancelled() => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    status: "cancelled".to_string(),
+                    error: Some("传输已取消".to_string()),
+                    ..base
+                },
+            );
+            Err("传输已取消".to_string())
+        }
+        Err(e) => {
+            emit_transfer_event(
+                &app,
+                &TransferProgressPayload {
+                    status: "error".to_string(),
+                    error: Some(e.to_string()),
+                    ..base
+                },
+            );
+            Err(e.to_string())
+        }
+    };
+    state.sftp_manager.remove_transfer(&transfer_id);
+    outcome
+}
+
+/// 取消进行中的传输
+#[tauri::command]
+pub async fn sftp_cancel_transfer(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    transfer_id: String,
+) -> Result<(), String> {
+    if state.sftp_manager.get(&sftp_id).is_none() {
+        return Err("SFTP 会话未找到".to_string());
+    }
+    // 幂等：传输进行中则取消；已完成/不存在也视为成功，避免误导性报错
+    let _ = state.sftp_manager.cancel_transfer(&transfer_id);
+    Ok(())
+}
+
+/// 创建空文件
+#[tauri::command]
+pub async fn sftp_create_file(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    path: String,
+) -> Result<(), String> {
+    let handle = state
+        .sftp_manager
+        .get(&sftp_id)
+        .ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    handle.create_file(&path).await.map_err(|e| e.to_string())
 }
 
 /// 创建目录
@@ -1377,11 +1609,17 @@ pub async fn sftp_rename(
         .map_err(|e| e.to_string())
 }
 
-/// 关闭 SFTP 会话（不主动断开 SSH，因为可能被 shell 共享）
+/// 关闭 SFTP 会话。独立会话（open_sftp）会同时断开其 SSH 传输；
+/// 复用 Shell 的会话（open_sftp_for_shell）只关闭 SFTP 通道，不影响终端。
 #[tauri::command]
 pub async fn close_sftp(state: tauri::State<'_, AppState>, sftp_id: String) -> Result<(), String> {
     if let Some(handle) = state.sftp_manager.get(&sftp_id) {
         handle.close().await.map_err(|error| error.to_string())?;
+    }
+    if state.sftp_manager.owns_session(&sftp_id) {
+        if let Some(session) = state.sftp_manager.get_session(&sftp_id) {
+            let _ = session.disconnect().await;
+        }
     }
     state.sftp_manager.remove(&sftp_id);
     Ok(())

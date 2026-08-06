@@ -223,6 +223,7 @@ const App: Component = () => {
 
     if (conn.protocol === "ssh") {
       const sessionId = createSession(conn);
+      uiStore.setFilesCollapsed(!getTerminalSettings().openFileManagerOnConnect);
       console.log("[handleConnect] Created session:", sessionId);
 
       (async () => {
@@ -887,7 +888,7 @@ const App: Component = () => {
         </main>
         <Show when={showRightPanel()}>
           <div class="panel-splitter" onMouseDown={startResize} hidden={uiStore.filesCollapsed()} />
-          <RightPanel connection={activeSession()?.connection} shellId={activeSession()?.shellId} style={{ width: `${rightPanelWidth()}px` }} />
+          <RightPanel connection={activeSession()?.connection} sessionId={activeSession()?.id} shellId={activeSession()?.shellId} style={{ width: `${rightPanelWidth()}px` }} />
           <Show when={uiStore.filesCollapsed()}>
             <button
               class="right-panel-expand-tab"

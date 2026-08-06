@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use ssh2::{Session, Sftp};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -16,6 +16,64 @@ use crate::protocol::{
     ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, ProtocolCapability,
     ProtocolPlugin,
 };
+use crate::protocol::ssh_backend::{CancellationToken, TransferProgress};
+
+const TRANSFER_CHUNK_SIZE: usize = 128 * 1024;
+
+fn is_transient_io_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+    )
+}
+
+/// 带进度回调与取消检查的分块复制。
+/// - 读/写遇到 WouldBlock/TimedOut（配合会话超时）时视为瞬态：先检查取消，再继续重试；
+/// - 写入按偏移分片推进，瞬态错误后从已写偏移继续，避免重复写入。
+fn copy_with_progress<R: Read, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    total: u64,
+    progress: Option<&TransferProgress>,
+    cancel: &CancellationToken,
+) -> Result<u64> {
+    let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
+    let mut transferred = 0_u64;
+    loop {
+        if cancel.is_cancelled() {
+            return Err(Error::TransferCancelled);
+        }
+        let count = match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if is_transient_io_error(&e) => continue,
+            Err(e) => return Err(Error::IoError(e)),
+        };
+        let mut written = 0;
+        while written < count {
+            if cancel.is_cancelled() {
+                return Err(Error::TransferCancelled);
+            }
+            match writer.write(&buffer[written..count]) {
+                Ok(0) => {
+                    return Err(Error::IoError(std::io::Error::new(
+                        std::io::ErrorKind::WriteZero,
+                        "写入零字节",
+                    )))
+                }
+                Ok(n) => written += n,
+                Err(e) if is_transient_io_error(&e) => continue,
+                Err(e) => return Err(Error::IoError(e)),
+            }
+        }
+        transferred += count as u64;
+        if let Some(callback) = progress {
+            callback(transferred, total);
+        }
+    }
+    writer.flush().map_err(Error::IoError)?;
+    Ok(transferred)
+}
 
 struct BlockingModeGuard<'a>(&'a Session);
 
@@ -235,14 +293,22 @@ impl SftpConnectionHandle {
         resolved
     }
 
-    /// 下载文件
-    pub fn download_file(&self, remote_path: &str, local_path: &str) -> Result<u64> {
-        use std::fs::File as LocalFile;
-        use std::io::copy;
-
+    /// 下载文件（支持进度回调与取消）
+    pub fn download_file(
+        &self,
+        remote_path: &str,
+        local_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
         let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
+        let total = sftp
+            .stat(Path::new(remote_path))
+            .ok()
+            .and_then(|stat| stat.size)
+            .unwrap_or(0);
         let mut remote_file = sftp.open(Path::new(remote_path)).map_err(|e| {
             Error::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -250,22 +316,37 @@ impl SftpConnectionHandle {
             ))
         })?;
 
-        let mut local_file = LocalFile::create(local_path).map_err(|e| Error::IoError(e))?;
+        // 阻塞读设置 200ms 超时，让挂起的读能周期性返回并响应取消；结束后恢复无超时
+        self.session.set_timeout(200);
+        let result = (|| -> Result<u64> {
+            let mut local_file =
+                std::fs::File::create(local_path).map_err(Error::IoError)?;
+            copy_with_progress(&mut remote_file, &mut local_file, total, progress.as_ref(), &cancel)
+        })();
+        self.session.set_timeout(0);
 
-        let copied = copy(&mut remote_file, &mut local_file).map_err(|e| Error::IoError(e))?;
+        if result.is_err() {
+            let _ = std::fs::remove_file(local_path);
+        }
 
-        Ok(copied)
+        result
     }
 
-    /// 上传文件
-    pub fn upload_file(&self, local_path: &str, remote_path: &str) -> Result<u64> {
-        use std::fs::File as LocalFile;
-        use std::io::copy;
-
+    /// 上传文件（支持进度回调与取消）
+    pub fn upload_file(
+        &self,
+        local_path: &str,
+        remote_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
         let _blocking = BlockingModeGuard::new(&self.session);
 
         let sftp = self.sftp.lock();
-        let mut local_file = LocalFile::open(local_path).map_err(|e| Error::IoError(e))?;
+        let total = std::fs::metadata(local_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        let mut local_file = std::fs::File::open(local_path).map_err(Error::IoError)?;
 
         let mut remote_file = sftp.create(Path::new(remote_path)).map_err(|e| {
             Error::IoError(std::io::Error::new(
@@ -274,9 +355,33 @@ impl SftpConnectionHandle {
             ))
         })?;
 
-        let copied = copy(&mut local_file, &mut remote_file).map_err(|e| Error::IoError(e))?;
+        // 阻塞写设置 200ms 超时，让挂起的写能周期性返回并响应取消；结束后恢复无超时
+        self.session.set_timeout(200);
+        let result = (|| -> Result<u64> {
+            copy_with_progress(&mut local_file, &mut remote_file, total, progress.as_ref(), &cancel)
+        })();
+        self.session.set_timeout(0);
 
-        Ok(copied)
+        if result.is_err() {
+            let _ = sftp.unlink(Path::new(remote_path));
+        }
+
+        result
+    }
+
+    /// 创建空文件
+    pub fn create_file(&self, path: &str) -> Result<()> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+
+        let sftp = self.sftp.lock();
+        let file = sftp.create(Path::new(path)).map_err(|e| {
+            Error::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("创建文件失败: {}", e),
+            ))
+        })?;
+        drop(file);
+        Ok(())
     }
 
     /// 创建目录
@@ -385,6 +490,9 @@ impl Default for SftpPlugin {
 #[cfg(test)]
 mod tests {
     use super::symbolic_permissions;
+    use super::*;
+    use std::io::Cursor;
+    use std::sync::Mutex;
 
     #[test]
     fn formats_regular_file_permissions() {
@@ -417,6 +525,87 @@ mod tests {
             symbolic_permissions(Some(0o104755), false, false),
             "-rwxr-xr-x"
         );
+    }
+
+    #[test]
+    fn copy_reports_progress_monotonically_and_matches_total() {
+        let data = vec![7_u8; 300_000];
+        let mut sink = Vec::new();
+        let updates: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(Vec::new()));
+        let progress: TransferProgress = {
+            let updates = updates.clone();
+            Arc::new(move |transferred, total| {
+                updates.lock().unwrap().push((transferred, total));
+            })
+        };
+        let cancel = CancellationToken::default();
+
+        let copied = copy_with_progress(
+            Cursor::new(data.clone()),
+            &mut sink,
+            data.len() as u64,
+            Some(&progress),
+            &cancel,
+        )
+        .expect("copy should succeed");
+
+        assert_eq!(copied, data.len() as u64);
+        assert_eq!(sink, data);
+        let updates = updates.lock().unwrap();
+        assert!(!updates.is_empty(), "progress callback should be invoked");
+        assert_eq!(
+            updates.last().copied(),
+            Some((data.len() as u64, data.len() as u64))
+        );
+        for pair in updates.windows(2) {
+            assert!(pair[0].0 <= pair[1].0, "transferred must be monotonic");
+        }
+    }
+
+    #[test]
+    fn copy_stops_when_cancelled() {
+        let data = vec![1_u8; 1_000_000];
+        let mut sink = Vec::new();
+        let cancel = CancellationToken::default();
+        cancel.cancel();
+
+        let result = copy_with_progress(Cursor::new(data), &mut sink, 1_000_000, None, &cancel);
+        assert!(matches!(result, Err(Error::TransferCancelled)));
+    }
+
+    struct FlakyReadOnce<R> {
+        inner: R,
+        failed: bool,
+    }
+
+    impl<R: Read> Read for FlakyReadOnce<R> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if !self.failed {
+                self.failed = true;
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "transient",
+                ));
+            }
+            self.inner.read(buffer)
+        }
+    }
+
+    #[test]
+    fn copy_retries_transient_read_errors() {
+        let data = vec![9_u8; 4096];
+        let reader = FlakyReadOnce {
+            inner: Cursor::new(data.clone()),
+            failed: false,
+        };
+        let mut sink = Vec::new();
+        let cancel = CancellationToken::default();
+
+        let copied = copy_with_progress(reader, &mut sink, data.len() as u64, None, &cancel)
+            .expect("transient read error should be retried");
+
+        assert_eq!(copied, data.len() as u64);
+        assert_eq!(sink, data);
     }
 }
 

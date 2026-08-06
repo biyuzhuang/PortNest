@@ -102,6 +102,8 @@ pub fn run() {
             commands::list_sftp_dir,
             commands::sftp_download,
             commands::sftp_upload,
+            commands::sftp_cancel_transfer,
+            commands::sftp_create_file,
             commands::sftp_create_dir,
             commands::sftp_delete_file,
             commands::sftp_delete_dir,

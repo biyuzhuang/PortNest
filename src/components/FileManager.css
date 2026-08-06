@@ -209,19 +209,27 @@
 }
 .file-manager-summary {
   display: flex;
-  min-height: 31px;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   padding: 0 9px;
   border-bottom: 1px solid #e5e8eb;
   color: #272c31;
   font-size: 12px;
 }
-.file-manager-summary > span {
-  position: absolute;
-  right: 10px;
+.file-manager-summary-actions {
   display: flex;
+  min-height: 31px;
+  align-items: center;
+  justify-content: flex-end;
   gap: 4px;
+}
+.file-manager-summary-count {
+  padding: 0 0 4px;
+  color: #596169;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .file-manager-summary button {
   padding: 2px 5px;
@@ -232,6 +240,7 @@
   cursor: pointer;
 }
 .file-list { padding: 0; background: #fff; }
+.file-body { min-height: 100px; }
 .file-table { min-width: 500px; }
 .file-row {
   display: grid;
@@ -365,4 +374,104 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
+}
+
+/* 传输进度条 */
+.transfer-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  padding: 6px 9px;
+  border-top: 1px solid #e5e8eb;
+  background: #fafafa;
+}
+.transfer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #30353a;
+  font: 11px "Cascadia Code", Consolas, monospace;
+}
+.transfer-icon {
+  flex: 0 0 16px;
+  color: #3b82f6;
+  font-size: 13px;
+  text-align: center;
+}
+.transfer-main {
+  flex: 1;
+  min-width: 0;
+}
+.transfer-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.transfer-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.transfer-meta {
+  flex-shrink: 0;
+  color: #6b7280;
+}
+.transfer-bar {
+  height: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #e5e7eb;
+}
+.transfer-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #3b82f6;
+  transition: width 0.15s ease;
+}
+.transfer-row.status-done .transfer-bar-fill { background: #10b981; }
+.transfer-row.status-cancelled .transfer-bar-fill { background: #9ca3af; }
+.transfer-row.status-error .transfer-bar-fill { background: #ef4444; }
+.transfer-status {
+  margin-top: 2px;
+  color: #ef4444;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.transfer-cancel-btn {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  background: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.transfer-cancel-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+/* 路径联动状态徽标 */
+.path-link-badge {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #596169;
+  background: #eef1f4;
+  font: 11px "Cascadia Code", Consolas, monospace;
+  white-space: nowrap;
+}
+.path-link-badge.linked {
+  color: #0f766e;
+  background: #d1fae5;
+}
+.path-link-badge.probing {
+  color: #92400e;
+  background: #fef3c7;
 }

@@ -1,8 +1,12 @@
 import { Component, createSignal, createMemo, For, Show, onMount, onCleanup, createEffect, on } from "solid-js";
+import { listen } from "@tauri-apps/api/event";
 import { api, FileInfo, ConnectionRecord } from "../utils/api";
 import { uiStore } from "../stores/uiStore";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { feedback } from "../stores/feedbackStore";
+import { sessionStore } from "../stores/sessionStore";
+import { pathLinkStore } from "../stores/pathLinkStore";
+import { defaultHomePath } from "../utils/shellCwd";
 import "./FileManager.css";
 
 interface FileManagerProps {
@@ -11,6 +15,27 @@ interface FileManagerProps {
   sftpId?: string;
   onSftpOpened?: (id: string) => void;
   onClose?: () => void;
+}
+
+interface TransferProgressPayload {
+  sftp_id: string;
+  transfer_id: string;
+  direction: string;
+  file_name: string;
+  transferred: number;
+  total: number;
+  status: string;
+  error?: string | null;
+}
+
+interface TransferProgress {
+  transferId: string;
+  direction: "upload" | "download";
+  fileName: string;
+  transferred: number;
+  total: number;
+  status: "running" | "done" | "cancelled" | "error";
+  error?: string;
 }
 
 const fileIconKind = (file: FileInfo) => {
@@ -52,30 +77,26 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     try { return JSON.parse(localStorage.getItem("portnest-file-view-options") || "{}"); }
     catch { return {}; }
   })();
-  const defaultPath = props.connection.username === "root"
-    ? "/root"
-    : props.connection.username ? `/home/${props.connection.username}` : "/";
-  const initialPath = storedOptions.pathLinked
-    ? localStorage.getItem("portnest-linked-sftp-path") || defaultPath
-    : storedOptions.favoritePath
-      ? localStorage.getItem(`portnest-favorite-path-${props.connection.id}`) || defaultPath
-      : defaultPath;
-  const [currentPath, setCurrentPath] = createSignal(initialPath);
-  const [pathHistory, setPathHistory] = createSignal([initialPath]);
+  const [currentPath, setCurrentPath] = createSignal("");
+  const [pathHistory, setPathHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
   const [fileFilter, setFileFilter] = createSignal("");
   const [files, setFiles] = createSignal<FileInfo[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [selectedFile, setSelectedFile] = createSignal<FileInfo | null>(null);
-  const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
-  const [newFolderName, setNewFolderName] = createSignal("");
-  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; file: FileInfo } | null>(null);
-  const [initialized, setInitialized] = createSignal(false);
+  const [showNewEntryDialog, setShowNewEntryDialog] = createSignal(false);
+  const [newEntryMode, setNewEntryMode] = createSignal<"folder" | "file">("folder");
+  const [newEntryName, setNewEntryName] = createSignal("");
+  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; file: FileInfo | null } | null>(null);
   const [showOptions, setShowOptions] = createSignal(false);
   const [showHidden, setShowHidden] = createSignal(storedOptions.showHidden === true);
-  const [pathLinked, setPathLinked] = createSignal(storedOptions.pathLinked === true);
   const [favoritePath, setFavoritePath] = createSignal(storedOptions.favoritePath === true);
+  const [transfers, setTransfers] = createSignal<Record<string, TransferProgress>>({});
+  const [pendingTransfers, setPendingTransfers] = createSignal<Array<{ localId: string; direction: "upload" | "download"; fileName: string }>>([]);
+  const [probePending, setProbePending] = createSignal(false);
+  const contextFile = createMemo(() => contextMenu()?.file ?? null);
+  const linkedCwd = createMemo(() => props.sessionKey ? pathLinkStore.getCwd(props.sessionKey) : undefined);
   const [columns, setColumns] = createSignal({
     name: storedOptions.columns?.name !== false,
     modified: storedOptions.columns?.modified !== false,
@@ -86,12 +107,20 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   });
   const directoryCache = new Map<string, FileInfo[]>();
   let directoryRequestId = 0;
+  let unlistenProgress: (() => void) | undefined;
+  const removeTimers = new Map<string, number>();
+  let rootRef: HTMLDivElement | undefined;
+  let contextMenuRef: HTMLDivElement | undefined;
+  let lastFollowedCwd = "";
+  let probeTimer: number | undefined;
 
   const getSftpId = () => props.sftpId;
 
+  const homePath = () => defaultHomePath(props.connection.username);
+
   const persistOptions = () => localStorage.setItem("portnest-file-view-options", JSON.stringify({
     showHidden: showHidden(),
-    pathLinked: pathLinked(),
+    pathLinked: uiStore.pathLinked(),
     favoritePath: favoritePath(),
     columns: columns(),
   }));
@@ -113,6 +142,18 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     columns().permissions && "78px",
     columns().owner && "90px",
   ].filter(Boolean).join(" "));
+
+  const computeInitialPath = () => {
+    if (props.sessionKey && uiStore.pathLinked()) {
+      const linked = pathLinkStore.getCwd(props.sessionKey);
+      if (linked) return linked;
+    }
+    if (favoritePath()) {
+      const favorite = localStorage.getItem(`portnest-favorite-path-${props.connection.id}`);
+      if (favorite) return favorite;
+    }
+    return homePath();
+  };
 
   const loadDirectory = async (path: string, recordHistory = true) => {
     const id = getSftpId();
@@ -143,9 +184,12 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         return a.name.localeCompare(b.name);
       });
       directoryCache.set(path, sortedEntries);
+      if (directoryCache.size > 256) {
+        const firstKey = directoryCache.keys().next().value;
+        if (firstKey !== undefined) directoryCache.delete(firstKey);
+      }
       if (requestId !== directoryRequestId) return;
       setFiles(sortedEntries);
-      if (pathLinked()) localStorage.setItem("portnest-linked-sftp-path", path);
       if (favoritePath()) localStorage.setItem(`portnest-favorite-path-${props.connection.id}`, path);
       setSelectedFile(null);
     } catch (e) {
@@ -155,24 +199,97 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     }
   };
 
+  // SFTP 会话变更时（新连接/新标签）重置并加载对应初始路径
   createEffect(on(() => props.sftpId, (sftpId) => {
     console.log("[FileManager] sftpId changed:", sftpId, "session:", props.sessionKey);
-    if (sftpId && !initialized()) {
-      setInitialized(true);
-      loadDirectory(initialPath);
-    }
+    if (!sftpId) return;
+    directoryCache.clear();
+    const start = computeInitialPath();
+    setCurrentPath(start);
+    setPathHistory([start]);
+    setHistoryIndex(0);
+    setFiles([]);
+    setFileFilter("");
+    setSelectedFile(null);
+    setError(null);
+    void loadDirectory(start);
   }));
 
-  onMount(() => {
-    console.log("[FileManager] Mounted, session:", props.sessionKey, "sftpId:", props.sftpId);
-    if (props.sftpId) {
-      setInitialized(true);
-      loadDirectory(initialPath);
+  // 终端 cwd 联动：cwd 变化必然触发跟随；lastFollowedCwd 守卫避免用户手动浏览被打回
+  createEffect(() => {
+    if (!uiStore.pathLinked() || !props.sessionKey) return;
+    const cwd = pathLinkStore.cwdForSession(props.sessionKey);
+    if (cwd) setProbePending(false);
+    if (!cwd || cwd === lastFollowedCwd) return;
+    if (cwd !== currentPath()) {
+      lastFollowedCwd = cwd;
+      console.info("[FileManager] 联动跟随:", { sessionKey: props.sessionKey, cwd, sftpId: getSftpId() });
+      void loadDirectory(cwd, false);
     }
   });
 
-  onCleanup(async () => {
-    console.log("[FileManager] Cleanup, session:", props.sessionKey);
+  // 开启联动且尚无 cwd 时，向终端发送一次 PNCWD 探针校准初始路径
+  createEffect(() => {
+    if (!uiStore.pathLinked() || !props.sessionKey || !getSftpId()) return;
+    if (!pathLinkStore.getCwd(props.sessionKey)) {
+      sendProbe();
+    }
+  });
+
+  onMount(() => {
+    void (async () => {
+      if (unlistenProgress) return;
+      unlistenProgress = await listen<TransferProgressPayload>("sftp-transfer-progress", (event) => {
+        const payload = event.payload;
+        if (payload.sftp_id !== getSftpId()) return;
+        const direction = payload.direction === "upload" ? "upload" : "download";
+        // 乐观行与真实事件行合并：同方向同文件名视为同一传输
+        const pending = pendingTransfers();
+        const pendingIdx = pending.findIndex(item => item.direction === direction && item.fileName === payload.file_name);
+        if (pendingIdx >= 0) {
+          const matched = pending[pendingIdx];
+          setPendingTransfers(prev => prev.filter(item => item.localId !== matched.localId));
+          setTransfers(prev => {
+            const next = { ...prev };
+            delete next[matched.localId];
+            return next;
+          });
+        }
+        setTransfers(previous => ({
+          ...previous,
+          [payload.transfer_id]: {
+            transferId: payload.transfer_id,
+            direction,
+            fileName: payload.file_name,
+            transferred: payload.transferred,
+            total: payload.total,
+            status: (["running", "done", "cancelled", "error"].includes(payload.status) ? payload.status : "running") as TransferProgress["status"],
+            error: payload.error ?? undefined,
+          },
+        }));
+        if (payload.status !== "running") {
+          const key = payload.transfer_id;
+          const delay = payload.status === "done" ? 2500 : 6000;
+          const existing = removeTimers.get(key);
+          if (existing !== undefined) window.clearTimeout(existing);
+          removeTimers.set(key, window.setTimeout(() => {
+            removeTimers.delete(key);
+            setTransfers(previous => {
+              const next = { ...previous };
+              delete next[key];
+              return next;
+            });
+          }, delay));
+        }
+      });
+    })();
+  });
+
+  onCleanup(() => {
+    unlistenProgress?.();
+    for (const [, timer] of removeTimers) window.clearTimeout(timer);
+    removeTimers.clear();
+    if (probeTimer !== undefined) window.clearTimeout(probeTimer);
   });
 
   const navigateTo = (path: string) => {
@@ -209,24 +326,71 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     }
   };
 
-  const handleContextMenu = (e: MouseEvent, file: FileInfo) => {
+  const openContextMenu = (e: MouseEvent, file: FileInfo | null) => {
     e.preventDefault();
+    e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, file });
   };
+
+  // 菜单只在文件管理界面内打开；菜单外的左键点击、Escape 或界面外的右键负责关闭。
+  // 不使用全屏遮罩，避免在文件管理界面外右键时弹出本菜单或拦截其他区域的右键行为。
+  createEffect(() => {
+    if (!contextMenu()) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target instanceof Node ? e.target : null;
+      if (contextMenuRef && target && contextMenuRef.contains(target)) return;
+      setContextMenu(null);
+    };
+    const onDocumentContextMenu = (e: MouseEvent) => {
+      const target = e.target instanceof Node ? e.target : null;
+      if (contextMenuRef && target && contextMenuRef.contains(target)) return;
+      // 文件管理界面内的右键已由自身处理器处理，不在此处关闭
+      if (rootRef && target && rootRef.contains(target)) return;
+      setContextMenu(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("contextmenu", onDocumentContextMenu);
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("contextmenu", onDocumentContextMenu);
+      document.removeEventListener("keydown", onKeyDown);
+    });
+  });
 
   const handleDownload = async () => {
     const file = contextMenu()?.file;
     const id = getSftpId();
-    if (!file || !id) return;
+    if (!file || !id) {
+      setContextMenu(null);
+      return;
+    }
+    if (file.is_dir) {
+      feedback.info("暂不支持下载文件夹");
+      setContextMenu(null);
+      return;
+    }
 
     const localPath = await save({ defaultPath: file.name, title: `下载 ${file.name}` });
-    if (localPath) {
-      try {
-        await api.sftpDownload(id, file.path, localPath);
-        setError(null);
-      } catch (e) {
-        setError("下载失败: " + e);
-      }
+    if (!localPath) {
+      setContextMenu(null);
+      return;
+    }
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setPendingTransfers(prev => [...prev, { localId, direction: "download", fileName: file.name }]);
+    setTransfers(prev => ({ ...prev, [localId]: { transferId: localId, direction: "download", fileName: file.name, transferred: 0, total: 0, status: "running" } }));
+    try {
+      await api.sftpDownload(id, file.path, localPath);
+      feedback.success("下载完成: " + file.name);
+      setError(null);
+    } catch (e) {
+      const message = String(e);
+      if (!message.includes("取消")) setError("下载失败: " + message);
+    } finally {
+      cleanupOptimisticRow(localId);
     }
     setContextMenu(null);
   };
@@ -236,30 +400,65 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     if (!id) return;
 
     const localPath = await open({ multiple: false, directory: false, title: "选择要上传的文件" });
-    if (localPath) {
-      const remotePath = currentPath() === "/" ? "/" + localPath.split(/[/\\]/).pop()! : currentPath() + "/" + localPath.split(/[/\\]/).pop()!;
-      try {
-        await api.sftpUpload(id, localPath, remotePath);
-        loadDirectory(currentPath());
-      } catch (e) {
-        setError("上传失败: " + e);
-      }
+    if (!localPath) {
+      setContextMenu(null);
+      return;
+    }
+    const name = localPath.split(/[/\\]/).pop()!;
+    const remotePath = currentPath() === "/" ? "/" + name : currentPath() + "/" + name;
+    const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setPendingTransfers(prev => [...prev, { localId, direction: "upload", fileName: name }]);
+    setTransfers(prev => ({ ...prev, [localId]: { transferId: localId, direction: "upload", fileName: name, transferred: 0, total: 0, status: "running" } }));
+    try {
+      await api.sftpUpload(id, localPath, remotePath);
+      feedback.success("上传完成: " + name);
+      loadDirectory(currentPath());
+    } catch (e) {
+      const message = String(e);
+      if (!message.includes("取消")) setError("上传失败: " + message);
+    } finally {
+      cleanupOptimisticRow(localId);
     }
     setContextMenu(null);
   };
 
-  const handleNewFolder = async () => {
-    const name = newFolderName();
+  const openNewEntryDialog = (mode: "folder" | "file") => {
+    setNewEntryMode(mode);
+    setNewEntryName("");
+    setShowNewEntryDialog(true);
+    setContextMenu(null);
+  };
+
+  const handleNewEntry = async () => {
+    const name = newEntryName().trim();
     const id = getSftpId();
     if (!name || !id) return;
 
+    const path = currentPath() === "/" ? "/" + name : currentPath() + "/" + name;
     try {
-      await api.sftpCreateDir(id, currentPath() + "/" + name);
-      setShowNewFolderDialog(false);
-      setNewFolderName("");
+      if (newEntryMode() === "folder") {
+        await api.sftpCreateDir(id, path);
+      } else {
+        await api.sftpCreateFile(id, path);
+      }
+      setShowNewEntryDialog(false);
+      setNewEntryName("");
       loadDirectory(currentPath());
+      feedback.success(newEntryMode() === "folder" ? "文件夹创建成功" : "文件创建成功");
     } catch (e) {
       feedback.error("创建失败: " + e);
+    }
+  };
+
+  const handleCopyPath = async () => {
+    const file = contextMenu()?.file;
+    const text = file ? file.path : currentPath();
+    setContextMenu(null);
+    try {
+      await api.writeClipboardText(text);
+      feedback.success("已复制路径: " + text);
+    } catch (e) {
+      feedback.error("复制失败: " + e);
     }
   };
 
@@ -283,6 +482,40 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     setContextMenu(null);
   };
 
+  const sendProbe = () => {
+    if (!props.sessionKey) return;
+    setProbePending(true);
+    if (probeTimer !== undefined) window.clearTimeout(probeTimer);
+    probeTimer = window.setTimeout(() => setProbePending(false), 8000);
+    void sessionStore.sendText(props.sessionKey, "\rprintf 'PNCWD=%s\\n' \"$PWD\"\r")
+      .catch(() => setProbePending(false));
+  };
+
+  const handleReadTerminalPath = () => {
+    sendProbe();
+  };
+
+  const cleanupOptimisticRow = (localId: string) => {
+    const stillPending = pendingTransfers().some(item => item.localId === localId);
+    if (!stillPending) return;
+    setPendingTransfers(prev => prev.filter(item => item.localId !== localId));
+    setTransfers(prev => {
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+  };
+
+  const handleCancelTransfer = async (transferId: string) => {
+    const id = getSftpId();
+    if (!id) return;
+    try {
+      await api.cancelSftpTransfer(id, transferId);
+    } catch (e) {
+      console.warn("[FileManager] 取消传输失败:", e);
+    }
+  };
+
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
@@ -304,7 +537,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const totalSize = () => files().filter(file => !file.is_dir).reduce((sum, file) => sum + file.size, 0);
 
   return (
-    <div class="file-manager">
+    <div class="file-manager" ref={rootRef}>
       <div class="file-manager-header">
         <div class="path-bar">
           <button class="nav-btn" disabled={historyIndex() === 0} onClick={() => navigateHistory(-1)} title="返回">←</button>
@@ -318,19 +551,32 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             onKeyDown={(e) => e.key === "Enter" && navigateTo(e.currentTarget.value)}
             onBlur={(e) => navigateTo(e.currentTarget.value)}
           />
+          <Show when={uiStore.pathLinked() && props.sessionKey}>
+            <span
+              class={`path-link-badge ${probePending() ? "probing" : linkedCwd() ? "linked" : "idle"}`}
+              title={probePending() ? "正在从终端读取当前路径…" : linkedCwd() ? "已与终端路径联动" : "路径联动已开启，等待首次定位"}
+            >
+              {probePending() ? "定位中" : linkedCwd() ? "联动中" : "待定位"}
+            </span>
+          </Show>
           <button class={`nav-btn ${showOptions() ? "active" : ""}`} title="更多操作" onClick={() => setShowOptions(!showOptions())}>⋮</button>
         </div>
       </div>
       <div class="file-manager-summary">
-        共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
-        <span>
+        <div class="file-manager-summary-actions">
+          <Show when={uiStore.pathLinked() && props.sessionKey}>
+            <button onClick={handleReadTerminalPath} title="从终端读取当前路径并同步">定位</button>
+          </Show>
           <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
-          <button onClick={() => setShowNewFolderDialog(true)} title="新建文件夹">＋文件夹</button>
+          <button onClick={() => openNewEntryDialog("folder")} title="新建文件夹">＋文件夹</button>
           <button onClick={handleUpload} title="上传文件">上传</button>
-        </span>
+        </div>
+        <div class="file-manager-summary-count">
+          共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
+        </div>
       </div>
 
-      <div class="file-list">
+      <div class="file-list" onContextMenu={(e) => openContextMenu(e, null)}>
         <Show when={loading()}>
           <div class="loading">加载中...</div>
         </Show>
@@ -353,6 +599,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
                   class="file-row parent-row"
                   style={{ "grid-template-columns": columnTemplate() }}
                   onDblClick={navigateUp}
+                  onContextMenu={(e) => openContextMenu(e, null)}
                 >
                   <Show when={columns().name}><div class="file-cell name">
                     <FileTypeIcon file={{ name: "..", path: "", size: 0, is_dir: true, is_link: false, modified: null }} parent />
@@ -372,7 +619,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
                     style={{ "grid-template-columns": columnTemplate() }}
                     onClick={() => handleFileClick(file)}
                     onDblClick={() => handleFileDoubleClick(file)}
-                    onContextMenu={(e) => handleContextMenu(e, file)}
+                    onContextMenu={(e) => openContextMenu(e, file)}
                   >
                     <Show when={columns().name}><div class="file-cell name">
                       <FileTypeIcon file={file} />
@@ -391,13 +638,48 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         </Show>
       </div>
 
+      <Show when={Object.keys(transfers()).length > 0}>
+        <div class="transfer-strip">
+          <For each={Object.values(transfers())}>
+            {(transfer) => {
+              const percent = transfer.total > 0 ? Math.min(100, Math.round((transfer.transferred / transfer.total) * 100)) : null;
+              return (
+                <div class={`transfer-row status-${transfer.status}`}>
+                  <span class="transfer-icon">{transfer.direction === "upload" ? "↑" : "↓"}</span>
+                  <div class="transfer-main">
+                    <div class="transfer-info">
+                      <span class="transfer-name" title={transfer.fileName}>{transfer.fileName}</span>
+                      <span class="transfer-meta">
+                        {transfer.status === "running"
+                          ? `${formatSize(transfer.transferred)} / ${transfer.total > 0 ? formatSize(transfer.total) : "?"}${percent !== null ? ` · ${percent}%` : ""}`
+                          : transfer.status === "done" ? "完成"
+                          : transfer.status === "cancelled" ? "已取消"
+                          : "失败"}
+                      </span>
+                    </div>
+                    <div class="transfer-bar">
+                      <div class="transfer-bar-fill" style={{ width: (percent ?? 0) + "%" }} />
+                    </div>
+                    <Show when={transfer.status === "error" && transfer.error}>
+                      <div class="transfer-status">{transfer.error}</div>
+                    </Show>
+                  </div>
+                  <Show when={transfer.status === "running"}>
+                    <button class="transfer-cancel-btn" onClick={() => handleCancelTransfer(transfer.transferId)}>取消</button>
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+
       <Show when={showOptions()}>
         <div class="file-options-menu" onClick={event => event.stopPropagation()}>
           <label><input type="checkbox" checked={uiStore.filesStacked()} onChange={event => uiStore.setFilesStacked(event.currentTarget.checked)} />上下布局</label>
           <label><input type="checkbox" checked={showHidden()} onChange={event => { setShowHidden(event.currentTarget.checked); persistOptions(); }} />显示隐藏文件</label>
-          <label><input type="checkbox" checked={pathLinked()} onChange={event => {
-            setPathLinked(event.currentTarget.checked);
-            if (event.currentTarget.checked) localStorage.setItem("portnest-linked-sftp-path", currentPath());
+          <label><input type="checkbox" checked={uiStore.pathLinked()} onChange={event => {
+            uiStore.setPathLinked(event.currentTarget.checked);
             persistOptions();
           }} />路径联动</label>
           <label><input type="checkbox" checked={favoritePath()} onChange={event => {
@@ -421,31 +703,44 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         <div
           class="context-menu"
           style={{ left: contextMenu()!.x + "px", top: contextMenu()!.y + "px" }}
+          ref={contextMenuRef}
           onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
-          <div class="context-menu-item" onClick={handleDownload}>下载</div>
+          <div class="context-menu-item" onClick={handleUpload}>上传到当前目录</div>
+          <div
+            class={`context-menu-item ${contextFile()?.is_dir ? "disabled" : ""}`}
+            onClick={handleDownload}
+            title={contextFile()?.is_dir ? "暂不支持下载文件夹" : undefined}
+          >下载</div>
           <div class="context-menu-divider" />
-          <div class="context-menu-item danger" onClick={handleDelete}>删除</div>
+          <div class="context-menu-item" onClick={() => openNewEntryDialog("folder")}>新建文件夹</div>
+          <div class="context-menu-item" onClick={() => openNewEntryDialog("file")}>新建文件</div>
+          <div class="context-menu-item" onClick={handleCopyPath}>复制路径</div>
+          <div class="context-menu-item" onClick={() => { setContextMenu(null); refreshDirectory(); }}>刷新</div>
+          <Show when={contextFile()}>
+            <div class="context-menu-divider" />
+            <div class="context-menu-item danger" onClick={handleDelete}>删除</div>
+          </Show>
         </div>
-        <div class="context-menu-overlay" onClick={() => setContextMenu(null)} />
       </Show>
 
-      <Show when={showNewFolderDialog()}>
+      <Show when={showNewEntryDialog()}>
         <div class="modal-overlay">
           <div class="modal-content">
-            <h3>新建文件夹</h3>
+            <h3>{newEntryMode() === "folder" ? "新建文件夹" : "新建文件"}</h3>
             <div class="form-group">
               <input
                 type="text"
-                placeholder="文件夹名称"
-                value={newFolderName()}
-                onInput={(e) => setNewFolderName(e.currentTarget.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleNewFolder()}
+                placeholder={newEntryMode() === "folder" ? "文件夹名称" : "文件名"}
+                value={newEntryName()}
+                onInput={(e) => setNewEntryName(e.currentTarget.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleNewEntry()}
               />
             </div>
             <div class="form-actions">
-              <button class="btn-cancel" onClick={() => setShowNewFolderDialog(false)}>取消</button>
-              <button class="btn-save" onClick={handleNewFolder}>创建</button>
+              <button class="btn-cancel" onClick={() => setShowNewEntryDialog(false)}>取消</button>
+              <button class="btn-save" onClick={handleNewEntry}>创建</button>
             </div>
           </div>
         </div>

@@ -304,6 +304,7 @@ export interface TerminalSettings {
   sshHistory: boolean;
   reconnectOnDisconnect: boolean;
   terminalBell: boolean;
+  openFileManagerOnConnect: boolean;
 }
 
 export function getTerminalSettings(): TerminalSettings {
@@ -321,6 +322,7 @@ export function getTerminalSettings(): TerminalSettings {
     sshHistory: true,
     reconnectOnDisconnect: false,
     terminalBell: false,
+    openFileManagerOnConnect: true,
   };
   try {
     const stored = localStorage.getItem(TERMINAL_SETTINGS_KEY);

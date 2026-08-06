@@ -8,6 +8,8 @@ import "@xterm/xterm/css/xterm.css";
 import { api, ConnectionRecord } from "../utils/api";
 import { getTerminalThemeConfig, getTerminalSettings, terminalBackgroundStyle, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
 import { sessionStore } from "../stores/sessionStore";
+import { pathLinkStore } from "../stores/pathLinkStore";
+import { LineBuffer, evaluateCommandLine, defaultHomePath, type CwdState } from "../utils/shellCwd";
 
 interface TerminalViewProps {
   connection: ConnectionRecord;
@@ -28,6 +30,8 @@ interface TerminalState {
   initialized: boolean;
   contentWritten: boolean;
   connection: ConnectionRecord;
+  cwdState: CwdState;
+  lineBuffer: LineBuffer;
 }
 
 const terminalStates = new Map<string, TerminalState>();
@@ -221,6 +225,35 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       props.onDisconnected?.(error);
     };
 
+    // 跨数据块累积 shell 输出并按行解析 PNCWD 探针结果，避免输出被分块拆散
+    let cwdOutputBuffer = "";
+    const parseCwdOutput = (chunk: string) => {
+      cwdOutputBuffer += chunk;
+      let newlineIndex;
+      while ((newlineIndex = cwdOutputBuffer.indexOf("\n")) >= 0) {
+        const line = cwdOutputBuffer.slice(0, newlineIndex);
+        cwdOutputBuffer = cwdOutputBuffer.slice(newlineIndex + 1);
+        const clean = line.replace(/\r$/, "");
+        const markerIndex = clean.indexOf("PNCWD=");
+        if (markerIndex >= 0) {
+          const value = clean.slice(markerIndex + "PNCWD=".length).trim();
+          if (value.startsWith("/")) {
+            pathLinkStore.setCwd(sessionKey, value);
+            const currentState = terminalStates.get(sessionKey);
+            if (currentState) {
+              currentState.cwdState.cwd = value;
+              currentState.cwdState.unknown = false;
+            }
+            console.info("[TerminalView] PNCWD 探针结果:", value);
+          }
+        }
+      }
+      // 防止无换行的长输出（如 \r 进度条）导致缓冲无限增长
+      if (cwdOutputBuffer.length > 4096) {
+        cwdOutputBuffer = cwdOutputBuffer.slice(-1024);
+      }
+    };
+
     const pollShell = async () => {
       const currentState = terminalStates.get(sessionKey);
       if (!currentState || shellId !== currentState.shellId) {
@@ -230,6 +263,9 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       try {
         const data = await api.readShell(shellId);
         hadData = data.length > 0;
+        if (data) {
+          parseCwdOutput(data);
+        }
         if (data && terminal.element?.isConnected) {
           // Wait until xterm has parsed this batch. This provides backpressure for
           // very large output and ensures terminal query replies are emitted before
@@ -285,7 +321,30 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       });
     };
 
+    const cwdState: CwdState = {
+      cwd: defaultHomePath(props.connection.username),
+      previous: defaultHomePath(props.connection.username),
+      stack: [],
+      unknown: false,
+    };
+    const lineBuffer = new LineBuffer();
+
     terminal.onData((data) => {
+      // 捕获输入命令，模拟 cd/pushd/popd 等路径变更，供文件管理器联动
+      const current = terminalStates.get(sessionKey);
+      if (current) {
+        const submitted = current.lineBuffer.feed(data);
+        for (const line of submitted) {
+          const result = evaluateCommandLine(line, current.cwdState, defaultHomePath(current.connection.username));
+          if (result?.unknown) {
+            pathLinkStore.setUnknown(sessionKey);
+            console.info("[TerminalView] cwd 未知（进入嵌套 shell）:", line);
+          } else if (result?.cwd) {
+            pathLinkStore.setCwd(sessionKey, result.cwd);
+            console.info("[TerminalView] cwd 更新:", line, "→", result.cwd);
+          }
+        }
+      }
       void sendData(data);
     });
 
@@ -361,6 +420,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       initialized: true,
       contentWritten: true,
       connection: props.connection,
+      cwdState,
+      lineBuffer,
     };
 
     terminalStates.set(sessionKey, state);

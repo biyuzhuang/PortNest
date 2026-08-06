@@ -117,13 +117,29 @@ pub trait ShellHandle: Send + Sync {
     async fn close(&self) -> Result<()>;
 }
 
+/// 传输进度回调：参数为 (已传输字节, 总字节)
+pub type TransferProgress = Arc<dyn Fn(u64, u64) + Send + Sync + 'static>;
+
 #[async_trait]
 pub trait SftpHandle: Send + Sync {
     fn id(&self) -> Uuid;
     fn status(&self) -> SessionStatus;
     async fn list_dir(&self, path: &str) -> Result<Vec<FileInfo>>;
-    async fn download(&self, remote_path: &str, local_path: &str) -> Result<u64>;
-    async fn upload(&self, local_path: &str, remote_path: &str) -> Result<u64>;
+    async fn download(
+        &self,
+        remote_path: &str,
+        local_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64>;
+    async fn upload(
+        &self,
+        local_path: &str,
+        remote_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64>;
+    async fn create_file(&self, path: &str) -> Result<()>;
     async fn create_dir(&self, path: &str) -> Result<()>;
     async fn delete_file(&self, path: &str) -> Result<()>;
     async fn delete_dir(&self, path: &str) -> Result<()>;
@@ -363,18 +379,42 @@ impl SftpHandle for Ssh2SftpHandle {
         blocking_sftp(move || handle.list_dir(&path)).await
     }
 
-    async fn download(&self, remote_path: &str, local_path: &str) -> Result<u64> {
+    async fn download(
+        &self,
+        remote_path: &str,
+        local_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
         let handle = self.handle.clone();
         let remote_path = remote_path.to_string();
         let local_path = local_path.to_string();
-        blocking_sftp(move || handle.download_file(&remote_path, &local_path)).await
+        blocking_sftp(move || {
+            handle.download_file(&remote_path, &local_path, progress, cancel)
+        })
+        .await
     }
 
-    async fn upload(&self, local_path: &str, remote_path: &str) -> Result<u64> {
+    async fn upload(
+        &self,
+        local_path: &str,
+        remote_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
         let handle = self.handle.clone();
         let local_path = local_path.to_string();
         let remote_path = remote_path.to_string();
-        blocking_sftp(move || handle.upload_file(&local_path, &remote_path)).await
+        blocking_sftp(move || {
+            handle.upload_file(&local_path, &remote_path, progress, cancel)
+        })
+        .await
+    }
+
+    async fn create_file(&self, path: &str) -> Result<()> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.create_file(&path)).await
     }
 
     async fn create_dir(&self, path: &str) -> Result<()> {

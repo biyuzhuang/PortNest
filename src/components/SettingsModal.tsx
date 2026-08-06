@@ -190,7 +190,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   </label>
                 </div>
                 <div class="settings-card">
-                  <label><span>默认展开文件区</span><Toggle checked={!uiStore.filesCollapsed()} onChange={value => uiStore.setFilesCollapsed(!value)} /></label>
+                  <label><span>连接会话时默认打开文件管理</span><Toggle checked={terminalSettings().openFileManagerOnConnect} onChange={value => updateSetting("openFileManagerOnConnect", value)} /></label>
                 </div>
               </div>
             </div>

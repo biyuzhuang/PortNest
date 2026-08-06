@@ -22,7 +22,7 @@ use crate::error::{Error, Result};
 use crate::protocol::sftp::{symbolic_permissions, FileInfo};
 use crate::protocol::ssh_backend::{
     CancellationToken, ConnectionTarget, ExecResult, SftpHandle, ShellHandle, SshBackend,
-    SshSession, TerminalSize,
+    SshSession, TerminalSize, TransferProgress,
 };
 use crate::protocol::{ConnectionOptions, Credential, CredentialType, SessionStatus};
 
@@ -138,6 +138,7 @@ struct RusshShellHandle {
 
 const SHELL_READ_WAIT: Duration = Duration::from_millis(10);
 const SHELL_READ_LIMIT: usize = 256 * 1024;
+const TRANSFER_CHUNK_SIZE: usize = 128 * 1024;
 
 struct RusshSftpHandle {
     id: Uuid,
@@ -676,28 +677,114 @@ impl SftpHandle for RusshSftpHandle {
         Ok(files)
     }
 
-    async fn download(&self, remote_path: &str, local_path: &str) -> Result<u64> {
+    async fn download(
+        &self,
+        remote_path: &str,
+        local_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
+        let total = self
+            .session
+            .metadata(remote_path)
+            .await
+            .map(|metadata| metadata.size.unwrap_or(0))
+            .unwrap_or(0);
         let mut remote = self
             .session
             .open(remote_path)
             .await
             .map_err(|error| protocol_error("打开远程文件失败", error))?;
-        let mut local = tokio::fs::File::create(local_path).await?;
-        tokio::io::copy(&mut remote, &mut local)
-            .await
-            .map_err(Error::IoError)
+        let result = async {
+            let mut local = tokio::fs::File::create(local_path).await?;
+            let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
+            let mut transferred = 0_u64;
+            loop {
+                let count = tokio::select! {
+                    _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                    result = remote.read(&mut buffer) => result.map_err(Error::IoError)?,
+                };
+                if count == 0 {
+                    break;
+                }
+                tokio::select! {
+                    _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                    result = local.write_all(&buffer[..count]) => result.map_err(Error::IoError)?,
+                }
+                transferred += count as u64;
+                if let Some(callback) = &progress {
+                    callback(transferred, total);
+                }
+            }
+            local.flush().await.map_err(Error::IoError)?;
+            Ok::<u64, Error>(transferred)
+        }
+        .await;
+
+        if result.is_err() {
+            let _ = tokio::fs::remove_file(local_path).await;
+        }
+
+        result
     }
 
-    async fn upload(&self, local_path: &str, remote_path: &str) -> Result<u64> {
+    async fn upload(
+        &self,
+        local_path: &str,
+        remote_path: &str,
+        progress: Option<TransferProgress>,
+        cancel: CancellationToken,
+    ) -> Result<u64> {
+        let total = tokio::fs::metadata(local_path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
         let mut local = tokio::fs::File::open(local_path).await?;
         let mut remote = self
             .session
             .create(remote_path)
             .await
             .map_err(|error| protocol_error("创建远程文件失败", error))?;
-        tokio::io::copy(&mut local, &mut remote)
+        let result = async {
+            let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
+            let mut transferred = 0_u64;
+            loop {
+                let count = tokio::select! {
+                    _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                    result = local.read(&mut buffer) => result.map_err(Error::IoError)?,
+                };
+                if count == 0 {
+                    break;
+                }
+                tokio::select! {
+                    _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                    result = remote.write_all(&buffer[..count]) => result.map_err(Error::IoError)?,
+                }
+                transferred += count as u64;
+                if let Some(callback) = &progress {
+                    callback(transferred, total);
+                }
+            }
+            remote.flush().await.map_err(Error::IoError)?;
+            Ok::<u64, Error>(transferred)
+        }
+        .await;
+
+        if result.is_err() {
+            let _ = self.session.remove_file(remote_path).await;
+        }
+
+        result
+    }
+
+    async fn create_file(&self, path: &str) -> Result<()> {
+        let file = self
+            .session
+            .create(path)
             .await
-            .map_err(Error::IoError)
+            .map_err(|error| protocol_error("创建文件失败", error))?;
+        drop(file);
+        Ok(())
     }
 
     async fn create_dir(&self, path: &str) -> Result<()> {
@@ -835,6 +922,35 @@ async fn connect_transport(
         tokio::net::TcpStream::connect((&*target.host, target.port))
             .await
             .map_err(|error| Error::ConnectionFailed(format!("TCP 连接失败: {error}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancel_interrupts_hung_io() {
+        let cancel = CancellationToken::default();
+        let task = tokio::spawn({
+            let cancel = cancel.clone();
+            async move {
+                // 模拟挂起的网络读：永远不会自然完成
+                tokio::select! {
+                    _ = cancel.cancelled() => Err(Error::TransferCancelled),
+                    _ = tokio::time::sleep(Duration::from_secs(3600)) => Ok::<u64, Error>(1),
+                }
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        cancel.cancel();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .expect("cancel should interrupt the hung io promptly")
+            .expect("task should not panic");
+        assert!(matches!(result, Err(Error::TransferCancelled)));
     }
 }
 
