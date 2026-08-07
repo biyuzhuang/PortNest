@@ -1,5 +1,5 @@
 import { createSignal, type Setter } from "solid-js";
-import { api, type ConnectionRecord } from "../utils/api";
+import { api, type ConnectionRecord, type LocalShellProfile } from "../utils/api";
 
 export type SessionStatus = "restored" | "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
 
@@ -16,6 +16,10 @@ export interface SessionTab {
   reconnectAttempt?: number;
   encoding?: string;
   encodingOverride?: string;
+  /** 本地终端快捷入口会话：不落库、不参与资产树，也不持久化/可恢复 */
+  transient?: boolean;
+  /** 本地终端快捷会话的启动配置（无连接记录时使用） */
+  localProfile?: LocalShellProfile;
 }
 
 interface SessionSnapshotV1 {
@@ -60,13 +64,18 @@ const sendText = (sessionId: string, data: string): Promise<void> => {
   return pending;
 };
 
-const create = (connection: ConnectionRecord, status: SessionStatus = "connecting") => {
+const create = (
+  connection: ConnectionRecord,
+  status: SessionStatus = "connecting",
+  extra: Partial<Pick<SessionTab, "transient" | "localProfile">> = {},
+) => {
   const session: SessionTab = {
     id: newId(connection.id),
     connection,
     viewMode: "terminal",
     activeTab: "query",
     status,
+    ...extra,
   };
   setSessions(previous => [...previous, session]);
   setActiveSessionId(session.id);
@@ -81,7 +90,7 @@ const persist = () => {
   const snapshot: SessionSnapshotV1 = {
     version: 1,
     activeConnectionId: active?.connection.id ?? null,
-    tabs: sessions().map(session => ({
+    tabs: sessions().filter(session => !session.transient).map(session => ({
       connectionId: session.connection.id,
       displayName: session.displayName,
       pinned: session.pinned,
@@ -126,6 +135,10 @@ const hydrate = (connections: ConnectionRecord[]) => {
 };
 
 const pushClosed = (session: SessionTab) => {
+  if (session.transient) {
+    writeQueues.delete(session.id);
+    return;
+  }
   closedSessions.push({ ...session, shellId: undefined, status: "restored", error: undefined });
   if (closedSessions.length > 20) closedSessions.shift();
   writeQueues.delete(session.id);

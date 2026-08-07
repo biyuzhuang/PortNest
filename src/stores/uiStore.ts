@@ -24,7 +24,7 @@ const setPathLinked = (value: boolean) => {
 
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
   void filter;
-  return protocol === "ssh" || protocol === "sftp";
+  return protocol === "ssh" || protocol === "sftp" || protocol === "local";
 };
 
 export const uiStore = {

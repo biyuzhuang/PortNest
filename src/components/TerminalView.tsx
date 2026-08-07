@@ -5,7 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
-import { api, ConnectionRecord } from "../utils/api";
+import { api, localShellDisplayName, parseLocalProfile, ConnectionRecord } from "../utils/api";
 import { getTerminalThemeConfig, getTerminalSettings, terminalBackgroundStyle, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
 import { sessionStore } from "../stores/sessionStore";
 import { pathLinkStore } from "../stores/pathLinkStore";
@@ -82,6 +82,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }
     return !!props.visible;
   };
+  const isLocal = () => props.connection.protocol === "local";
 
   const doFit = (state: TerminalState) => {
     try {
@@ -263,14 +264,31 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       try {
         const data = await api.readShell(shellId);
         hadData = data.length > 0;
-        if (data) {
+        const writeData = data ? handleTerminalQueries(data) : "";
+        if (data && !isLocal()) {
           parseCwdOutput(data);
         }
-        if (data && terminal.element?.isConnected) {
+        if (writeData && terminal.element?.isConnected) {
           // Wait until xterm has parsed this batch. This provides backpressure for
           // very large output and ensures terminal query replies are emitted before
-          // the next batch is fetched.
-          await new Promise<void>((resolve) => terminal.write(data, resolve));
+          // the next batch is fetched. A parser crash (e.g. a DECRQM handler bug)
+          // can leave the write callback pending forever; guard with a watchdog so
+          // the terminal recovers instead of freezing the whole session.
+          const writeDone = new Promise<void>((resolve) => terminal.write(writeData, resolve));
+          let watchdogHandle: number | undefined;
+          const watchdog = new Promise<"timeout">((resolve) => {
+            watchdogHandle = window.setTimeout(() => resolve("timeout"), 4000);
+          });
+          const raceResult = await Promise.race([writeDone, watchdog]);
+          if (watchdogHandle !== undefined) window.clearTimeout(watchdogHandle);
+          if (raceResult === "timeout") {
+            console.error("[TerminalView] xterm write stalled, resetting terminal:", sessionKey);
+            try {
+              terminal.reset();
+            } catch (resetError) {
+              console.error("[TerminalView] terminal.reset failed:", resetError);
+            }
+          }
         }
       } catch (error) {
         handleShellFailure(error);
@@ -311,7 +329,11 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     resizeObserver.observe(containerRef);
 
     terminal.writeln(`\x1b[1;32mConnected to ${props.connection.name}\x1b[0m`);
-    terminal.writeln(`\x1b[32mHost: ${props.connection.host}:${props.connection.port}\x1b[0m`);
+    if (isLocal()) {
+      terminal.writeln(`\x1b[32m本机终端 · ${localShellDisplayName(parseLocalProfile(props.connection.options).shell_type)}\x1b[0m`);
+    } else {
+      terminal.writeln(`\x1b[32mHost: ${props.connection.host}:${props.connection.port}\x1b[0m`);
+    }
     terminal.writeln("");
 
     const sendData = (data: string) => {
@@ -319,6 +341,63 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         handleShellFailure(error);
         throw error;
       });
+    };
+
+    // ConPTY 下的 cmd / PowerShell 等控制台程序启动时会发送 DSR（CSI 6n）
+    // 光标位置查询并阻塞等待应答（bash/vim 等还可能发送 DA 查询）。xterm.js
+    // 内部解析器理论上会自动应答，但依赖解析器健康——压缩/二次构建破坏解析器
+    // 时会出现应答丢失、write 回调永不执行、终端永久空白。因此对本地终端在
+    // 写入 xterm 前显式摘除这些查询并直接应答，握手不再依赖解析器。
+    let localQueryBuffer = "";
+    const handleTerminalQueries = (data: string): string => {
+      if (!isLocal()) return data;
+      localQueryBuffer += data;
+
+      const cursorReply = () => {
+        try {
+          const buffer = terminal.buffer.active;
+          return `\x1b[${buffer.cursorY + 1};${buffer.cursorX + 1}R`;
+        } catch {
+          return "\x1b[1;1R";
+        }
+      };
+      const queries = [
+        { seq: "\x1b[?6n", reply: () => `\x1b[?${cursorReply().slice(2)}` },
+        { seq: "\x1b[6n", reply: cursorReply },
+        { seq: "\x1b[?c", reply: () => "\x1b[?1;2c" },
+        { seq: "\x1b[c", reply: () => "\x1b[?1;2c" },
+      ];
+
+      let cleaned = "";
+      let pending = localQueryBuffer;
+      while (true) {
+        let earliest: { index: number; seq: string; reply: () => string } | null = null;
+        for (const query of queries) {
+          const index = pending.indexOf(query.seq);
+          if (index >= 0 && (earliest === null || index < earliest.index)) {
+            earliest = { index, seq: query.seq, reply: query.reply };
+          }
+        }
+        if (earliest === null) break;
+        cleaned += pending.slice(0, earliest.index);
+        void sendData(earliest.reply());
+        pending = pending.slice(earliest.index + earliest.seq.length);
+      }
+
+      // 只保留可能是查询序列前缀的尾部（如 "\x1b"、"\x1b["、"[\x1b[?6"），
+      // 其余内容全部输出，避免把完整 OSC（如以 ESC \ 结尾）等误留在缓冲里
+      const sequences = ["\x1b[?6n", "\x1b[6n", "\x1b[?c", "\x1b[c"];
+      let keep = 0;
+      for (let length = Math.min(pending.length, 4); length >= 1; length--) {
+        const tail = pending.slice(pending.length - length);
+        if (sequences.some(sequence => sequence.startsWith(tail) && sequence.length > tail.length)) {
+          keep = length;
+          break;
+        }
+      }
+      localQueryBuffer = pending.slice(pending.length - keep);
+      cleaned += pending.slice(0, pending.length - keep);
+      return cleaned;
     };
 
     const cwdState: CwdState = {
@@ -331,17 +410,20 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
     terminal.onData((data) => {
       // 捕获输入命令，模拟 cd/pushd/popd 等路径变更，供文件管理器联动
-      const current = terminalStates.get(sessionKey);
-      if (current) {
-        const submitted = current.lineBuffer.feed(data);
-        for (const line of submitted) {
-          const result = evaluateCommandLine(line, current.cwdState, defaultHomePath(current.connection.username));
-          if (result?.unknown) {
-            pathLinkStore.setUnknown(sessionKey);
-            console.info("[TerminalView] cwd 未知（进入嵌套 shell）:", line);
-          } else if (result?.cwd) {
-            pathLinkStore.setCwd(sessionKey, result.cwd);
-            console.info("[TerminalView] cwd 更新:", line, "→", result.cwd);
+      // 本地终端无文件管理面板，跳过路径跟踪
+      if (!isLocal()) {
+        const current = terminalStates.get(sessionKey);
+        if (current) {
+          const submitted = current.lineBuffer.feed(data);
+          for (const line of submitted) {
+            const result = evaluateCommandLine(line, current.cwdState, defaultHomePath(current.connection.username));
+            if (result?.unknown) {
+              pathLinkStore.setUnknown(sessionKey);
+              console.info("[TerminalView] cwd 未知（进入嵌套 shell）:", line);
+            } else if (result?.cwd) {
+              pathLinkStore.setCwd(sessionKey, result.cwd);
+              console.info("[TerminalView] cwd 更新:", line, "→", result.cwd);
+            }
           }
         }
       }

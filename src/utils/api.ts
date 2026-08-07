@@ -89,6 +89,9 @@ export interface ConnectionConfig {
   proxy_password?: string;
   encoding?: string;
   timeout_ms?: number;
+  shell_type?: string;
+  cwd?: string;
+  custom_command?: string;
   tunnel_rules?: TunnelRule[];
 }
 
@@ -145,6 +148,41 @@ export interface ShellOpenResponse {
   shell_id: string;
   encoding: string;
 }
+
+export interface LocalShellProfile {
+  shellType?: string;
+  cwd?: string;
+  customCommand?: string;
+  encoding?: string;
+}
+
+/** 解析连接 options JSON 中的本地终端配置 */
+export const parseLocalProfile = (options?: string): { shell_type?: string; cwd?: string; custom_command?: string } => {
+  try {
+    const parsed = JSON.parse(options || "{}") as Record<string, unknown>;
+    return {
+      shell_type: typeof parsed.shell_type === "string" ? parsed.shell_type : undefined,
+      cwd: typeof parsed.cwd === "string" ? parsed.cwd : undefined,
+      custom_command: typeof parsed.custom_command === "string" ? parsed.custom_command : undefined,
+    };
+  } catch {
+    return {};
+  }
+};
+
+export const localShellDisplayName = (shellType?: string): string => {
+  switch (shellType) {
+    case "cmd": return "命令提示符 (cmd)";
+    case "powershell":
+    case "powershell5": return "PowerShell 5.1";
+    case "powershell7":
+    case "pwsh": return "PowerShell 7";
+    case "bash": return "Git Bash";
+    case "wsl": return "WSL";
+    case "custom": return "自定义命令";
+    default: return "本地终端";
+  }
+};
 
 export interface SshKeyRecord {
   id: string;
@@ -217,6 +255,17 @@ export const api = {
   // Shell operations
   async openShell(connectionId: string, cols: number, rows: number): Promise<ShellOpenResponse> {
     return sshInvoke("open_shell", { connectionId, cols, rows });
+  },
+
+  async openLocalShell(cols: number, rows: number, profile?: LocalShellProfile): Promise<ShellOpenResponse> {
+    return invoke("open_local_shell", {
+      cols,
+      rows,
+      shellType: profile?.shellType ?? null,
+      cwd: profile?.cwd ?? null,
+      customCommand: profile?.customCommand ?? null,
+      encoding: profile?.encoding ?? null,
+    });
   },
 
   async writeShell(shellId: string, data: string): Promise<void> {

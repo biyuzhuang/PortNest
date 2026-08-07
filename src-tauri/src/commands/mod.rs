@@ -38,7 +38,8 @@ fn parse_connection_options(
 /// Shell 会话信息
 struct ShellSessionInfo {
     _connection_id: String,
-    session: Arc<dyn SshSession>,
+    /// 本地终端（local 协议）没有 SSH 会话；SFTP 等能力依赖该字段，为空时拒绝
+    session: Option<Arc<dyn SshSession>>,
     shell: Arc<dyn ShellHandle>,
     codec: Arc<Mutex<TerminalCodec>>,
 }
@@ -59,7 +60,7 @@ impl ShellManager {
         &self,
         shell_id: String,
         connection_id: String,
-        session: Arc<dyn SshSession>,
+        session: Option<Arc<dyn SshSession>>,
         shell: Arc<dyn ShellHandle>,
         encoding: &str,
     ) -> crate::Result<()> {
@@ -76,7 +77,7 @@ impl ShellManager {
         Ok(())
     }
 
-    fn get(&self, shell_id: &str) -> Option<(Arc<dyn SshSession>, Arc<dyn ShellHandle>)> {
+    fn get(&self, shell_id: &str) -> Option<(Option<Arc<dyn SshSession>>, Arc<dyn ShellHandle>)> {
         self.sessions
             .read()
             .get(shell_id)
@@ -308,6 +309,10 @@ pub struct ConnectionConfigRequest {
     pub proxy_password: Option<String>,
     pub encoding: Option<String>,
     pub timeout_ms: Option<u64>,
+    /// 本地终端配置：终端类型 / 工作路径 / 自定义命令
+    pub shell_type: Option<String>,
+    pub cwd: Option<String>,
+    pub custom_command: Option<String>,
     #[serde(default)]
     pub tunnel_rules: Vec<TunnelRule>,
 }
@@ -443,6 +448,23 @@ pub async fn save_connection(
             serde_json::Value::Number(timeout_ms.into()),
         );
     }
+    if config.protocol == "local" {
+        if let Some(shell_type) = &config.shell_type {
+            options_map.insert(
+                "shell_type".to_string(),
+                serde_json::Value::String(shell_type.clone()),
+            );
+        }
+        if let Some(cwd) = &config.cwd {
+            options_map.insert("cwd".to_string(), serde_json::Value::String(cwd.clone()));
+        }
+        if let Some(custom_command) = &config.custom_command {
+            options_map.insert(
+                "custom_command".to_string(),
+                serde_json::Value::String(custom_command.clone()),
+            );
+        }
+    }
     if !config.tunnel_rules.is_empty() {
         options_map.insert(
             "tunnel_rules".to_string(),
@@ -512,6 +534,9 @@ pub async fn get_connection_config(
     let mut encoding = None;
     let mut timeout_ms = None;
     let mut tunnel_rules = Vec::new();
+    let mut shell_type = None;
+    let mut cwd = None;
+    let mut custom_command = None;
 
     if let Some(options) = connection.options.as_deref() {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(options) {
@@ -520,6 +545,18 @@ pub async fn get_connection_config(
                 .and_then(|item| item.as_str())
                 .map(str::to_string);
             timeout_ms = value.get("timeout_ms").and_then(|item| item.as_u64());
+            shell_type = value
+                .get("shell_type")
+                .and_then(|item| item.as_str())
+                .map(str::to_string);
+            cwd = value
+                .get("cwd")
+                .and_then(|item| item.as_str())
+                .map(str::to_string);
+            custom_command = value
+                .get("custom_command")
+                .and_then(|item| item.as_str())
+                .map(str::to_string);
             tunnel_rules = value
                 .get("tunnel_rules")
                 .cloned()
@@ -576,6 +613,9 @@ pub async fn get_connection_config(
         proxy_password,
         encoding,
         timeout_ms,
+        shell_type,
+        cwd,
+        custom_command,
         tunnel_rules,
     })
 }
@@ -619,7 +659,7 @@ pub async fn analyze_connection(
 
 #[tauri::command]
 pub fn get_protocols(state: tauri::State<'_, AppState>) -> Vec<ProtocolInfoResponse> {
-    state
+    let mut protocols: Vec<ProtocolInfoResponse> = state
         .plugin_registry
         .list_protocols()
         .into_iter()
@@ -627,7 +667,14 @@ pub fn get_protocols(state: tauri::State<'_, AppState>) -> Vec<ProtocolInfoRespo
             id: id.to_string(),
             name: name.to_string(),
         })
-        .collect()
+        .collect();
+    if !protocols.iter().any(|protocol| protocol.id == "local") {
+        protocols.push(ProtocolInfoResponse {
+            id: "local".to_string(),
+            name: "本地终端".to_string(),
+        });
+    }
+    protocols
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -685,8 +732,47 @@ pub async fn open_shell(
         .find(|c| c.id == connection_id)
         .ok_or_else(|| "连接未找到".to_string())?;
 
+    if conn.protocol == "local" {
+        let options_value = conn
+            .options
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+            .unwrap_or_default();
+        let shell_type = options_value
+            .get("shell_type")
+            .and_then(|item| item.as_str())
+            .map(str::to_string);
+        let cwd = options_value
+            .get("cwd")
+            .and_then(|item| item.as_str())
+            .map(str::to_string);
+        let custom_command = options_value
+            .get("custom_command")
+            .and_then(|item| item.as_str())
+            .map(str::to_string);
+        let encoding = options_value
+            .get("encoding")
+            .and_then(|item| item.as_str())
+            .map(str::to_string);
+        let response = spawn_local_shell(
+            state.inner(),
+            shell_type,
+            cwd,
+            custom_command,
+            encoding,
+            connection_id.clone(),
+            cols,
+            rows,
+        )
+        .await?;
+        if let Err(error) = state.db.mark_connection_used(&connection_id) {
+            tracing::warn!("更新最近连接时间失败: {error}");
+        }
+        return Ok(response);
+    }
+
     if conn.protocol != "ssh" {
-        return Err("此命令仅支持 SSH 连接".to_string());
+        return Err("此命令仅支持 SSH 或本地终端连接".to_string());
     }
 
     // 使用结构化方式获取凭证
@@ -747,7 +833,7 @@ pub async fn open_shell(
         .insert(
             shell_id.clone(),
             connection_id.clone(),
-            session,
+            Some(session),
             shell,
             &encoding,
         )
@@ -784,6 +870,77 @@ pub async fn open_shell(
     }
 
     Ok(ShellOpenResponse { shell_id, encoding })
+}
+
+/// 启动本地终端并注册到 ShellManager（`open_shell` 与 `open_local_shell` 共用）
+async fn spawn_local_shell(
+    state: &AppState,
+    shell_type: Option<String>,
+    cwd: Option<String>,
+    custom_command: Option<String>,
+    encoding: Option<String>,
+    connection_id: String,
+    cols: u32,
+    rows: u32,
+) -> Result<ShellOpenResponse, String> {
+    let shell_type = shell_type.unwrap_or_else(|| "powershell".to_string());
+    let profile = crate::protocol::local::resolve_profile(
+        &shell_type,
+        cwd.as_deref(),
+        custom_command.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    let size = TerminalSize::new(cols, rows).map_err(|error| error.to_string())?;
+    let encoding_label = match encoding.as_deref() {
+        Some("auto") | None => crate::protocol::local::default_encoding(&shell_type),
+        Some(label) => normalize_encoding(label).map_err(|error| error.to_string())?,
+    };
+    let handle = crate::protocol::local::spawn_local_shell(&profile, size)
+        .map_err(|error| error.to_string())?;
+    let shell_id = handle.id().to_string();
+    state
+        .shell_manager
+        .insert(
+            shell_id.clone(),
+            connection_id,
+            None,
+            Arc::new(handle),
+            &encoding_label,
+        )
+        .map_err(|error| error.to_string())?;
+    tracing::info!(
+        "本地终端已启动: {} (cwd: {})",
+        profile.display_name,
+        profile.cwd.display()
+    );
+    Ok(ShellOpenResponse {
+        shell_id,
+        encoding: encoding_label,
+    })
+}
+
+/// 打开本地终端（快捷入口，无需已保存的连接记录）
+#[tauri::command]
+pub async fn open_local_shell(
+    state: tauri::State<'_, AppState>,
+    cols: u32,
+    rows: u32,
+    shell_type: Option<String>,
+    cwd: Option<String>,
+    custom_command: Option<String>,
+    encoding: Option<String>,
+) -> Result<ShellOpenResponse, String> {
+    spawn_local_shell(
+        state.inner(),
+        shell_type,
+        cwd,
+        custom_command,
+        encoding,
+        "local-quick".to_string(),
+        cols,
+        rows,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -995,8 +1152,10 @@ pub async fn disconnect_shell(
     if let Err(error) = shell.close().await {
         tracing::warn!("关闭 shell channel 失败: {:?}", error);
     }
-    if let Err(error) = session.disconnect().await {
-        tracing::warn!("断开 SSH session 失败: {:?}", error);
+    if let Some(session) = session {
+        if let Err(error) = session.disconnect().await {
+            tracing::warn!("断开 SSH session 失败: {:?}", error);
+        }
     }
 
     // Remove from shell manager
@@ -1296,6 +1455,7 @@ pub async fn open_sftp_for_shell(
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
+    let session = session.ok_or_else(|| "本地终端不支持文件管理".to_string())?;
     let sftp_handle = session.open_sftp().await.map_err(|e| e.to_string())?;
     let sftp_id = sftp_handle.id().to_string();
 
@@ -1923,6 +2083,19 @@ pub async fn test_connection(
                 .get_ssh_key_material(key_id)
                 .map_err(|e| e.to_string())?,
         );
+    }
+    if config.protocol == "local" {
+        let shell_type = config
+            .shell_type
+            .clone()
+            .unwrap_or_else(|| "powershell".to_string());
+        crate::protocol::local::resolve_profile(
+            &shell_type,
+            config.cwd.as_deref(),
+            config.custom_command.as_deref(),
+        )
+        .map_err(|error| format!("本地终端不可用: {error}"))?;
+        return Ok("本机终端可用".to_string());
     }
     let plugin = state
         .plugin_registry

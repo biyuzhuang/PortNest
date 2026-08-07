@@ -8,6 +8,7 @@ import {
 } from "../stores/connectionStore";
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
+import { localShellDisplayName, parseLocalProfile } from "../utils/api";
 
 interface SidebarProps {
   width?: number;
@@ -18,6 +19,7 @@ interface SidebarProps {
   onNewConnection?: (folderId?: string) => void;
   onNewFolder?: (parentId?: string) => void;
   onCopyConnection?: (conn: ConnectionRecord) => void;
+  onOpenLocalTerminal?: () => void;
   onOpenTunnels?: (conn: ConnectionRecord) => void;
   selectedId?: string;
 }
@@ -422,6 +424,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         <button class="action-btn" title="新建连接" onClick={() => props.onNewConnection?.()}>
           <span>+</span>
         </button>
+        <button class="action-btn" title="打开默认本地终端" onClick={() => props.onOpenLocalTerminal?.()}>
+          <span>▣</span>
+        </button>
         <button class="action-btn" title="新建文件夹" onClick={() => props.onNewFolder?.()}>
           <span>📁</span>
         </button>
@@ -543,9 +548,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <div class="context-menu-item" onClick={() => { props.onConnect(contextMenuConn()!); setShowContextMenu(false); }}>
             连接
           </div>
-          <div class="context-menu-item" onClick={() => { props.onOpenTunnels?.(contextMenuConn()!); setShowContextMenu(false); }}>
-            SSH 隧道
-          </div>
+          <Show when={contextMenuConn()?.protocol === "ssh"}>
+            <div class="context-menu-item" onClick={() => { props.onOpenTunnels?.(contextMenuConn()!); setShowContextMenu(false); }}>
+              SSH 隧道
+            </div>
+          </Show>
           <div class="context-menu-item has-submenu">
             <span>移动此会话</span>
             <span class="submenu-arrow">›</span>
@@ -712,6 +719,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
   const getProtocolIcon = (protocol: string) => {
     switch (protocol) {
       case "ssh": return "🖥";
+      case "local": return "▣";
       case "rdp": return "⊟";
       case "sftp": return "📂";
       case "mysql": return "🗄";
@@ -723,6 +731,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
   const getProtocolColor = (protocol: string) => {
     switch (protocol) {
       case "ssh": return "#4ade80";
+      case "local": return "#22d3ee";
       case "rdp": return "#60a5fa";
       case "sftp": return "#fbbf24";
       case "mysql": return "#f472b6";
@@ -771,7 +780,11 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       </span>
       <div class="conn-details">
         <span class="conn-name">{props.conn.name}</span>
-        <span class="conn-host">{props.conn.host}:{props.conn.port}</span>
+        <span class="conn-host">
+          {props.conn.protocol === "local"
+            ? `本机 · ${localShellDisplayName(parseLocalProfile(props.conn.options).shell_type)}`
+            : `${props.conn.host}:${props.conn.port}`}
+        </span>
       </div>
       <span class="protocol-badge" style={{ "background-color": getProtocolColor(props.conn.protocol) + "20", color: getProtocolColor(props.conn.protocol) }}>
         {props.conn.protocol.toUpperCase()}

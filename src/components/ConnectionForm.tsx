@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal, onMount } from "solid-js";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
@@ -15,11 +16,16 @@ type TabType = "general" | "tunnel" | "proxy" | "advanced";
 
 const COLORS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#32b4d4", "#2589e8", "#9b51e0", "#8e8e93"];
 const ENCODINGS = ["UTF-8", "GBK", "GB2312", "GB18030", "Big5", "Shift-JIS", "EUC-KR", "ISO-8859-1", "Windows-1252", "CP437"];
+const LOCAL_ENCODINGS = ["auto", ...ENCODINGS];
 
 export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
   const [testing, setTesting] = createSignal(false);
   const [testResult, setTestResult] = createSignal<string | null>(null);
+  const [protocol, setProtocol] = createSignal(props.connection?.protocol || "ssh");
+  const [shellType, setShellType] = createSignal(props.connection?.shell_type || "powershell");
+  const [cwd, setCwd] = createSignal(props.connection?.cwd || "");
+  const [customCommand, setCustomCommand] = createSignal(props.connection?.custom_command || "");
   const [name, setName] = createSignal(props.connection?.name || "");
   const [host, setHost] = createSignal(props.connection?.host || "");
   const [port, setPort] = createSignal(props.connection?.port || 22);
@@ -44,6 +50,10 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
   const [tunnelRules, setTunnelRules] = createSignal<TunnelRule[]>(props.connection?.tunnel_rules || []);
 
+  const visibleTabs = (): Array<[TabType, string]> => protocol() === "local"
+    ? [["general", "常规"], ["advanced", "高级"]]
+    : [["general", "常规"], ["tunnel", "隧道"], ["proxy", "代理"], ["advanced", "高级"]];
+
   onMount(() => {
     if (!keyId()) return;
     void api.getSshKeys().then(keys => {
@@ -53,37 +63,73 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   });
 
   const isValid = () => {
-    if (!name().trim() || !host().trim()) return false;
+    if (!name().trim()) return false;
+    if (protocol() === "local") {
+      return shellType() !== "custom" || customCommand().trim().length > 0;
+    }
+    if (!host().trim()) return false;
     if (authType() === "password" && !password() && !props.connection?.id) return false;
     if ((authType() === "key" || authType() === "key_with_passphrase") &&
         !keyId() && !privateKey() && !props.connection?.id) return false;
     return true;
   };
 
-  const buildConfig = (): ConnectionConfig => ({
-    id: props.connection?.id || "",
-    name: name().trim(),
-    protocol: "ssh",
-    host: host().trim(),
-    port: port(),
-    username: username().trim(),
-    auth_type: authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
-    password: authType() === "password" ? password() : undefined,
-    private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
-    key_id: authType() === "key" || authType() === "key_with_passphrase" ? keyId() || undefined : undefined,
-    passphrase: authType() === "key" ? passphrase() || undefined : undefined,
-    color: color(),
-    tags: remark(),
-    folder_id: folderId() || undefined,
-    proxy_type: proxyType() || undefined,
-    proxy_host: proxyHost() || undefined,
-    proxy_port: proxyPort() || undefined,
-    proxy_username: proxyUsername() || undefined,
-    proxy_password: proxyPassword() || undefined,
-    encoding: encoding(),
-    timeout_ms: timeout() * 1000,
-    tunnel_rules: tunnelRules(),
-  });
+  const buildConfig = (): ConnectionConfig => {
+    const base = {
+      id: props.connection?.id || "",
+      name: name().trim(),
+      color: color(),
+      tags: remark(),
+      folder_id: folderId() || undefined,
+      encoding: encoding(),
+      timeout_ms: timeout() * 1000,
+    };
+    if (protocol() === "local") {
+      return {
+        ...base,
+        protocol: "local",
+        host: "本机",
+        port: 0,
+        username: "",
+        auth_type: "none",
+        shell_type: shellType(),
+        cwd: cwd() || undefined,
+        custom_command: shellType() === "custom" ? customCommand() || undefined : undefined,
+      };
+    }
+    return {
+      ...base,
+      protocol: "ssh",
+      host: host().trim(),
+      port: port(),
+      username: username().trim(),
+      auth_type: authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
+      password: authType() === "password" ? password() : undefined,
+      private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
+      key_id: authType() === "key" || authType() === "key_with_passphrase" ? keyId() || undefined : undefined,
+      passphrase: authType() === "key" ? passphrase() || undefined : undefined,
+      proxy_type: proxyType() || undefined,
+      proxy_host: proxyHost() || undefined,
+      proxy_port: proxyPort() || undefined,
+      proxy_username: proxyUsername() || undefined,
+      proxy_password: proxyPassword() || undefined,
+      tunnel_rules: tunnelRules(),
+    };
+  };
+
+  const pickDirectory = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "选择本地终端工作路径",
+        defaultPath: cwd() || undefined,
+      });
+      if (typeof selected === "string") setCwd(selected);
+    } catch (error) {
+      console.error("选择目录失败:", error);
+    }
+  };
 
   const addTunnelRule = () => {
     const id = crypto.randomUUID?.() || `tunnel-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -155,22 +201,37 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     <div class="modal-overlay ssh-config-overlay" onClick={props.onCancel}>
       <div class="ssh-config-modal" onClick={event => event.stopPropagation()}>
         <header class="ssh-config-header">
-          <h2>SSH配置编辑</h2>
+          <h2>{protocol() === "local" ? "本地终端配置编辑" : "SSH配置编辑"}</h2>
           <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">×</button>
         </header>
 
         <form class="ssh-config-form" onSubmit={handleSubmit}>
           <div class="ssh-config-card">
             <nav class="ssh-config-tabs">
-              {([
-                ["general", "常规"], ["tunnel", "隧道"], ["proxy", "代理"], ["advanced", "高级"],
-              ] as Array<[TabType, string]>).map(([id, label]) => (
+              <For each={visibleTabs()}>{([id, label]) => (
                 <button type="button" class={activeTab() === id ? "active" : ""} onClick={() => setActiveTab(id)}>{label}</button>
-              ))}
+              )}</For>
             </nav>
 
             <Show when={activeTab() === "general"}>
               <div class="ssh-general-grid">
+                <label class="ssh-field">
+                  <span>协议</span>
+                  <select value={protocol()} onChange={event => {
+                    const next = event.currentTarget.value;
+                    setProtocol(next);
+                    if (next === "local") {
+                      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
+                      if (encoding() === "UTF-8") setEncoding("auto");
+                    } else if (encoding() === "auto") {
+                      setEncoding("UTF-8");
+                    }
+                  }}>
+                    <option value="ssh">SSH</option>
+                    <option value="local">本地终端</option>
+                  </select>
+                </label>
+
                 <div class="ssh-field ssh-color-field">
                   <label>颜色标签</label>
                   <div class="ssh-color-palette">
@@ -203,52 +264,86 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                   <small>名称不能为空</small>
                 </label>
 
-                <label class={`ssh-field ${!host().trim() ? "invalid" : ""}`}>
-                  <span>主机</span>
-                  <input value={host()} onInput={event => setHost(event.currentTarget.value)} />
-                  <small>主机不能为空</small>
-                </label>
-
-                <label class="ssh-field">
-                  <span>用户</span>
-                  <input value={username()} onInput={event => setUsername(event.currentTarget.value)} />
-                </label>
-
-                <label class="ssh-field">
-                  <span>端口</span>
-                  <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
-                </label>
-
-                <div class="ssh-auth-options">
-                  {authButton("password", "密码")}
-                  {authButton("key", "私钥")}
-                  {authButton("agent", "SSH Agent")}
-                </div>
-
-                <Show when={authType() === "password"}>
+                <Show when={protocol() === "local"}>
                   <label class="ssh-field">
-                    <span>密码</span>
+                    <span>终端类型</span>
+                    <select value={shellType()} onChange={event => setShellType(event.currentTarget.value)}>
+                      <option value="powershell">PowerShell 5.1</option>
+                      <option value="powershell7">PowerShell 7 (pwsh)</option>
+                      <option value="cmd">命令提示符 (cmd)</option>
+                      <option value="bash">Git Bash</option>
+                      <option value="wsl">WSL</option>
+                      <option value="custom">自定义命令</option>
+                    </select>
+                  </label>
+                  <Show when={shellType() === "custom"}>
+                    <label class={`ssh-field ${!customCommand().trim() ? "invalid" : ""}`}>
+                      <span>命令</span>
+                      <input
+                        value={customCommand()}
+                        placeholder='例如 "C:\Program Files\Git\bin\bash.exe" --login'
+                        onInput={event => setCustomCommand(event.currentTarget.value)}
+                      />
+                      <small>自定义命令不能为空</small>
+                    </label>
+                  </Show>
+                  <label class="ssh-field">
+                    <span>工作路径</span>
                     <div class="ssh-secret-input">
-                      <input type={showPassword() ? "text" : "password"} value={password()} onInput={event => setPassword(event.currentTarget.value)} />
-                      <button type="button" onClick={() => setShowPassword(!showPassword())}>{showPassword() ? "◉" : "⊙"}</button>
+                      <input value={cwd()} placeholder="默认：用户主目录" onInput={event => setCwd(event.currentTarget.value)} />
+                      <button type="button" title="选择目录" onClick={() => void pickDirectory()}>浏览</button>
                     </div>
                   </label>
                 </Show>
 
-                <Show when={authType() === "key"}>
-                  <div class="ssh-field ssh-key-field">
-                    <span>私钥</span>
-                    <div class="ssh-key-actions">
-                      <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
-                        <span>{keyName() || (keyId() ? "已选择密钥" : "请选择私钥")}</span>
-                        <span class="ssh-key-settings-icon">⚙</span>
-                      </button>
-                    </div>
-                  </div>
-                  <label class="ssh-field">
-                    <span>私钥密码</span>
-                    <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
+                <Show when={protocol() !== "local"}>
+                  <label class={`ssh-field ${!host().trim() ? "invalid" : ""}`}>
+                    <span>主机</span>
+                    <input value={host()} onInput={event => setHost(event.currentTarget.value)} />
+                    <small>主机不能为空</small>
                   </label>
+
+                  <label class="ssh-field">
+                    <span>用户</span>
+                    <input value={username()} onInput={event => setUsername(event.currentTarget.value)} />
+                  </label>
+
+                  <label class="ssh-field">
+                    <span>端口</span>
+                    <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
+                  </label>
+
+                  <div class="ssh-auth-options">
+                    {authButton("password", "密码")}
+                    {authButton("key", "私钥")}
+                    {authButton("agent", "SSH Agent")}
+                  </div>
+
+                  <Show when={authType() === "password"}>
+                    <label class="ssh-field">
+                      <span>密码</span>
+                      <div class="ssh-secret-input">
+                        <input type={showPassword() ? "text" : "password"} value={password()} onInput={event => setPassword(event.currentTarget.value)} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword())}>{showPassword() ? "◉" : "⊙"}</button>
+                      </div>
+                    </label>
+                  </Show>
+
+                  <Show when={authType() === "key"}>
+                    <div class="ssh-field ssh-key-field">
+                      <span>私钥</span>
+                      <div class="ssh-key-actions">
+                        <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
+                          <span>{keyName() || (keyId() ? "已选择密钥" : "请选择私钥")}</span>
+                          <span class="ssh-key-settings-icon">⚙</span>
+                        </button>
+                      </div>
+                    </div>
+                    <label class="ssh-field">
+                      <span>私钥密码</span>
+                      <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
+                    </label>
+                  </Show>
                 </Show>
 
                 <label class="ssh-field ssh-remark-field">
@@ -327,10 +422,14 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
               <div class="ssh-tab-panel">
                 <label class="ssh-field"><span>终端编码</span>
                   <select value={encoding()} onChange={event => setEncoding(event.currentTarget.value)}>
-                    <For each={ENCODINGS}>{item => <option value={item}>{item}</option>}</For>
+                    <For each={protocol() === "local" ? LOCAL_ENCODINGS : ENCODINGS}>{item => (
+                      <option value={item}>{item === "auto" ? "自动（UTF-8，推荐）" : item}</option>
+                    )}</For>
                   </select>
                 </label>
-                <label class="ssh-field"><span>连接超时（秒）</span><input type="number" min="5" max="120" value={timeout()} onInput={event => setTimeout(Number(event.currentTarget.value))} /></label>
+                <Show when={protocol() !== "local"}>
+                  <label class="ssh-field"><span>连接超时（秒）</span><input type="number" min="5" max="120" value={timeout()} onInput={event => setTimeout(Number(event.currentTarget.value))} /></label>
+                </Show>
               </div>
             </Show>
 

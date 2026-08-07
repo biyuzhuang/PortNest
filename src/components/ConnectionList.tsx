@@ -15,6 +15,7 @@ export const ConnectionList: Component<ConnectionListProps> = (props) => {
   const getProtocolIcon = (protocol: string) => {
     switch (protocol) {
       case "ssh": return ">";
+      case "local": return "▣";
       case "rdp": return "⊟";
       case "sftp": return "↑↓";
       case "mysql": return "DB";
@@ -26,6 +27,7 @@ export const ConnectionList: Component<ConnectionListProps> = (props) => {
   const getProtocolColor = (protocol: string) => {
     switch (protocol) {
       case "ssh": return "#4ade80";
+      case "local": return "#22d3ee";
       case "rdp": return "#60a5fa";
       case "sftp": return "#fbbf24";
       case "mysql": return "#f472b6";
@@ -56,7 +58,7 @@ export const ConnectionList: Component<ConnectionListProps> = (props) => {
               </div>
 
               <div class="connection-info">
-                <div class="host">{conn.host}:{conn.port}</div>
+                <div class="host">{conn.protocol === "local" ? "本机" : `${conn.host}:${conn.port}`}</div>
                 <div class="protocol">{conn.protocol.toUpperCase()}</div>
               </div>
 

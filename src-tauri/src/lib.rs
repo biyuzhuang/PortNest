@@ -11,7 +11,7 @@ pub use error::{Error, Result};
 
 use std::path::PathBuf;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub fn app_data_dir() -> PathBuf {
     let directory_name = if cfg!(dev) { "PortNestDev" } else { "PortNest" };
@@ -33,7 +33,13 @@ fn init_tracing(app_dir: &PathBuf) -> LogGuard {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "portnest.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
+    // 默认只记录 info 以上级别，避免 russh 的 TRACE 流量日志写满磁盘（曾一天
+    // 500MB+）。需要详细排查时可用 RUST_LOG 覆盖，例如 RUST_LOG=portnest_lib=debug。
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("portnest_lib=info,russh=warn"));
+
     tracing_subscriber::registry()
+        .with(env_filter)
         .with(
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
@@ -84,6 +90,7 @@ pub fn run() {
             commands::get_connection_config,
             commands::ping_host,
             commands::open_shell,
+            commands::open_local_shell,
             commands::write_shell,
             commands::read_shell,
             commands::set_shell_encoding,

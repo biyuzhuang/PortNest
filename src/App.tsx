@@ -16,7 +16,7 @@ import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
 import { uiStore } from "./stores/uiStore";
 import { feedback } from "./stores/feedbackStore";
-import { api, ProtocolInfo, SshApiError, type ConnectionRecord, type ConnectionConfig, type TunnelRuntimeInfo } from "./utils/api";
+import { api, localShellDisplayName, parseLocalProfile, ProtocolInfo, SshApiError, type ConnectionRecord, type ConnectionConfig, type TunnelRuntimeInfo } from "./utils/api";
 import "./App.css";
 
 type ContextMenuState = {
@@ -104,7 +104,7 @@ const App: Component = () => {
     initTheme();
 
     if (!isTauriRuntime()) {
-      setProtocols([{ id: "ssh", name: "SSH" }]);
+      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }]);
       sessionStore.hydrate([]);
       return;
     }
@@ -115,7 +115,7 @@ const App: Component = () => {
 
     try {
       const supportedProtocols = await api.getProtocols();
-      setProtocols(supportedProtocols.filter(protocol => protocol.id === "ssh"));
+      setProtocols(supportedProtocols.filter(protocol => protocol.id === "ssh" || protocol.id === "local"));
     } catch (e) {
       console.error("Failed to get protocols:", e);
     }
@@ -180,6 +180,12 @@ const App: Component = () => {
 
   const isBuiltinConnection = (connId: string) => connId.startsWith("builtin-");
 
+  // 终端类会话（SSH 与本地终端）才能挂载 TerminalView；文件管理类能力仍按
+  // 协议在各自组件内单独门控（如 showRightPanel 仅 SSH）。
+  const isTerminalSession = (session: SessionTab) =>
+    (session.connection.protocol === "ssh" || session.connection.protocol === "local")
+    && session.viewMode === "terminal";
+
   const createSession = (conn: ConnectionRecord) => {
     const newSession = sessionStore.create(conn, "connecting");
     setAssetListActive(false);
@@ -192,7 +198,11 @@ const App: Component = () => {
 
     console.log("[openShell] Opening shell for:", conn.name, conn.id);
     sessionStore.update(sessionId, { status: "connecting", error: undefined });
-    const response = await api.openShell(conn.id, cols, rows);
+    const session = sessions().find(s => s.id === sessionId);
+    const profile = session?.localProfile;
+    const response = profile
+      ? await api.openLocalShell(cols, rows, profile)
+      : await api.openShell(conn.id, cols, rows);
     console.log("[openShell] Shell opened:", response.shell_id);
 
     if (!sessions().some(s => s.id === sessionId)) {
@@ -218,6 +228,27 @@ const App: Component = () => {
     ));
   };
 
+  // 一键打开默认本地终端（不创建连接记录，不参与资产树）
+  const openQuickLocalTerminal = () => {
+    const record: ConnectionRecord = {
+      id: "local-quick",
+      name: "本地终端",
+      protocol: "local",
+      host: "本机",
+      port: 0,
+      username: "",
+      credential_id: "",
+      sort_order: 0,
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    const session = sessionStore.create(record, "connecting", { transient: true, localProfile: {} });
+    setAssetListActive(false);
+    void openShellForSession(session.id, record).catch(error => {
+      console.error("打开本地终端失败:", error);
+      sessionStore.update(session.id, { status: "error", error: String(error), shellId: undefined });
+    });
+  };
+
   const handleConnect = async (conn: ConnectionRecord) => {
     console.log("[handleConnect] Starting connection:", conn.name, conn.id, "builtin:", isBuiltinConnection(conn.id));
 
@@ -231,6 +262,18 @@ const App: Component = () => {
           await openShellForSession(sessionId, conn);
         } catch (e) {
           console.error("SSH connection failed:", e);
+          sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
+        }
+      })();
+    } else if (conn.protocol === "local") {
+      const sessionId = createSession(conn);
+      console.log("[handleConnect] Created local terminal session:", sessionId);
+
+      (async () => {
+        try {
+          await openShellForSession(sessionId, conn);
+        } catch (e) {
+          console.error("本地终端打开失败:", e);
           sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
         }
       })();
@@ -265,7 +308,7 @@ const App: Component = () => {
   createEffect(() => {
     const validIds = new Set(connectionStore.state.connections.map(c => c.id));
     const current = sessions();
-    const orphans = current.filter(s => !validIds.has(s.connection.id));
+    const orphans = current.filter(s => !validIds.has(s.connection.id) && !s.transient);
     if (orphans.length === 0) return;
 
     const remaining = current.filter(s => validIds.has(s.connection.id));
@@ -340,7 +383,7 @@ const App: Component = () => {
   const handleReconnect = async (sessionId: string, automatic = false, attempt = 0) => {
     const session = sessions().find(s => s.id === sessionId);
     setTabContextMenu(null);
-    if (!session || session.connection.protocol !== "ssh") return;
+    if (!session || (session.connection.protocol !== "ssh" && session.connection.protocol !== "local")) return;
     const nextAttempt = automatic ? attempt + 1 : 0;
     sessionStore.update(sessionId, {
       status: automatic ? "reconnecting" : "connecting",
@@ -410,7 +453,9 @@ const App: Component = () => {
     if (!session) return;
     const c = session.connection;
     const userPart = c.username ? ` (${c.username})` : "";
-    const text = `${c.host}:${c.port}${userPart}`;
+    const text = c.protocol === "local"
+      ? `${c.name}（本地终端）`
+      : `${c.host}:${c.port}${userPart}`;
     try {
       await navigator.clipboard.writeText(text);
     } catch (e) {
@@ -462,12 +507,16 @@ const App: Component = () => {
     const session = sessions().find(s => s.id === sessionId);
     if (!session || !session.connection?.id) return;
 
-    const newSession = sessionStore.create({ ...session.connection }, "connecting");
+    const newSession = sessionStore.create(
+      { ...session.connection },
+      "connecting",
+      { transient: session.transient, localProfile: session.localProfile },
+    );
     const newSessionId = newSession.id;
     setAssetListActive(false);
     setTabContextMenu(null);
 
-    if (session.connection.protocol === "ssh") {
+    if (session.connection.protocol === "ssh" || session.connection.protocol === "local") {
       void openShellForSession(newSessionId, session.connection).catch(error => {
         sessionStore.update(newSessionId, { status: "error", error: String(error), shellId: undefined });
       });
@@ -556,11 +605,9 @@ const App: Component = () => {
   };
 
   const handleCopyConnection = (conn: ConnectionRecord) => {
-    const newConn = {
-      ...conn,
-      id: undefined as unknown as string,
-      name: conn.name + " (副本)",
-    };
+    const newConn = conn.protocol === "local"
+      ? { ...conn, id: undefined as unknown as string, name: conn.name + " (副本)", ...parseLocalProfile(conn.options) }
+      : { ...conn, id: undefined as unknown as string, name: conn.name + " (副本)" };
     setEditingConnection(newConn as unknown as ConnectionConfig);
     setShowForm(true);
   };
@@ -690,6 +737,7 @@ const App: Component = () => {
         onNewConnection={handleNewConnection}
         onNewFolder={handleNewFolder}
         onCopyConnection={handleCopyConnection}
+        onOpenLocalTerminal={openQuickLocalTerminal}
         onOpenTunnels={(connection) => { setTunnelConnection(connection); setShowTunnels(true); }}
       />
       <div class="sidebar-splitter" hidden={!uiStore.assetTreeVisible()} onMouseDown={startSidebarResize} />
@@ -762,7 +810,7 @@ const App: Component = () => {
               class="tab-context-menu"
               style={{ left: tabContextMenu()!.x + "px", top: tabContextMenu()!.y + "px" }}
             >
-              <Show when={tabContextMenuTarget()?.connection.protocol === "ssh"}>
+              <Show when={["ssh", "local"].includes(tabContextMenuTarget()?.connection.protocol ?? "")}>
                 <div class="tab-context-menu-item" onClick={() => handleReconnect(tabContextMenu()!.sessionId)}>
                   断开重连
                 </div>
@@ -807,13 +855,17 @@ const App: Component = () => {
               <div class="session-action-identity">
                 <span class={`session-status-dot status-${session().status}`} />
                 <strong>{session().status === "connected" ? "已连接" : session().status === "connecting" ? "连接中" : session().status === "reconnecting" ? `重连中 ${session().reconnectAttempt || ""}` : session().status === "restored" ? "离线恢复" : session().status === "error" ? "连接错误" : "已断开"}</strong>
-                <span>{session().connection.username}@{session().connection.host}:{session().connection.port}</span>
+                <span>{session().connection.protocol === "local"
+                  ? `本机 · ${localShellDisplayName(parseLocalProfile(session().connection.options).shell_type)}`
+                  : `${session().connection.username}@${session().connection.host}:${session().connection.port}`}</span>
               </div>
               <div class="session-action-controls">
                 <label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
                   <option>UTF-8</option><option>GBK</option><option>GB2312</option><option>GB18030</option><option>Big5</option><option>Shift-JIS</option><option>EUC-KR</option><option>ISO-8859-1</option><option>Windows-1252</option><option>CP437</option>
                 </select></label>
-                <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
+                <Show when={session().connection.protocol === "ssh"}>
+                  <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
+                </Show>
                 <button disabled={sessions().filter(item => item.status === "connected").length === 0} onClick={() => setShowBroadcast(true)}>⌁ 命令广播</button>
                 <button onClick={() => void handleReconnect(session().id)}>↻ 重连</button>
               </div>
@@ -858,7 +910,7 @@ const App: Component = () => {
                       height: "100%"
                     }}
                   >
-                    {session.connection.protocol === "ssh" && session.viewMode === "terminal" && (
+                    {isTerminalSession(session) && (
                       <TerminalView
                         sessionKey={session.id}
                         connection={session.connection}
@@ -870,7 +922,11 @@ const App: Component = () => {
                     <Show when={!session.shellId || session.status !== "connected"}>
                       <div class={`session-state-overlay state-${session.status}`}>
                         <span class={`session-state-icon status-${session.status}`}>{session.status === "connecting" || session.status === "reconnecting" ? "◌" : session.status === "error" ? "!" : "›_"}</span>
-                        <h3>{session.status === "restored" ? "会话已从上次工作区恢复" : session.status === "connecting" ? "正在建立 SSH 连接" : session.status === "reconnecting" ? "正在重新连接" : session.status === "error" ? "SSH 连接失败" : "SSH 会话已断开"}</h3>
+                        <h3>{session.status === "restored" ? "会话已从上次工作区恢复"
+                          : session.status === "connecting" ? (session.connection.protocol === "local" ? "正在打开本地终端" : "正在建立 SSH 连接")
+                          : session.status === "reconnecting" ? (session.connection.protocol === "local" ? "正在重新打开本地终端" : "正在重新连接")
+                          : session.status === "error" ? (session.connection.protocol === "local" ? "本地终端打开失败" : "SSH 连接失败")
+                          : (session.connection.protocol === "local" ? "本地终端已关闭" : "SSH 会话已断开")}</h3>
                         <Show when={session.error}><p>{session.error}</p></Show>
                         <div>
                           <button class="primary" disabled={session.status === "connecting" || session.status === "reconnecting"} onClick={() => void handleReconnect(session.id)}>{session.status === "restored" ? "连接" : "重试"}</button>
@@ -983,7 +1039,7 @@ const App: Component = () => {
                 const opened = () => sessions().find(session => session.connection.id === connection.id);
                 return <button onClick={() => chooseQuickConnection(connection)}>
                   <span class={`session-status-dot status-${opened()?.status || "restored"}`} />
-                  <span><strong>{connection.name}</strong><small>{connection.username}@{connection.host}:{connection.port}</small></span>
+                  <span><strong>{connection.name}</strong><small>{connection.protocol === "local" ? "本机终端" : `${connection.username}@${connection.host}:${connection.port}`}</small></span>
                   <em>{opened() ? "切换标签" : "新建会话"}</em>
                 </button>;
               }}</For>

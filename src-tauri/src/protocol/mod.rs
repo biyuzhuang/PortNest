@@ -205,6 +205,7 @@ pub struct PluginRegistry {
 }
 
 pub mod docker;
+pub mod local;
 pub mod mysql;
 pub mod pgsql;
 pub mod rdp;

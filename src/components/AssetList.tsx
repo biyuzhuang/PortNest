@@ -79,8 +79,8 @@ export const AssetList: Component<AssetListProps> = (props) => {
     );
 
   const filterTitle = createMemo(() => ({
-    all: "SSH 资产",
-    terminal: "SSH 终端",
+    all: "连接资产",
+    terminal: "终端资产",
   })[uiStore.assetFilter()]);
 
   createEffect(() => {
@@ -122,6 +122,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
   };
 
   const testConnectionLatency = async (connection: ConnectionRecord, force = false) => {
+    if (connection.protocol === "local") return;
     if (!force && testedConnections.has(connection.id)) return;
     testedConnections.add(connection.id);
     setPingStates(previous => ({
@@ -167,6 +168,9 @@ export const AssetList: Component<AssetListProps> = (props) => {
   });
 
   const renderLatency = (connection: ConnectionRecord) => {
+    if (connection.protocol === "local") {
+      return <span class="asset-muted">本机</span>;
+    }
     if (!showPing()) return <span class="asset-muted">已隐藏</span>;
     const state = pingStates()[connection.id];
     if (!state || state.status === "testing") {
@@ -263,7 +267,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
             ◉
           </button>
           <button title="新建文件夹" onClick={props.onNewFolder}>▱+</button>
-          <button title="新建 SSH 连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>＋</button>
+          <button title="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>＋</button>
         </div>
       </div>
 
@@ -307,8 +311,8 @@ export const AssetList: Component<AssetListProps> = (props) => {
             >
               <div class="asset-name-cell"><span class="asset-terminal-icon">›_</span>{connection.name}</div>
               <div>{renderLatency(connection)}</div>
-              <div class="asset-mono">{connection.host}:{connection.port}</div>
-              <div class="asset-mono">{connection.username || "—"}</div>
+              <div class="asset-mono">{connection.protocol === "local" ? "本机" : `${connection.host}:${connection.port}`}</div>
+              <div class="asset-mono">{connection.protocol === "local" ? "—" : (connection.username || "—")}</div>
               <div>{formatTime(connection.created_at)}</div>
               <div>{formatTime(connection.last_connected_at)}</div>
               <div class="asset-muted">{connection.tags || "—"}</div>
@@ -319,7 +323,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
         <Show when={visibleFolders().length === 0 && visibleConnections().length === 0}>
           <div class="asset-empty">
             <span>›_</span>
-            <strong>{query() ? "没有匹配的连接" : "这里还没有 SSH 连接"}</strong>
+            <strong>{query() ? "没有匹配的连接" : "这里还没有连接"}</strong>
             <button onClick={() => props.onNewConnection(folderId() ?? undefined)}>新建连接</button>
           </div>
         </Show>
@@ -342,7 +346,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
             setContextMenu(null);
           }}>
             <span class="asset-context-icon">＋</span>
-            <span><strong>新建 SSH 连接</strong><small>添加远程服务器</small></span>
+            <span><strong>新建连接</strong><small>添加 SSH 或本地终端</small></span>
           </button>
           <button onClick={() => {
             props.onNewFolder();
@@ -385,7 +389,9 @@ export const AssetList: Component<AssetListProps> = (props) => {
             <>
               <div class="asset-context-caption">
                 <strong>{connectionMenu()!.connection.name}</strong>
-                <span>{connectionMenu()!.connection.username}@{connectionMenu()!.connection.host}:{connectionMenu()!.connection.port}</span>
+                <span>{connectionMenu()!.connection.protocol === "local"
+                  ? "本地终端"
+                  : `${connectionMenu()!.connection.username}@${connectionMenu()!.connection.host}:${connectionMenu()!.connection.port}`}</span>
               </div>
               <div class="asset-context-divider" />
               <button onClick={() => {
@@ -404,9 +410,10 @@ export const AssetList: Component<AssetListProps> = (props) => {
               </button>
               <button onClick={() => {
                 const connection = connectionMenu()!.connection;
-                void navigator.clipboard.writeText(
-                  `${connection.username || ""}@${connection.host}:${connection.port}`
-                );
+                const text = connection.protocol === "local"
+                  ? `${connection.name}（本地终端）`
+                  : `${connection.username || ""}@${connection.host}:${connection.port}`;
+                void navigator.clipboard.writeText(text);
                 closeMenus();
               }}>
                 <span class="asset-context-icon">⧉</span>
