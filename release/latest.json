@@ -1,11 +1,11 @@
 {
-  "version": "0.0.3",
-  "notes": "PortNest 0.0.3 Windows installer supports a custom installation directory and preserves existing user data during in-place upgrades.",
-  "pub_date": "2026-08-06T06:24:08Z",
+  "version": "0.0.4",
+  "notes": "PortNest 0.0.4 adds local terminal connections (cmd, PowerShell, Bash, WSL, and custom commands), a local-terminal connection form and quick-open button, and fixes vi file-opening freezes with a terminal write-callback watchdog plus safer build and logging settings.",
+  "pub_date": "2026-08-10T02:04:45Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTi9DTVYwWENyRXpScUlrOHgrTE50b2owUGNWbjNSckppWlVNNmo2MzNlN3dQcUR2ZGpiRUFIQmgrYlZTNktHaWhlZ0pCN3gxYkhKcU9YTGhFODQ0VFFFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg1OTk3NDM3CWZpbGU6UG9ydE5lc3RfMC4wLjNfeDY0LXNldHVwLmV4ZQowdXZmZ25Ub3dVTzY5aEMxOTNhUGd3T2RZeWJnNjMrVlRXeVZEVnNKcTg5OXJNa1N4SHpSNHFndDFzSGZqU3R6dDhMYzJDbHJnUkdEN0VzN2l3SzBDUT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.3/PortNest_0.0.3_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTnhaZmFkQ0I3YnVPQXVHUTU4SmozNmtBL2VKV292Um4xb2Zsb1FVTXZjL0p4VzY5c29DNjQzcUwxVW9jNm0veVdubG1lOHRYQ0xFMko1VXB2cHdDUXc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzI3NDc0CWZpbGU6UG9ydE5lc3RfMC4wLjRfeDY0LXNldHVwLmV4ZQpidS9OTnliMkJSek5sWTZ0ZGhjcW5MTFZkWjFJS1ZiZm41dWwxeVgzcEN3TmZWek9UNzMzRFdFblQ2eDFJekNoNzJ6dzJEUnIzOGVYTDY2bllicVhBQT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.4/PortNest_0.0.4_x64-setup.exe"
     }
   }
 }
