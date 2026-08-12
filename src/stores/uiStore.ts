@@ -4,7 +4,7 @@ import { createSignal } from "solid-js";
 // 默认展开，SSH 连接成功后自动打开 SFTP 并加载文件列表
 const [filesCollapsed, setFilesCollapsed] = createSignal(false);
 const [filesStacked, setFilesStackedSignal] = createSignal(localStorage.getItem("portnest-files-stacked") === "true");
-export type AssetFilter = "all" | "terminal";
+export type AssetFilter = "all" | "terminal" | "database";
 const [assetFilter, setAssetFilter] = createSignal<AssetFilter>("all");
 const [assetTreeVisible, setAssetTreeVisible] = createSignal(true);
 const [selectedAssetFolderId, setSelectedAssetFolderId] = createSignal<string | null>(null);
@@ -23,8 +23,9 @@ const setPathLinked = (value: boolean) => {
 };
 
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
-  void filter;
-  return protocol === "ssh" || protocol === "sftp" || protocol === "local";
+  if (filter === "database") return protocol === "mysql";
+  if (filter === "terminal") return protocol === "ssh" || protocol === "sftp" || protocol === "local";
+  return protocol === "ssh" || protocol === "sftp" || protocol === "local" || protocol === "mysql";
 };
 
 export const uiStore = {

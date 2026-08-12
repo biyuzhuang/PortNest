@@ -89,6 +89,7 @@ export interface ConnectionConfig {
   proxy_password?: string;
   encoding?: string;
   timeout_ms?: number;
+  database?: string;
   shell_type?: string;
   cwd?: string;
   custom_command?: string;
@@ -209,7 +210,19 @@ export interface QueryResult {
   rows: Array<{ values: any[] }>;
   affected_rows: number;
   execution_time_ms: number;
+  last_insert_id?: number;
 }
+
+export interface MysqlDatabaseInfo { name: string; charset?: string; collation?: string }
+export interface MysqlCharsetInfo { name: string; description: string; default_collation: string; collations: string[] }
+export interface MysqlSqlImportResult { total: number; completed: number; failures: Array<{ statement: number; summary: string }> }
+export interface MysqlSqlExportResult { tables: number; rows: number; bytes: number }
+export interface MysqlTableInfo { name: string; kind: string; engine?: string; rows?: number; comment: string; data_length?: number; index_length?: number; auto_increment?: number; collation?: string; created_at?: string; updated_at?: string }
+export interface MysqlColumnInfo { name: string; data_type: string; column_type: string; nullable: boolean; default_value?: string; extra: string; comment: string; key: string; charset?: string; collation?: string; ordinal: number }
+export interface MysqlIndexInfo { name: string; unique: boolean; column: string; sequence: number; prefix_length?: number; direction?: string }
+export interface MysqlColumnDefinition { name: string; column_type: string; nullable: boolean; default_value?: string; auto_increment: boolean; charset?: string; collation?: string; comment: string }
+export interface MysqlIndexDefinition { name: string; kind: "PRIMARY" | "UNIQUE" | "INDEX"; columns: Array<{ name: string; prefix_length?: number; direction?: string }> }
+export interface MysqlTableDefinition { database: string; name: string; original_name?: string; engine?: string; charset?: string; collation?: string; comment: string; columns: MysqlColumnDefinition[]; indexes: MysqlIndexDefinition[] }
 
 export interface ChatMessage {
   role: string;
@@ -342,6 +355,26 @@ export const api = {
   async sftpCreateDir(sftpId: string, path: string): Promise<void> {
     return sshInvoke("sftp_create_dir", { sftpId, path });
   },
+  async mysqlConnect(connectionId: string): Promise<void> { return invoke("mysql_connect", { connectionId }); },
+  async mysqlDisconnect(connectionId: string): Promise<void> { return invoke("mysql_disconnect", { connectionId }); },
+  async mysqlListDatabases(connectionId: string): Promise<MysqlDatabaseInfo[]> { return invoke("mysql_list_databases", { connectionId }); },
+  async mysqlListCharsets(connectionId: string): Promise<MysqlCharsetInfo[]> { return invoke("mysql_list_charsets", { connectionId }); },
+  async mysqlListTables(connectionId: string, database: string): Promise<MysqlTableInfo[]> { return invoke("mysql_list_tables", { connectionId, database }); },
+  async mysqlListColumns(connectionId: string, database: string, table: string): Promise<MysqlColumnInfo[]> { return invoke("mysql_list_columns", { connectionId, database, table }); },
+  async mysqlListIndexes(connectionId: string, database: string, table: string): Promise<MysqlIndexInfo[]> { return invoke("mysql_list_indexes", { connectionId, database, table }); },
+  async mysqlExecuteSql(connectionId: string, sql: string, database?: string): Promise<QueryResult> { return invoke("mysql_execute_sql", { connectionId, sql, database: database || null }); },
+  async mysqlFetchRows(connectionId: string, database: string, table: string, page = 1, pageSize = 100): Promise<QueryResult> { return invoke("mysql_fetch_rows", { connectionId, database, table, page, pageSize }); },
+  async mysqlCreateDatabase(connectionId: string, name: string, charset = "utf8mb4", collation?: string): Promise<void> { return invoke("mysql_create_database", { connectionId, name, charset, collation: collation || null }); },
+  async mysqlDropDatabase(connectionId: string, database: string): Promise<void> { return invoke("mysql_drop_database", { connectionId, database }); },
+  async mysqlCreateTable(connectionId: string, definition: MysqlTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("mysql_create_table", { connectionId, definition }); },
+  async mysqlPreviewTable(connectionId: string, definition: MysqlTableDefinition): Promise<string[]> { return invoke("mysql_preview_table", { connectionId, definition }); },
+  async mysqlApplyTable(connectionId: string, definition: MysqlTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("mysql_apply_table", { connectionId, definition }); },
+  async mysqlTableAction(connectionId: string, database: string, table: string, action: "truncate" | "drop" | "rename" | "clone", target?: string): Promise<void> { return invoke("mysql_table_action", { connectionId, database, table, action, target: target || null }); },
+  async mysqlShowCreate(connectionId: string, database: string, table: string): Promise<string> { return invoke("mysql_show_create", { connectionId, database, table }); },
+  async mysqlMutateRow(connectionId: string, database: string, table: string, action: "insert" | "update" | "delete", values: Record<string, unknown>, original: Record<string, unknown> = {}): Promise<number> { return invoke("mysql_mutate_row", { connectionId, database, table, action, mutation: { values, original } }); },
+  async mysqlImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("mysql_import_csv", { connectionId, database, table, csv }); },
+  async mysqlImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<MysqlSqlImportResult> { return invoke("mysql_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
+  async mysqlExportSql(connectionId: string, path: string, database: string): Promise<MysqlSqlExportResult> { return invoke("mysql_export_sql", { connectionId, options: { path, database } }); },
 
   async sftpCreateFile(sftpId: string, path: string): Promise<void> {
     return sshInvoke("sftp_create_file", { sftpId, path });

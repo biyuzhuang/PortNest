@@ -1,20 +1,23 @@
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --bg-hover: #30363d;
-  --bg-active: #388bfd26;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent: #58a6ff;
-  --accent-hover: #388bfd;
-  --accent-secondary: #1f6feb;
-  --success: #3fb950;
-  --warning: #d29922;
-  --error: #f85149;
-  --border: #30363d;
-  --border-light: #21262d;
+  --bg-primary: #f6f7f9;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f3f5;
+  --bg-hover: #e9edf2;
+  --bg-active: #e1ebfa;
+  --bg-input: #ffffff;
+  --text-primary: #20252d;
+  --text-secondary: #687384;
+  --text-muted: #98a2b1;
+  --accent: #2676e8;
+  --accent-primary: #2676e8;
+  --accent-hover: #1967d2;
+  --accent-secondary: #4b8ce8;
+  --success: #18a66a;
+  --warning: #d99016;
+  --error: #db4b4b;
+  --border: #dfe3e8;
+  --border-color: #dfe3e8;
+  --border-light: #edf0f3;
   --gradient-start: #238636;
   --gradient-end: #2ea043;
 }
@@ -843,16 +846,14 @@ body {
 .asset-folder-icon { color: #f4b93f; font-size: 13px; }
 
 .asset-terminal-icon {
-  display: inline-grid;
+  display: inline-flex;
   width: 18px;
-  height: 15px;
-  place-items: center;
-  border-radius: 2px;
-  color: var(--bg-primary);
-  background: var(--text-secondary);
-  font-family: monospace;
-  font-size: 9px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
 }
+.asset-terminal-icon svg { width:18px; height:18px; }
 
 .asset-status-dot {
   display: inline-block;
@@ -887,6 +888,7 @@ body {
 }
 
 .asset-empty > span { color: var(--accent); font: 700 32px monospace; }
+.asset-empty > span svg { width:32px; height:32px; }
 
 .asset-empty button {
   padding: 7px 13px;
@@ -1128,6 +1130,16 @@ body {
 
 .module-rail-btn > span {
   font: 600 16px "Cascadia Code", Consolas, monospace;
+}
+.module-rail-btn > span svg { display:block; width:20px; height:20px; }
+.asset-context-icon svg { width:17px; height:17px; }
+
+.ssh-validation-summary { margin:8px 16px 0; padding:7px 10px; color:var(--warning); background:color-mix(in srgb,var(--warning) 8%,var(--bg-secondary)); border:1px solid color-mix(in srgb,var(--warning) 24%,var(--border)); border-radius:5px; font-size:12px; }
+
+[data-theme="dark"] {
+  --bg-input: #111827;
+  --border-color: #374151;
+  --accent-primary: #3b82f6;
 }
 
 .module-rail-btn small {
@@ -1736,15 +1748,15 @@ body {
 }
 
 .session-tab-terminal-icon {
-  display: inline-grid;
-  width: 15px;
-  height: 13px;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-  place-items: center;
-  color: #fff;
-  background: #3e4348;
-  font: 8px monospace;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
 }
+.session-tab-terminal-icon svg { width:16px; height:16px; }
 
 .session-tab-name { font-size: 12px; }
 .session-tab-close {

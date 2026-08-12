@@ -24,6 +24,8 @@ use crate::storage::{ConnectionRecord, CredentialData, Database, SshKeyRecord};
 use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+pub mod mysql_admin;
+
 fn parse_connection_options(
     raw: Option<&str>,
 ) -> Result<crate::protocol::ConnectionOptions, String> {
@@ -236,6 +238,7 @@ pub struct AppState {
     pub(crate) sftp_manager: Arc<SftpManager>,
     pub(crate) tunnel_manager: Arc<TunnelManager>,
     pub(crate) docker_manager: Arc<DockerManager>,
+    pub(crate) mysql_manager: Arc<mysql_admin::MysqlManager>,
 }
 
 unsafe impl Send for AppState {}
@@ -260,6 +263,7 @@ impl AppState {
             sftp_manager: Arc::new(SftpManager::new()),
             tunnel_manager: Arc::new(TunnelManager::new()),
             docker_manager: Arc::new(DockerManager::new()),
+            mysql_manager: Arc::new(mysql_admin::MysqlManager::new()),
         })
     }
 
@@ -309,6 +313,7 @@ pub struct ConnectionConfigRequest {
     pub proxy_password: Option<String>,
     pub encoding: Option<String>,
     pub timeout_ms: Option<u64>,
+    pub database: Option<String>,
     /// 本地终端配置：终端类型 / 工作路径 / 自定义命令
     pub shell_type: Option<String>,
     pub cwd: Option<String>,
@@ -448,6 +453,12 @@ pub async fn save_connection(
             serde_json::Value::Number(timeout_ms.into()),
         );
     }
+    if let Some(database) = config.database.as_ref().filter(|value| !value.trim().is_empty()) {
+        options_map.insert(
+            "database".to_string(),
+            serde_json::Value::String(database.trim().to_string()),
+        );
+    }
     if config.protocol == "local" {
         if let Some(shell_type) = &config.shell_type {
             options_map.insert(
@@ -533,6 +544,7 @@ pub async fn get_connection_config(
     let mut proxy_password = None;
     let mut encoding = None;
     let mut timeout_ms = None;
+    let mut database = None;
     let mut tunnel_rules = Vec::new();
     let mut shell_type = None;
     let mut cwd = None;
@@ -545,6 +557,10 @@ pub async fn get_connection_config(
                 .and_then(|item| item.as_str())
                 .map(str::to_string);
             timeout_ms = value.get("timeout_ms").and_then(|item| item.as_u64());
+            database = value
+                .get("database")
+                .and_then(|item| item.as_str())
+                .map(str::to_string);
             shell_type = value
                 .get("shell_type")
                 .and_then(|item| item.as_str())
@@ -613,6 +629,7 @@ pub async fn get_connection_config(
         proxy_password,
         encoding,
         timeout_ms,
+        database,
         shell_type,
         cwd,
         custom_command,
@@ -1179,6 +1196,7 @@ pub struct QueryResult {
     pub rows: Vec<QueryResultRow>,
     pub affected_rows: u64,
     pub execution_time_ms: u64,
+    pub last_insert_id: Option<u64>,
 }
 
 #[tauri::command]
@@ -1298,6 +1316,7 @@ pub async fn execute_query(
                 rows: result_rows,
                 affected_rows: 0,
                 execution_time_ms: elapsed,
+                last_insert_id: None,
             })
         }
         "postgresql" => Err("PostgreSQL 查询暂未实现".to_string()),
@@ -2135,6 +2154,9 @@ pub async fn test_connection(
 
     // Parse proxy from options if provided
     let mut options = crate::protocol::ConnectionOptions::default();
+    if let Some(database) = config.database.as_ref().filter(|value| !value.trim().is_empty()) {
+        options.protocol_options.insert("database".to_string(), database.trim().to_string());
+    }
     if let (Some(proxy_type), Some(proxy_host), Some(proxy_port)) =
         (&config.proxy_type, &config.proxy_host, &config.proxy_port)
     {
@@ -2181,7 +2203,11 @@ pub async fn test_connection(
         )
         .await
         {
-            Ok(Ok(_handle)) => Ok("连接成功".to_string()),
+            Ok(Ok(handle)) => match plugin.health_check(handle.as_ref()).await {
+                Ok(true) => Ok("连接成功".to_string()),
+                Ok(false) => Err("连接验证失败".to_string()),
+                Err(error) => Err(format!("连接验证失败: {error}")),
+            },
             Ok(Err(error)) => Err(format!("连接失败: {error}")),
             Err(_) => Err("连接超时".to_string()),
         }

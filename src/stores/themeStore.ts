@@ -70,7 +70,7 @@ function getStoredTheme(): ThemeMode {
       return stored;
     }
   }
-  return "system";
+  return "light";
 }
 
 const [themeMode, setThemeModeInternal] = createSignal<ThemeMode>(getStoredTheme());

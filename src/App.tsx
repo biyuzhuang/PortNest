@@ -11,6 +11,8 @@ import { SshKeyPicker } from "./components/SshKeyPicker";
 import { CommandBroadcast } from "./components/CommandBroadcast";
 import { TunnelPanel } from "./components/TunnelPanel";
 import { FeedbackHost } from "./components/FeedbackHost";
+import { MysqlWorkspace } from "./components/MysqlWorkspace";
+import { ProtocolIcon } from "./components/ProtocolIcon";
 import { connectionStore } from "./stores/connectionStore";
 import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
@@ -41,6 +43,7 @@ const App: Component = () => {
   const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
   const [editingConnection, setEditingConnection] = createSignal<ConnectionConfig | null>(null);
   const [newConnectionDefaultFolderId, setNewConnectionDefaultFolderId] = createSignal<string | undefined>(undefined);
+  const [newConnectionDefaultProtocol, setNewConnectionDefaultProtocol] = createSignal<string>("ssh");
   const [protocols, setProtocols] = createSignal<ProtocolInfo[]>([]);
   const sessions = sessionStore.sessions;
   const setSessions = sessionStore.setSessions;
@@ -104,7 +107,7 @@ const App: Component = () => {
     initTheme();
 
     if (!isTauriRuntime()) {
-      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }]);
+      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }, { id: "mysql", name: "MySQL" }]);
       sessionStore.hydrate([]);
       return;
     }
@@ -115,7 +118,7 @@ const App: Component = () => {
 
     try {
       const supportedProtocols = await api.getProtocols();
-      setProtocols(supportedProtocols.filter(protocol => protocol.id === "ssh" || protocol.id === "local"));
+      setProtocols(supportedProtocols.filter(protocol => ["ssh", "local", "mysql"].includes(protocol.id)));
     } catch (e) {
       console.error("Failed to get protocols:", e);
     }
@@ -277,6 +280,14 @@ const App: Component = () => {
           sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
         }
       })();
+    } else if (conn.protocol === "mysql") {
+      const sessionId = createSession(conn);
+      try {
+        await api.mysqlConnect(conn.id);
+        sessionStore.update(sessionId, { status: "connected", error: undefined, viewMode: "database" });
+      } catch (e) {
+        sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" });
+      }
     } else {
       feedback.info("当前版本专注于 SSH / SFTP，其他连接能力将在后续版本开放。");
     }
@@ -286,13 +297,16 @@ const App: Component = () => {
   // Called from handleCloseSession. remainingSessions is the post-close snapshot so we
   // can decide whether this session was the last tab of a given connection (relevant for
   // docker, which uses a single per-connection session).
-  const closeSessionResources = async (session: SessionTab, _remainingSessions: SessionTab[]) => {
+  const closeSessionResources = async (session: SessionTab, remainingSessions: SessionTab[]) => {
     if (session.shellId) {
       try {
         await api.disconnectShell(session.shellId);
       } catch (e) {
         console.error("[closeSessionResources] disconnectShell failed:", session.id, e);
       }
+    }
+    if (session.connection.protocol === "mysql" && !remainingSessions.some(item => item.connection.id === session.connection.id)) {
+      try { await api.mysqlDisconnect(session.connection.id); } catch (e) { console.error("[mysql] disconnect failed", e); }
     }
 
     // The active SFTP channel is owned by RightPanel and shares this Shell's
@@ -383,7 +397,14 @@ const App: Component = () => {
   const handleReconnect = async (sessionId: string, automatic = false, attempt = 0) => {
     const session = sessions().find(s => s.id === sessionId);
     setTabContextMenu(null);
-    if (!session || (session.connection.protocol !== "ssh" && session.connection.protocol !== "local")) return;
+    if (!session) return;
+    if (session.connection.protocol === "mysql") {
+      sessionStore.update(sessionId, { status: "connecting", error: undefined });
+      try { await api.mysqlConnect(session.connection.id); sessionStore.update(sessionId, { status: "connected", viewMode: "database" }); }
+      catch (e) { sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" }); }
+      return;
+    }
+    if (session.connection.protocol !== "ssh" && session.connection.protocol !== "local") return;
     const nextAttempt = automatic ? attempt + 1 : 0;
     sessionStore.update(sessionId, {
       status: automatic ? "reconnecting" : "connecting",
@@ -520,6 +541,10 @@ const App: Component = () => {
       void openShellForSession(newSessionId, session.connection).catch(error => {
         sessionStore.update(newSessionId, { status: "error", error: String(error), shellId: undefined });
       });
+    } else if (session.connection.protocol === "mysql") {
+      void api.mysqlConnect(session.connection.id)
+        .then(() => sessionStore.update(newSessionId, { status: "connected", viewMode: "database" }))
+        .catch(error => sessionStore.update(newSessionId, { status: "error", error: String(error), viewMode: "database" }));
     }
   };
 
@@ -543,6 +568,7 @@ const App: Component = () => {
 
   const handleNewConnection = (folderId?: string) => {
     setNewConnectionDefaultFolderId(folderId);
+    setNewConnectionDefaultProtocol(uiStore.assetFilter() === "database" ? "mysql" : "ssh");
     setEditingConnection(null);
     setShowForm(true);
   };
@@ -572,6 +598,7 @@ const App: Component = () => {
     } catch (e) {
       console.error("Save connection error:", e);
       feedback.error("保存连接失败: " + e);
+      throw e;
     }
   };
 
@@ -778,7 +805,7 @@ const App: Component = () => {
                       <Show when={session.pinned}>
                         <span class="session-tab-pin" title="已固定">📌</span>
                       </Show>
-                      <span class="session-tab-terminal-icon">›_</span>
+                      <span class="session-tab-terminal-icon"><ProtocolIcon kind={session.connection.protocol === "mysql" ? "database" : "terminal"} /></span>
                       <span class={`session-tab-status status-${session.status}`} title={session.status} />
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
                       <Show when={runningTunnelCount(session.connection.id) > 0}>
@@ -860,13 +887,13 @@ const App: Component = () => {
                   : `${session().connection.username}@${session().connection.host}:${session().connection.port}`}</span>
               </div>
               <div class="session-action-controls">
-                <label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
+                <Show when={session().connection.protocol !== "mysql"}><label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
                   <option>UTF-8</option><option>GBK</option><option>GB2312</option><option>GB18030</option><option>Big5</option><option>Shift-JIS</option><option>EUC-KR</option><option>ISO-8859-1</option><option>Windows-1252</option><option>CP437</option>
-                </select></label>
+                </select></label></Show>
                 <Show when={session().connection.protocol === "ssh"}>
                   <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
                 </Show>
-                <button disabled={sessions().filter(item => item.status === "connected").length === 0} onClick={() => setShowBroadcast(true)}>⌁ 命令广播</button>
+                <Show when={session().connection.protocol !== "mysql"}><button disabled={sessions().filter(item => item.status === "connected").length === 0} onClick={() => setShowBroadcast(true)}>⌁ 命令广播</button></Show>
                 <button onClick={() => void handleReconnect(session().id)}>↻ 重连</button>
               </div>
             </div>
@@ -919,7 +946,10 @@ const App: Component = () => {
                         onDisconnected={(error) => handleSessionDisconnected(session.id, error)}
                       />
                     )}
-                    <Show when={!session.shellId || session.status !== "connected"}>
+                    <Show when={session.connection.protocol === "mysql" && session.status === "connected"}>
+                      <MysqlWorkspace connection={session.connection} visible={sessionVisible()} onCloseConnection={() => void handleCloseSession(session.id)} />
+                    </Show>
+                    <Show when={(session.connection.protocol === "mysql" ? session.status !== "connected" : !session.shellId || session.status !== "connected")}>
                       <div class={`session-state-overlay state-${session.status}`}>
                         <span class={`session-state-icon status-${session.status}`}>{session.status === "connecting" || session.status === "reconnecting" ? "◌" : session.status === "error" ? "!" : "›_"}</span>
                         <h3>{session.status === "restored" ? "会话已从上次工作区恢复"
@@ -966,6 +996,7 @@ const App: Component = () => {
           onSave={handleSave}
           onCancel={handleCancel}
           defaultFolderId={newConnectionDefaultFolderId()}
+          defaultProtocol={newConnectionDefaultProtocol()}
         />
       </Show>
 

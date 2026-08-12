@@ -6,7 +6,7 @@ export type SessionStatus = "restored" | "connecting" | "connected" | "reconnect
 export interface SessionTab {
   id: string;
   connection: ConnectionRecord;
-  viewMode: "terminal";
+  viewMode: "terminal" | "database";
   activeTab: "query" | "structure" | "security" | "monitor" | "ai";
   displayName?: string;
   shellId?: string;
@@ -72,7 +72,7 @@ const create = (
   const session: SessionTab = {
     id: newId(connection.id),
     connection,
-    viewMode: "terminal",
+    viewMode: connection.protocol === "mysql" ? "database" : "terminal",
     activeTab: "query",
     status,
     ...extra,
@@ -121,7 +121,7 @@ const hydrate = (connections: ConnectionRecord[]) => {
     return [{
       id: newId(connection.id),
       connection,
-      viewMode: "terminal" as const,
+      viewMode: (connection.protocol === "mysql" ? "database" : "terminal") as "database" | "terminal",
       activeTab: "query" as const,
       status: "restored" as const,
       displayName: tab.displayName,

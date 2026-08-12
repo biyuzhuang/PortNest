@@ -6,6 +6,8 @@ import {
 } from "../stores/connectionStore";
 import { api, type ConnectionRecord } from "../utils/api";
 import { matchesAssetFilter, uiStore } from "../stores/uiStore";
+import { feedback } from "../stores/feedbackStore";
+import { ProtocolIcon } from "./ProtocolIcon";
 
 interface AssetListProps {
   onConnect: (connection: ConnectionRecord) => void;
@@ -81,6 +83,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
   const filterTitle = createMemo(() => ({
     all: "连接资产",
     terminal: "终端资产",
+    database: "数据库资产",
   })[uiStore.assetFilter()]);
 
   createEffect(() => {
@@ -309,7 +312,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               onDblClick={() => props.onConnect(connection)}
               onContextMenu={(event) => openConnectionMenu(event, connection)}
             >
-              <div class="asset-name-cell"><span class="asset-terminal-icon">›_</span>{connection.name}</div>
+              <div class="asset-name-cell"><span class="asset-terminal-icon"><ProtocolIcon kind={connection.protocol === "mysql" ? "database" : "terminal"} /></span>{connection.name}</div>
               <div>{renderLatency(connection)}</div>
               <div class="asset-mono">{connection.protocol === "local" ? "本机" : `${connection.host}:${connection.port}`}</div>
               <div class="asset-mono">{connection.protocol === "local" ? "—" : (connection.username || "—")}</div>
@@ -322,7 +325,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
 
         <Show when={visibleFolders().length === 0 && visibleConnections().length === 0}>
           <div class="asset-empty">
-            <span>›_</span>
+            <span><ProtocolIcon kind={uiStore.assetFilter() === "database" ? "database" : "terminal"} /></span>
             <strong>{query() ? "没有匹配的连接" : "这里还没有连接"}</strong>
             <button onClick={() => props.onNewConnection(folderId() ?? undefined)}>新建连接</button>
           </div>
@@ -398,9 +401,17 @@ export const AssetList: Component<AssetListProps> = (props) => {
                 props.onConnect(connectionMenu()!.connection);
                 closeMenus();
               }}>
-                <span class="asset-context-icon">›_</span>
-                <span><strong>打开终端</strong><small>建立新的 SSH 会话</small></span>
+                <span class="asset-context-icon"><ProtocolIcon kind={connectionMenu()!.connection.protocol === "mysql" ? "database" : "terminal"} /></span>
+                <span><strong>{connectionMenu()!.connection.protocol === "mysql" ? "打开数据库" : "打开终端"}</strong><small>{connectionMenu()!.connection.protocol === "mysql" ? "进入 MySQL 管理工作区" : "建立新的 SSH 会话"}</small></span>
               </button>
+              <Show when={connectionMenu()!.connection.protocol === "mysql"}>
+                <button onClick={() => { void (async () => {
+                  const connection = connectionMenu()!.connection; const name = await feedback.prompt("数据库名称", "", "新建数据库"); if (!name?.trim()) return;
+                  await api.mysqlConnect(connection.id); await api.mysqlCreateDatabase(connection.id, name.trim(), "utf8mb4"); props.onConnect(connection); closeMenus();
+                })().catch(error => feedback.error("新建数据库失败：" + error)); }}>
+                  <span class="asset-context-icon">＋</span><span><strong>新建数据库</strong><small>使用 utf8mb4 字符集</small></span>
+                </button>
+              </Show>
               <button onClick={() => {
                 props.onEdit(connectionMenu()!.connection);
                 closeMenus();

@@ -8,7 +8,8 @@ import {
 } from "../stores/connectionStore";
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
-import { localShellDisplayName, parseLocalProfile } from "../utils/api";
+import { ProtocolIcon } from "./ProtocolIcon";
+import { api, localShellDisplayName, parseLocalProfile } from "../utils/api";
 
 interface SidebarProps {
   width?: number;
@@ -386,7 +387,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             <span>☷</span><small>全部</small>
           </button>
           <button class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => selectAssetFilter("terminal")}>
-            <span>›_</span><small>终端</small>
+            <span><ProtocolIcon kind="terminal" /></span><small>终端</small>
+          </button>
+          <button class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => selectAssetFilter("database")}>
+            <span><ProtocolIcon kind="database" /></span><small>数据库</small>
           </button>
         </div>
         <div class="module-rail-bottom">
@@ -551,6 +555,20 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           <Show when={contextMenuConn()?.protocol === "ssh"}>
             <div class="context-menu-item" onClick={() => { props.onOpenTunnels?.(contextMenuConn()!); setShowContextMenu(false); }}>
               SSH 隧道
+            </div>
+          </Show>
+          <Show when={contextMenuConn()?.protocol === "mysql"}>
+            <div class="context-menu-item" onClick={() => { void (async () => {
+              const connection = contextMenuConn()!;
+              const name = await feedback.prompt("输入数据库名称", "", "新建 MySQL 数据库");
+              if (!name?.trim()) return;
+              await api.mysqlConnect(connection.id);
+              await api.mysqlCreateDatabase(connection.id, name.trim(), "utf8mb4");
+              feedback.success(`数据库 ${name.trim()} 已创建`);
+              props.onConnect(connection);
+              setShowContextMenu(false);
+            })().catch(error => feedback.error("新建数据库失败：" + error)); }}>
+              新建数据库
             </div>
           </Show>
           <div class="context-menu-item has-submenu">

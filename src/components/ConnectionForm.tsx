@@ -7,9 +7,10 @@ import { SshKeyPicker } from "./SshKeyPicker";
 interface ConnectionFormProps {
   connection?: ConnectionConfig;
   protocols: Array<{ id: string; name: string }>;
-  onSave: (config: ConnectionConfig, mode?: "save" | "save-connect") => void;
+  onSave: (config: ConnectionConfig, mode?: "save" | "save-connect") => Promise<void>;
   onCancel: () => void;
   defaultFolderId?: string;
+  defaultProtocol?: string;
 }
 
 type TabType = "general" | "tunnel" | "proxy" | "advanced";
@@ -22,13 +23,15 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
   const [testing, setTesting] = createSignal(false);
   const [testResult, setTestResult] = createSignal<string | null>(null);
-  const [protocol, setProtocol] = createSignal(props.connection?.protocol || "ssh");
+  const [saving, setSaving] = createSignal(false);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
+  const [protocol, setProtocol] = createSignal(props.connection?.protocol || props.defaultProtocol || "ssh");
   const [shellType, setShellType] = createSignal(props.connection?.shell_type || "powershell");
   const [cwd, setCwd] = createSignal(props.connection?.cwd || "");
   const [customCommand, setCustomCommand] = createSignal(props.connection?.custom_command || "");
   const [name, setName] = createSignal(props.connection?.name || "");
   const [host, setHost] = createSignal(props.connection?.host || "");
-  const [port, setPort] = createSignal(props.connection?.port || 22);
+  const [port, setPort] = createSignal(props.connection?.port || (props.defaultProtocol === "mysql" ? 3306 : 22));
   const [username, setUsername] = createSignal(props.connection?.username || "root");
   const [authType, setAuthType] = createSignal(props.connection?.auth_type === "key_with_passphrase" ? "key" : props.connection?.auth_type || "password");
   const [password, setPassword] = createSignal(props.connection?.password || "");
@@ -47,10 +50,11 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [proxyPassword, setProxyPassword] = createSignal(props.connection?.proxy_password || "");
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
+  const [database, setDatabase] = createSignal(props.connection?.database || "");
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
   const [tunnelRules, setTunnelRules] = createSignal<TunnelRule[]>(props.connection?.tunnel_rules || []);
 
-  const visibleTabs = (): Array<[TabType, string]> => protocol() === "local"
+  const visibleTabs = (): Array<[TabType, string]> => protocol() === "local" || protocol() === "mysql"
     ? [["general", "常规"], ["advanced", "高级"]]
     : [["general", "常规"], ["tunnel", "隧道"], ["proxy", "代理"], ["advanced", "高级"]];
 
@@ -68,6 +72,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       return shellType() !== "custom" || customCommand().trim().length > 0;
     }
     if (!host().trim()) return false;
+    if (protocol() === "mysql") return Boolean(username().trim()) && port() > 0 && port() <= 65535;
     if (authType() === "password" && !password() && !props.connection?.id) return false;
     if ((authType() === "key" || authType() === "key_with_passphrase") &&
         !keyId() && !privateKey() && !props.connection?.id) return false;
@@ -99,11 +104,11 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     }
     return {
       ...base,
-      protocol: "ssh",
+      protocol: protocol(),
       host: host().trim(),
       port: port(),
       username: username().trim(),
-      auth_type: authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
+      auth_type: protocol() === "mysql" ? "password" : authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
       password: authType() === "password" ? password() : undefined,
       private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
       key_id: authType() === "key" || authType() === "key_with_passphrase" ? keyId() || undefined : undefined,
@@ -114,6 +119,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       proxy_username: proxyUsername() || undefined,
       proxy_password: proxyPassword() || undefined,
       tunnel_rules: tunnelRules(),
+      database: protocol() === "mysql" ? database().trim() || undefined : undefined,
     };
   };
 
@@ -181,9 +187,17 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     }
   };
 
+  const submit = async (mode: "save" | "save-connect") => {
+    if (!isValid() || saving()) return;
+    setSaving(true); setSaveError(null);
+    try { await props.onSave(buildConfig(), mode); }
+    catch (error) { setSaveError(String(error)); }
+    finally { setSaving(false); }
+  };
+
   const handleSubmit = (event: Event) => {
     event.preventDefault();
-    if (isValid()) props.onSave(buildConfig(), "save");
+    void submit("save");
   };
 
   const authButton = (value: string, label: string, disabled = false) => (
@@ -201,7 +215,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     <div class="modal-overlay ssh-config-overlay" onClick={props.onCancel}>
       <div class="ssh-config-modal" onClick={event => event.stopPropagation()}>
         <header class="ssh-config-header">
-          <h2>{protocol() === "local" ? "本地终端配置编辑" : "SSH配置编辑"}</h2>
+          <h2>{protocol() === "local" ? "本地终端配置" : protocol() === "mysql" ? "MySQL 连接配置" : "SSH 连接配置"}</h2>
           <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">×</button>
         </header>
 
@@ -223,12 +237,19 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     if (next === "local") {
                       if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
                       if (encoding() === "UTF-8") setEncoding("auto");
+                      setPort(0);
+                    } else if (next === "mysql") {
+                      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
+                      setAuthType("password");
+                      setPort(3306);
                     } else if (encoding() === "auto") {
                       setEncoding("UTF-8");
+                      setPort(22);
                     }
                   }}>
-                    <option value="ssh">SSH</option>
-                    <option value="local">本地终端</option>
+                    <For each={props.protocols.filter(item => ["ssh", "local", "mysql"].includes(item.id))}>{item => (
+                      <option value={item.id}>{item.name}</option>
+                    )}</For>
                   </select>
                 </label>
 
@@ -313,11 +334,18 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
                   </label>
 
-                  <div class="ssh-auth-options">
+                  <Show when={protocol() === "mysql"}>
+                    <label class="ssh-field">
+                      <span>默认数据库</span>
+                      <input value={database()} placeholder="可留空，连接后选择" onInput={event => setDatabase(event.currentTarget.value)} />
+                    </label>
+                  </Show>
+
+                  <Show when={protocol() === "ssh"}><div class="ssh-auth-options">
                     {authButton("password", "密码")}
                     {authButton("key", "私钥")}
                     {authButton("agent", "SSH Agent")}
-                  </div>
+                  </div></Show>
 
                   <Show when={authType() === "password"}>
                     <label class="ssh-field">
@@ -329,7 +357,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     </label>
                   </Show>
 
-                  <Show when={authType() === "key"}>
+                  <Show when={protocol() === "ssh" && authType() === "key"}>
                     <div class="ssh-field ssh-key-field">
                       <span>私钥</span>
                       <div class="ssh-key-actions">
@@ -440,13 +468,17 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
               {testResult()!.replace(/^(success|error):/, "")}
             </div>
           </Show>
+          <Show when={saveError()}><div class="ssh-test-result error">保存失败：{saveError()}</div></Show>
+          <Show when={!isValid()}><div class="ssh-validation-summary">
+            {!name().trim() ? "请填写连接名称" : !host().trim() ? "请填写主机地址" : protocol() === "mysql" && !username().trim() ? "请填写 MySQL 用户名" : protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id ? "请填写 SSH 密码" : "请检查连接配置"}
+          </div></Show>
 
           <footer class="ssh-config-actions">
-            <button type="button" class="ssh-test-button" disabled={!isValid() || testing()} onClick={handleTest}>
+            <button type="button" class="ssh-test-button" disabled={!isValid() || testing() || saving()} onClick={handleTest}>
               {testing() ? "测试中..." : "测试连接"}
             </button>
-            <button type="submit" class="ssh-save-secondary" disabled={!isValid()}>保存</button>
-            <button type="button" class="ssh-save-button" disabled={!isValid()} onClick={() => props.onSave(buildConfig(), "save-connect")}>保存并连接</button>
+            <button type="submit" class="ssh-save-secondary" disabled={!isValid() || saving()}>{saving() ? "保存中…" : "保存"}</button>
+            <button type="button" class="ssh-save-button" disabled={!isValid() || saving()} onClick={() => void submit("save-connect")}>{saving() ? "处理中…" : "保存并连接"}</button>
           </footer>
         </form>
       </div>

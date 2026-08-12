@@ -117,11 +117,14 @@ impl ProtocolPlugin for MysqlPlugin {
         };
 
         // OptsBuilder 实现了 TryFrom<Opts>，Pool::new 可以直接接收
-        let opts = OptsBuilder::default()
+        let mut opts = OptsBuilder::default()
             .ip_or_hostname(host)
             .tcp_port(port)
             .user(Some(username))
             .pass(password);
+        if let Some(database) = _options.protocol_options.get("database").filter(|value| !value.is_empty()) {
+            opts = opts.db_name(Some(database.clone()));
+        }
 
         let pool = Pool::new(opts);
         let id = Uuid::new_v4();
