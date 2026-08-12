@@ -1,11 +1,11 @@
 {
-  "version": "0.0.5",
-  "notes": "PortNest 0.0.5 adds a complete MySQL management workspace with database and table object browsing, internal tabs, SQL queries, table design, row editing, CSV and SQL import/export, connection management, a compact light theme, and refreshed terminal/database icons.",
-  "pub_date": "2026-08-12T03:47:42Z",
+  "version": "0.0.6",
+  "notes": "PortNest 0.0.6 fixes the About dialog so it reads the actual application version at runtime and updates the capability summary to include local terminals and MySQL management.",
+  "pub_date": "2026-08-12T06:22:58Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTnhyclBkbnZDWW9Pa3E2MWhjcjlQUHhDVmY1bDk5SnVNL2g3a2FGTFlDM1VUZW8yMzVMTmlYUElyZnJSc25ONzJ4d1l5R3FGQ1ZoZXRVclVnN2pES0FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTA2NDUzCWZpbGU6UG9ydE5lc3RfMC4wLjVfeDY0LXNldHVwLmV4ZQpOR1VVRnJ6YkU1MnV5aXlwT2VGRzFSQ1NJdTZaMkk3REZqZTFUV0xFRjg3R2pUaEwvQ0E4S3EzRWUvMmdJbkhkNjRvby9ZYXBJU1cyWTFSby9GQjdBdz09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.5/PortNest_0.0.5_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjVXbGJpMkJJYUZvUys0ZkhuS01iQjNUakFaS2pTZEFlMFB2eExqb0crNlhHVnJRd2dpT2JKRUJGZXBzY3U1OUVmR1lqYWl4eWl3bnNKdVNYMFplVlFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTE1NzcyCWZpbGU6UG9ydE5lc3RfMC4wLjZfeDY0LXNldHVwLmV4ZQovVTFibmdJVUdWMGZDUTNBYm5WSHluZnQ5bExhS29ENHBOT0wwd3lYaTVpcncxMkwwcFliTVFuamlqRmZlSkN3UmswY3lLZ2p4S2ljbnd4YlpwbldBUT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.6/PortNest_0.0.6_x64-setup.exe"
     }
   }
 }
