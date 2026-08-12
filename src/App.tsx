@@ -1,5 +1,7 @@
 import { Component, createSignal, onMount, onCleanup, Show, For, createEffect, createMemo } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
+import packageInfo from "../package.json";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ConnectionForm } from "./components/ConnectionForm";
@@ -55,6 +57,7 @@ const App: Component = () => {
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
+  const [appVersion, setAppVersion] = createSignal(packageInfo.version);
   const [showBroadcast, setShowBroadcast] = createSignal(false);
   const [showTunnels, setShowTunnels] = createSignal(false);
   const [tunnelConnection, setTunnelConnection] = createSignal<ConnectionRecord | null>(null);
@@ -104,6 +107,9 @@ const App: Component = () => {
   });
 
   onMount(async () => {
+    if (isTauriRuntime()) {
+      try { setAppVersion(await getVersion()); } catch (error) { console.warn("[version] unable to read runtime version", error); }
+    }
     initTheme();
 
     if (!isTauriRuntime()) {
@@ -1042,10 +1048,10 @@ const App: Component = () => {
             <h2>PortNest</h2>
             <p style={{ color: "var(--text-secondary)", "margin-bottom": "12px" }}>安全、专注的 SSH / SFTP 工作区</p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px", "margin-bottom": "8px" }}>
-              版本 0.0.3 · 基于 Tauri 2.0 + SolidJS
+              版本 {appVersion()} · 基于 Tauri 2.0 + SolidJS
             </p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
-              当前专注 SSH · SFTP，数据库与容器能力将在后续版本开放
+              支持 SSH、SFTP、本地终端与 MySQL 数据库管理
             </p>
             <div class="form-actions" style={{ "margin-top": "20px" }}>
               <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>

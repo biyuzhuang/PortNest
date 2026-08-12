@@ -1,6 +1,6 @@
 [package]
 name = "portnest"
-version = "0.0.5"
+version = "0.0.6"
 description = "PortNest SSH and SFTP workspace"
 authors = ["PortNest Team"]
 edition = "2021"
