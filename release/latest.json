@@ -1,11 +1,11 @@
 {
-  "version": "0.0.4",
-  "notes": "PortNest 0.0.4 adds local terminal connections (cmd, PowerShell, Bash, WSL, and custom commands), a local-terminal connection form and quick-open button, and fixes vi file-opening freezes with a terminal write-callback watchdog plus safer build and logging settings.",
-  "pub_date": "2026-08-10T02:04:45Z",
+  "version": "0.0.5",
+  "notes": "PortNest 0.0.5 adds a complete MySQL management workspace with database and table object browsing, internal tabs, SQL queries, table design, row editing, CSV and SQL import/export, connection management, a compact light theme, and refreshed terminal/database icons.",
+  "pub_date": "2026-08-12T03:47:42Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTnhaZmFkQ0I3YnVPQXVHUTU4SmozNmtBL2VKV292Um4xb2Zsb1FVTXZjL0p4VzY5c29DNjQzcUwxVW9jNm0veVdubG1lOHRYQ0xFMko1VXB2cHdDUXc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzI3NDc0CWZpbGU6UG9ydE5lc3RfMC4wLjRfeDY0LXNldHVwLmV4ZQpidS9OTnliMkJSek5sWTZ0ZGhjcW5MTFZkWjFJS1ZiZm41dWwxeVgzcEN3TmZWek9UNzMzRFdFblQ2eDFJekNoNzJ6dzJEUnIzOGVYTDY2bllicVhBQT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.4/PortNest_0.0.4_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTnhyclBkbnZDWW9Pa3E2MWhjcjlQUHhDVmY1bDk5SnVNL2g3a2FGTFlDM1VUZW8yMzVMTmlYUElyZnJSc25ONzJ4d1l5R3FGQ1ZoZXRVclVnN2pES0FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTA2NDUzCWZpbGU6UG9ydE5lc3RfMC4wLjVfeDY0LXNldHVwLmV4ZQpOR1VVRnJ6YkU1MnV5aXlwT2VGRzFSQ1NJdTZaMkk3REZqZTFUV0xFRjg3R2pUaEwvQ0E4S3EzRWUvMmdJbkhkNjRvby9ZYXBJU1cyWTFSby9GQjdBdz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.5/PortNest_0.0.5_x64-setup.exe"
     }
   }
 }
