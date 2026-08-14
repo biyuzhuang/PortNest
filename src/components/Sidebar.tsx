@@ -9,6 +9,7 @@ import {
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
+import { Icon } from "./Icon";
 import { api, localShellDisplayName, parseLocalProfile } from "../utils/api";
 
 interface SidebarProps {
@@ -381,21 +382,21 @@ export const Sidebar: Component<SidebarProps> = (props) => {
             title={uiStore.assetTreeVisible() ? "隐藏资产树" : "显示资产树"}
             onClick={() => uiStore.toggleAssetTree()}
           >
-            <span>▣</span><small>资产树</small>
+            <span><Icon name="assets" /></span><small>资产树</small>
           </button>
           <button class={`module-rail-btn ${uiStore.assetFilter() === "all" ? "active" : ""}`} title="显示全部" onClick={() => selectAssetFilter("all")}>
-            <span>☷</span><small>全部</small>
+            <span><Icon name="list" /></span><small>全部</small>
           </button>
           <button class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => selectAssetFilter("terminal")}>
-            <span><ProtocolIcon kind="terminal" /></span><small>终端</small>
+            <span><ProtocolIcon kind="ssh" /></span><small>终端</small>
           </button>
           <button class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => selectAssetFilter("database")}>
-            <span><ProtocolIcon kind="database" /></span><small>数据库</small>
+            <span><ProtocolIcon kind="mysql" /></span><small>数据库</small>
           </button>
         </div>
         <div class="module-rail-bottom">
           <button class="module-rail-btn" title="设置" onClick={() => props.onOpenSettings?.()}>
-            <span>⚙</span><small>设置</small>
+            <span><Icon name="settings" /></span><small>设置</small>
           </button>
         </div>
       </nav>
@@ -404,16 +405,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <div class="sidebar-header">
         <strong>资产列表</strong>
         <div class="sidebar-header-actions">
-          <button title="搜索" onClick={() => document.querySelector<HTMLInputElement>(".search-input")?.focus()}>⌕</button>
-          <button title="新建连接" onClick={() => props.onNewConnection?.()}>＋</button>
-          <button title="新建文件夹" onClick={() => props.onNewFolder?.()}>▰</button>
-          <button title="刷新" onClick={() => void connectionStore.loadConnections()}>↻</button>
+          <button title="搜索" onClick={() => document.querySelector<HTMLInputElement>(".search-input")?.focus()}><Icon name="search" /></button>
+          <button title="新建连接" onClick={() => props.onNewConnection?.()}><Icon name="plus" /></button>
+          <button title="新建文件夹" onClick={() => props.onNewFolder?.()}><Icon name="folder" /></button>
+          <button title="刷新" onClick={() => void connectionStore.loadConnections()}><Icon name="refresh" /></button>
         </div>
       </div>
 
       <div class="sidebar-search">
         <div class="search-wrapper">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon"><Icon name="search" /></span>
           <input
             type="text"
             placeholder="搜索连接..."
@@ -426,16 +427,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
       <div class="sidebar-actions">
         <button class="action-btn" title="新建连接" onClick={() => props.onNewConnection?.()}>
-          <span>+</span>
+          <span><Icon name="plus" /></span>
         </button>
         <button class="action-btn" title="打开默认本地终端" onClick={() => props.onOpenLocalTerminal?.()}>
-          <span>▣</span>
+          <span><ProtocolIcon kind="local" /></span>
         </button>
         <button class="action-btn" title="新建文件夹" onClick={() => props.onNewFolder?.()}>
-          <span>📁</span>
+          <span><Icon name="folder" /></span>
         </button>
         <button class="action-btn" title="设置" onClick={() => props.onOpenSettings?.()}>
-          <span>⚙️</span>
+          <span><Icon name="settings" /></span>
         </button>
       </div>
 
@@ -734,18 +735,6 @@ interface ConnectionItemProps {
 }
 
 const ConnectionItem: Component<ConnectionItemProps> = (props) => {
-  const getProtocolIcon = (protocol: string) => {
-    switch (protocol) {
-      case "ssh": return "🖥";
-      case "local": return "▣";
-      case "rdp": return "⊟";
-      case "sftp": return "📂";
-      case "mysql": return "🗄";
-      case "postgresql": return "🐘";
-      default: return "●";
-    }
-  };
-
   const getProtocolColor = (protocol: string) => {
     switch (protocol) {
       case "ssh": return "#4ade80";
@@ -794,7 +783,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >
       <span class="conn-icon" style={{ color: getProtocolColor(props.conn.protocol) }}>
-        {getProtocolIcon(props.conn.protocol)}
+        <ProtocolIcon kind={props.conn.protocol} />
       </span>
       <div class="conn-details">
         <span class="conn-name">{props.conn.name}</span>

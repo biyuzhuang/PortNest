@@ -85,6 +85,7 @@ export function setThemeMode(mode: ThemeMode) {
   const effective = mode === "system" ? getSystemTheme() : mode;
   setEffectiveTheme(effective);
   applyTheme(effective);
+  publishAppearance();
 }
 
 export function toggleTheme() {
@@ -114,6 +115,8 @@ export function initTheme() {
         const newTheme = e.matches ? "dark" : "light";
         setEffectiveTheme(newTheme);
         applyTheme(newTheme);
+        setTerminalThemeRevision(value => value + 1);
+        publishAppearance();
       }
     });
   }
@@ -270,16 +273,68 @@ export const terminalThemes: Record<string, TerminalTheme> = {
   },
 };
 
+const makeTheme = (name: string, background: string, foreground: string, palette: Partial<TerminalTheme>): TerminalTheme => ({
+  name, background, foreground, cursor: foreground, cursorAccent: background,
+  selectionBackground: "#4b6a8b88", black: "#1b1f27", red: "#e06c75", green: "#98c379",
+  yellow: "#e5c07b", blue: "#61afef", magenta: "#c678dd", cyan: "#56b6c2", white: "#d7dae0",
+  brightBlack: "#6b7280", brightRed: "#ff7b86", brightGreen: "#b4e88d", brightYellow: "#ffd68a",
+  brightBlue: "#7dc4ff", brightMagenta: "#dc8df2", brightCyan: "#70d5e0", brightWhite: "#ffffff", ...palette,
+});
+
+Object.assign(terminalThemes, {
+  one_dark: makeTheme("One Dark", "#282c34", "#abb2bf", { selectionBackground: "#3e4451", black: "#1e2127", brightBlack: "#5c6370" }),
+  nord: makeTheme("Nord", "#2e3440", "#d8dee9", { selectionBackground: "#434c5e", red: "#bf616a", green: "#a3be8c", yellow: "#ebcb8b", blue: "#81a1c1", magenta: "#b48ead", cyan: "#88c0d0" }),
+  tokyo_night: makeTheme("Tokyo Night", "#1a1b26", "#c0caf5", { selectionBackground: "#33467c", red: "#f7768e", green: "#9ece6a", yellow: "#e0af68", blue: "#7aa2f7", magenta: "#bb9af7", cyan: "#7dcfff" }),
+  catppuccin_mocha: makeTheme("Catppuccin Mocha", "#1e1e2e", "#cdd6f4", { selectionBackground: "#45475a", red: "#f38ba8", green: "#a6e3a1", yellow: "#f9e2af", blue: "#89b4fa", magenta: "#cba6f7", cyan: "#94e2d5" }),
+  gruvbox_dark: makeTheme("Gruvbox Dark", "#282828", "#ebdbb2", { selectionBackground: "#504945", red: "#cc241d", green: "#98971a", yellow: "#d79921", blue: "#458588", magenta: "#b16286", cyan: "#689d6a" }),
+  github_dark: makeTheme("GitHub Dark", "#0d1117", "#c9d1d9", { selectionBackground: "#264f78", red: "#ff7b72", green: "#7ee787", yellow: "#d29922", blue: "#58a6ff", magenta: "#bc8cff", cyan: "#39c5cf" }),
+  solarized_light: makeTheme("Solarized Light", "#fdf6e3", "#657b83", { cursor: "#586e75", cursorAccent: "#fdf6e3", selectionBackground: "#eee8d5", black: "#073642", red: "#dc322f", green: "#859900", yellow: "#b58900", blue: "#268bd2", magenta: "#d33682", cyan: "#2aa198", white: "#eee8d5", brightBlack: "#586e75", brightWhite: "#fdf6e3" }),
+  github_light: makeTheme("GitHub Light", "#ffffff", "#24292f", { cursor: "#0969da", cursorAccent: "#ffffff", selectionBackground: "#b6d7f8", black: "#24292f", red: "#cf222e", green: "#116329", yellow: "#9a6700", blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#d0d7de", brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#1a7f37", brightYellow: "#bf8700", brightBlue: "#218bff", brightMagenta: "#a475f9", brightCyan: "#3192aa", brightWhite: "#f6f8fa" }),
+  one_light: makeTheme("One Light", "#fafafa", "#383a42", { cursor: "#526fff", cursorAccent: "#fafafa", selectionBackground: "#bfceff", black: "#383a42", red: "#e45649", green: "#50a14f", yellow: "#986801", blue: "#4078f2", magenta: "#a626a4", cyan: "#0184bc", white: "#d7dae0", brightBlack: "#696c77", brightRed: "#ca1243", brightGreen: "#50a14f", brightYellow: "#c18401", brightBlue: "#4078f2", brightMagenta: "#a626a4", brightCyan: "#0184bc", brightWhite: "#ffffff" }),
+  quiet_light: makeTheme("Quiet Light", "#f5f5f5", "#333333", { cursor: "#54494b", cursorAccent: "#f5f5f5", selectionBackground: "#c9d0d9", black: "#333333", red: "#aa3731", green: "#448c27", yellow: "#9c5d27", blue: "#325cc0", magenta: "#7a3e9d", cyan: "#008c95", white: "#d7d7d7", brightBlack: "#777777", brightRed: "#c43e37", brightGreen: "#5aa332", brightYellow: "#b57a31", brightBlue: "#4876d6", brightMagenta: "#9454b8", brightCyan: "#00a1aa", brightWhite: "#ffffff" }),
+  gruvbox_light: makeTheme("Gruvbox Light", "#fbf1c7", "#3c3836", { cursor: "#3c3836", cursorAccent: "#fbf1c7", selectionBackground: "#d5c4a1", black: "#3c3836", red: "#cc241d", green: "#79740e", yellow: "#b57614", blue: "#076678", magenta: "#8f3f71", cyan: "#427b58", white: "#ebdbb2", brightBlack: "#7c6f64", brightRed: "#9d0006", brightGreen: "#98971a", brightYellow: "#d79921", brightBlue: "#458588", brightMagenta: "#b16286", brightCyan: "#689d6a", brightWhite: "#f9f5d7" }),
+});
+
 const terminalThemeKey = "portnest-terminal-theme";
+const TERMINAL_THEME_PREFERENCES_KEY = "portnest-terminal-theme-preferences";
 const [terminalThemeRevision, setTerminalThemeRevision] = createSignal(0);
 
+export type TerminalThemeMode = "follow" | "fixed";
+export interface TerminalThemePreferences {
+  mode: TerminalThemeMode;
+  lightTheme: string;
+  darkTheme: string;
+  fixedTheme: string;
+}
+
+export function getTerminalThemePreferences(): TerminalThemePreferences {
+  const legacy = localStorage.getItem(terminalThemeKey) || "vscode_dark";
+  const defaults: TerminalThemePreferences = { mode: "follow", lightTheme: "vscode_light", darkTheme: legacy, fixedTheme: legacy };
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINAL_THEME_PREFERENCES_KEY) || "null");
+    return stored ? { ...defaults, ...stored } : defaults;
+  } catch { return defaults; }
+}
+
+export function setTerminalThemePreferences(preferences: TerminalThemePreferences) {
+  localStorage.setItem(TERMINAL_THEME_PREFERENCES_KEY, JSON.stringify(preferences));
+  localStorage.setItem(terminalThemeKey, preferences.mode === "fixed" ? preferences.fixedTheme : preferences.darkTheme);
+  setTerminalThemeRevision(value => value + 1);
+  publishAppearance();
+}
+
 export function getTerminalTheme(): string {
-  return localStorage.getItem(terminalThemeKey) || "vscode_dark";
+  const preferences = getTerminalThemePreferences();
+  if (preferences.mode === "fixed") return preferences.fixedTheme;
+  return effectiveTheme() === "light" ? preferences.lightTheme : preferences.darkTheme;
 }
 
 export function setTerminalTheme(name: string) {
-  localStorage.setItem(terminalThemeKey, name);
-  setTerminalThemeRevision(value => value + 1);
+  const preferences = getTerminalThemePreferences();
+  if (preferences.mode === "fixed") preferences.fixedTheme = name;
+  else if (effectiveTheme() === "light") preferences.lightTheme = name;
+  else preferences.darkTheme = name;
+  setTerminalThemePreferences(preferences);
 }
 
 export function getTerminalThemeConfig(): TerminalTheme {
@@ -334,26 +389,90 @@ export function getTerminalSettings(): TerminalSettings {
 export function setTerminalSettings(settings: TerminalSettings) {
   localStorage.setItem(TERMINAL_SETTINGS_KEY, JSON.stringify(settings));
   setTerminalSettingsRevision(value => value + 1);
+  publishAppearance();
 }
 
 export { terminalSettingsRevision, terminalThemeRevision };
 
-export type TerminalBackgroundStyle = "striped" | "solid_dark" | "solid_light" | "midnight";
+export type TerminalBackgroundStyle = "theme" | "solid" | "midnight" | "aurora" | "image" | "solid_dark" | "solid_light";
+export type TerminalImageFit = "cover" | "contain" | "fill";
+export interface TerminalBackgroundConfig {
+  style: TerminalBackgroundStyle;
+  solidColor: string;
+  imageFit: TerminalImageFit;
+  imageOpacity: number;
+  imageOverlay: number;
+  imageBlur: number;
+  imageAssetId?: string;
+}
 const TERMINAL_BACKGROUND_KEY = "portnest-terminal-background";
+const TERMINAL_BACKGROUND_CONFIG_KEY = "portnest-terminal-background-config";
+const backgroundDefaults: TerminalBackgroundConfig = { style: "theme", solidColor: "#101827", imageFit: "cover", imageOpacity: 0.72, imageOverlay: 0.35, imageBlur: 0 };
+const allowedBackgroundStyles: TerminalBackgroundStyle[] = ["theme", "solid", "solid_dark", "solid_light", "midnight", "aurora", "image"];
+const normalizeBackgroundStyle = (value: unknown): TerminalBackgroundStyle =>
+  allowedBackgroundStyles.includes(value as TerminalBackgroundStyle) ? value as TerminalBackgroundStyle : "theme";
 
 function getStoredTerminalBackground(): TerminalBackgroundStyle {
   const value = localStorage.getItem(TERMINAL_BACKGROUND_KEY);
-  return value === "solid_dark" || value === "solid_light" || value === "midnight" || value === "striped"
-    ? value
-    : "striped";
+  return normalizeBackgroundStyle(value);
+}
+
+function getStoredTerminalBackgroundConfig(): TerminalBackgroundConfig {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINAL_BACKGROUND_CONFIG_KEY) || "null");
+    if (stored) {
+      const { striped: _removedStripedSetting, ...supported } = stored;
+      return { ...backgroundDefaults, ...supported, style: normalizeBackgroundStyle(stored.style) };
+    }
+  } catch {}
+  const legacyStyle = getStoredTerminalBackground();
+  return { ...backgroundDefaults, style: legacyStyle };
+};
+
+export function getEffectiveTerminalBackgroundStyle(config = terminalBackgroundConfig()): TerminalBackgroundStyle {
+  return config.style;
 }
 
 const [terminalBackgroundStyle, setTerminalBackgroundStyleSignal] =
-  createSignal<TerminalBackgroundStyle>(getStoredTerminalBackground());
+  createSignal<TerminalBackgroundStyle>(getStoredTerminalBackgroundConfig().style);
+const [terminalBackgroundConfig, setTerminalBackgroundConfigSignal] = createSignal<TerminalBackgroundConfig>(getStoredTerminalBackgroundConfig());
+const [appearanceRevision, setAppearanceRevision] = createSignal(0);
+
+const appearanceChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("portnest-appearance") : null;
+const publishAppearance = () => {
+  setAppearanceRevision(value => value + 1);
+  appearanceChannel?.postMessage({ revision: Date.now() });
+};
+appearanceChannel?.addEventListener("message", () => {
+  setTerminalBackgroundConfigSignal(getStoredTerminalBackgroundConfig());
+  setTerminalBackgroundStyleSignal(getStoredTerminalBackgroundConfig().style);
+  const mode = getStoredTheme();
+  setThemeModeInternal(mode);
+  const effective = mode === "system" ? getSystemTheme() : mode;
+  setEffectiveTheme(effective);
+  applyTheme(effective);
+  setTerminalThemeRevision(value => value + 1);
+  setTerminalSettingsRevision(value => value + 1);
+  setAppearanceRevision(value => value + 1);
+});
 
 export function setTerminalBackgroundStyle(style: TerminalBackgroundStyle) {
-  localStorage.setItem(TERMINAL_BACKGROUND_KEY, style);
-  setTerminalBackgroundStyleSignal(style);
+  const next = { ...terminalBackgroundConfig(), style: normalizeBackgroundStyle(style) };
+  localStorage.setItem(TERMINAL_BACKGROUND_KEY, next.style);
+  localStorage.setItem(TERMINAL_BACKGROUND_CONFIG_KEY, JSON.stringify(next));
+  setTerminalBackgroundConfigSignal(next);
+  setTerminalBackgroundStyleSignal(next.style);
+  publishAppearance();
 }
 
-export { terminalBackgroundStyle };
+export function setTerminalBackgroundConfig(config: TerminalBackgroundConfig) {
+  const { striped: _removedStripedSetting, ...supported } = config as TerminalBackgroundConfig & { striped?: boolean };
+  const normalized = { ...supported, style: normalizeBackgroundStyle(config.style) };
+  localStorage.setItem(TERMINAL_BACKGROUND_CONFIG_KEY, JSON.stringify(normalized));
+  localStorage.setItem(TERMINAL_BACKGROUND_KEY, normalized.style);
+  setTerminalBackgroundConfigSignal(normalized);
+  setTerminalBackgroundStyleSignal(normalized.style);
+  publishAppearance();
+}
+
+export { terminalBackgroundStyle, terminalBackgroundConfig, appearanceRevision };

@@ -3,6 +3,7 @@ import { FileManager } from "./FileManager";
 import { api, ConnectionRecord } from "../utils/api";
 import { uiStore } from "../stores/uiStore";
 import "./RightPanel.css";
+import { Icon } from "./Icon";
 
 interface RightPanelProps {
   connection: ConnectionRecord | undefined;
@@ -95,7 +96,7 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
       </button>
       <div class="right-panel-top">
         <Show when={props.connection} fallback={<div class="right-panel-empty">
-          <span class="right-panel-empty-icon">📂</span>
+          <span class="right-panel-empty-icon"><Icon name="folder" size={30} /></span>
           <span>选择服务器查看文件</span>
         </div>}>
           <FileManager connection={props.connection!} sessionKey={props.sessionId} sftpId={sftpId() ?? undefined} />

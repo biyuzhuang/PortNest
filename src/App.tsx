@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup, Show, For, createEffect, createMemo } from "solid-js";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../package.json";
 import { Sidebar } from "./components/Sidebar";
@@ -7,7 +7,6 @@ import { RightPanel } from "./components/RightPanel";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { TerminalView } from "./components/TerminalView";
 import { AssetList } from "./components/AssetList";
-import { SettingsModal } from "./components/SettingsModal";
 import { SessionImportExport } from "./components/SessionImportExport";
 import { SshKeyPicker } from "./components/SshKeyPicker";
 import { CommandBroadcast } from "./components/CommandBroadcast";
@@ -15,6 +14,8 @@ import { TunnelPanel } from "./components/TunnelPanel";
 import { FeedbackHost } from "./components/FeedbackHost";
 import { MysqlWorkspace } from "./components/MysqlWorkspace";
 import { ProtocolIcon } from "./components/ProtocolIcon";
+import { Icon } from "./components/Icon";
+import { openSettingsWindow } from "./utils/settingsWindow";
 import { connectionStore } from "./stores/connectionStore";
 import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
@@ -37,7 +38,6 @@ const App: Component = () => {
     }
   };
   const [showForm, setShowForm] = createSignal(false);
-  const [showSettings, setShowSettings] = createSignal(false);
   const [showSessionTransfer, setShowSessionTransfer] = createSignal(false);
   const [showKeyManager, setShowKeyManager] = createSignal(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
@@ -57,6 +57,8 @@ const App: Component = () => {
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
+  const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+  const [isWindowMaximized, setIsWindowMaximized] = createSignal(false);
   const [appVersion, setAppVersion] = createSignal(packageInfo.version);
   const [showBroadcast, setShowBroadcast] = createSignal(false);
   const [showTunnels, setShowTunnels] = createSignal(false);
@@ -65,6 +67,52 @@ const App: Component = () => {
   const [quickQuery, setQuickQuery] = createSignal("");
   const [tunnelRuntimes, setTunnelRuntimes] = createSignal<TunnelRuntimeInfo[]>([]);
   const reconnectTimers = new Map<string, number>();
+  let allowWindowClose = false;
+  let unlistenWindowClose: (() => void) | undefined;
+
+  const requestWindowClose = () => setShowCloseConfirm(true);
+  const confirmWindowClose = async () => {
+    allowWindowClose = true;
+    setShowCloseConfirm(false);
+    if (isTauriRuntime()) {
+      const mainWindow = getCurrentWindow();
+      unlistenWindowClose?.();
+      unlistenWindowClose = undefined;
+      const auxiliaryWindows = (await getAllWindows()).filter(appWindow => appWindow.label !== mainWindow.label);
+      for (const auxiliaryWindow of auxiliaryWindows) {
+        try {
+          await auxiliaryWindow.close();
+        } catch (error) {
+          console.warn(`[window] unable to close auxiliary window ${auxiliaryWindow.label}`, error);
+        }
+      }
+      await mainWindow.close();
+      return;
+    }
+    window.close();
+  };
+  const toggleWindowMaximize = async () => {
+    if (!isTauriRuntime()) return;
+    const appWindow = getCurrentWindow();
+    await appWindow.toggleMaximize();
+    setIsWindowMaximized(await appWindow.isMaximized());
+  };
+
+  onMount(() => {
+    if (!isTauriRuntime()) return;
+    const appWindow = getCurrentWindow();
+    let unlistenResize: (() => void) | undefined;
+    void appWindow.isMaximized().then(setIsWindowMaximized);
+    void appWindow.onCloseRequested(event => {
+      if (allowWindowClose) return;
+      event.preventDefault();
+      setShowCloseConfirm(true);
+    }).then(unlisten => { unlistenWindowClose = unlisten; });
+    void appWindow.onResized(() => {
+      void appWindow.isMaximized().then(setIsWindowMaximized);
+    }).then(unlisten => { unlistenResize = unlisten; });
+    onCleanup(() => { unlistenWindowClose?.(); unlistenResize?.(); });
+  });
 
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
   const quickConnections = createMemo(() => {
@@ -448,6 +496,10 @@ const App: Component = () => {
     }
   };
 
+  const handleSessionEnded = (sessionId: string) => {
+    sessionStore.update(sessionId, { status: "disconnected", error: undefined, shellId: undefined });
+  };
+
   const handleSetEncoding = async (sessionId: string, encoding: string) => {
     const session = sessions().find(item => item.id === sessionId);
     if (!session?.shellId) return;
@@ -722,40 +774,40 @@ const App: Component = () => {
         <div class="titlebar-controls">
           <div class="app-menu-container">
             <button class="titlebar-btn" onClick={() => setShowAppMenu(!showAppMenu())}>
-              ⋮
+              <Icon name="more" />
             </button>
             <Show when={showAppMenu()}>
               <div class="app-menu-dropdown">
                 <Show when={activeSession()}>
                   <div class="app-menu-item" onClick={() => { handleBack(); setShowAppMenu(false); }}>
-                    ← 关闭当前标签
+                    <Icon name="back" /> 关闭当前标签
                   </div>
                 </Show>
-                <div class="app-menu-item" onClick={() => { setShowSettings(true); setShowAppMenu(false); }}>
-                  ⚙️ 设置
+                <div class="app-menu-item" onClick={() => { void openSettingsWindow(); setShowAppMenu(false); }}>
+                  <Icon name="settings" /> 设置
                 </div>
                 <div class="app-menu-item" onClick={() => { setShowSessionTransfer(true); setShowAppMenu(false); }}>
-                  ⇄ 导入 / 导出会话
+                  <Icon name="transfer" /> 导入 / 导出会话
                 </div>
                 <div class="app-menu-item" onClick={() => { setShowKeyManager(true); setShowAppMenu(false); }}>
-                  🔑 密钥管理器
+                  <Icon name="key" /> 密钥管理器
                 </div>
                 <div class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
-                  ℹ️ 关于
+                  <Icon name="info" /> 关于
                 </div>
               </div>
               <div class="app-menu-overlay" onClick={() => setShowAppMenu(false)} />
             </Show>
           </div>
           <div class="titlebar-window-controls">
-            <button class="titlebar-btn titlebar-btn-win" onClick={() => withAppWindow(appWindow => appWindow.minimize())} title="最小化">
-              ─
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => withAppWindow(appWindow => appWindow.minimize())} title="最小化" aria-label="最小化窗口">
+              <Icon name="minimize" />
             </button>
-            <button class="titlebar-btn titlebar-btn-win" onClick={() => withAppWindow(appWindow => appWindow.toggleMaximize())} title="最大化">
-              □
+            <button class="titlebar-btn titlebar-btn-win" onClick={() => void toggleWindowMaximize()} title={isWindowMaximized() ? "还原窗口" : "最大化"} aria-label={isWindowMaximized() ? "还原窗口" : "最大化窗口"}>
+              <Icon name={isWindowMaximized() ? "restore" : "maximize"} />
             </button>
-            <button class="titlebar-btn titlebar-btn-win titlebar-btn-close" onClick={() => withAppWindow(appWindow => appWindow.close())} title="关闭">
-              ✕
+            <button class="titlebar-btn titlebar-btn-win titlebar-btn-close" onClick={requestWindowClose} title="关闭" aria-label="关闭窗口">
+              <Icon name="close" />
             </button>
           </div>
         </div>
@@ -766,7 +818,7 @@ const App: Component = () => {
           onConnect={handleConnect}
           onEdit={handleEdit}
           onDelete={handleDelete}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => void openSettingsWindow()}
         onNewConnection={handleNewConnection}
         onNewFolder={handleNewFolder}
         onCopyConnection={handleCopyConnection}
@@ -797,21 +849,21 @@ const App: Component = () => {
                 class={`session-list-tab ${assetListActive() ? "active" : ""}`}
                 onClick={() => setAssetListActive(true)}
               >
-                ☷ 列表⌄
+                <Icon name="list" /> 列表
               </button>
               <For each={sessions()}>
                 {(session) => {
                   const isActive = () => activeSessionId() === session.id;
                   return (
                     <div
-                      class={`session-tab ${isActive() ? "active" : ""} status-${session.status}`}
+                      class={`session-tab ${isActive() ? "active" : ""}`}
                       onClick={() => handleSwitchSession(session.id)}
                       onContextMenu={(e) => handleTabContextMenu(e, session.id)}
                     >
                       <Show when={session.pinned}>
-                        <span class="session-tab-pin" title="已固定">📌</span>
+                        <span class="session-tab-pin" title="已固定"><Icon name="pin" size={13} /></span>
                       </Show>
-                      <span class="session-tab-terminal-icon"><ProtocolIcon kind={session.connection.protocol === "mysql" ? "database" : "terminal"} /></span>
+                      <span class="session-tab-terminal-icon"><ProtocolIcon kind={session.connection.protocol} /></span>
                       <span class={`session-tab-status status-${session.status}`} title={session.status} />
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
                       <Show when={runningTunnelCount(session.connection.id) > 0}>
@@ -887,7 +939,7 @@ const App: Component = () => {
             <div class="session-action-bar">
               <div class="session-action-identity">
                 <span class={`session-status-dot status-${session().status}`} />
-                <strong>{session().status === "connected" ? "已连接" : session().status === "connecting" ? "连接中" : session().status === "reconnecting" ? `重连中 ${session().reconnectAttempt || ""}` : session().status === "restored" ? "离线恢复" : session().status === "error" ? "连接错误" : "已断开"}</strong>
+                <strong>{session().status === "connected" ? "已连接" : session().status === "connecting" ? "连接中" : session().status === "reconnecting" ? `重连中 ${session().reconnectAttempt || ""}` : session().status === "restored" ? "离线恢复" : session().status === "error" ? "连接错误" : session().error ? "已断开" : "已结束"}</strong>
                 <span>{session().connection.protocol === "local"
                   ? `本机 · ${localShellDisplayName(parseLocalProfile(session().connection.options).shell_type)}`
                   : `${session().connection.username}@${session().connection.host}:${session().connection.port}`}</span>
@@ -950,6 +1002,7 @@ const App: Component = () => {
                         visible={sessionVisible}
                         shellId={session.shellId}
                         onDisconnected={(error) => handleSessionDisconnected(session.id, error)}
+                        onEnded={() => handleSessionEnded(session.id)}
                       />
                     )}
                     <Show when={session.connection.protocol === "mysql" && session.status === "connected"}>
@@ -962,7 +1015,7 @@ const App: Component = () => {
                           : session.status === "connecting" ? (session.connection.protocol === "local" ? "正在打开本地终端" : "正在建立 SSH 连接")
                           : session.status === "reconnecting" ? (session.connection.protocol === "local" ? "正在重新打开本地终端" : "正在重新连接")
                           : session.status === "error" ? (session.connection.protocol === "local" ? "本地终端打开失败" : "SSH 连接失败")
-                          : (session.connection.protocol === "local" ? "本地终端已关闭" : "SSH 会话已断开")}</h3>
+                          : (session.connection.protocol === "local" ? "本地终端已关闭" : session.error ? "SSH 会话已断开" : "SSH 会话已结束")}</h3>
                         <Show when={session.error}><p>{session.error}</p></Show>
                         <div>
                           <button class="primary" disabled={session.status === "connecting" || session.status === "reconnecting"} onClick={() => void handleReconnect(session.id)}>{session.status === "restored" ? "连接" : "重试"}</button>
@@ -1006,9 +1059,6 @@ const App: Component = () => {
         />
       </Show>
 
-      <Show when={showSettings()}>
-        <SettingsModal onClose={() => setShowSettings(false)} />
-      </Show>
       <Show when={showSessionTransfer()}>
         <SessionImportExport onClose={() => setShowSessionTransfer(false)} />
       </Show>
@@ -1055,6 +1105,21 @@ const App: Component = () => {
             </p>
             <div class="form-actions" style={{ "margin-top": "20px" }}>
               <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      </Show>
+      <Show when={showCloseConfirm()}>
+        <div class="modal-overlay close-confirm-overlay" role="presentation" onClick={() => setShowCloseConfirm(false)}>
+          <div class="modal-content close-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="close-confirm-title" onClick={event => event.stopPropagation()}>
+            <div class="close-confirm-icon"><Icon name="close" size={20} /></div>
+            <div>
+              <h3 id="close-confirm-title">确认退出 PortNest？</h3>
+              <p>关闭应用将结束当前打开的终端与数据库会话。</p>
+            </div>
+            <div class="form-actions">
+              <button class="btn-cancel" onClick={() => setShowCloseConfirm(false)}>取消</button>
+              <button class="btn-save close-confirm-primary" onClick={() => void confirmWindowClose()}>确认退出</button>
             </div>
           </div>
         </div>

@@ -5,8 +5,9 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
-import { api, localShellDisplayName, parseLocalProfile, ConnectionRecord } from "../utils/api";
-import { getTerminalThemeConfig, getTerminalSettings, terminalBackgroundStyle, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
+import { api, localShellDisplayName, parseLocalProfile, ConnectionRecord, SshApiError } from "../utils/api";
+import { getTerminalThemeConfig, getTerminalSettings, getEffectiveTerminalBackgroundStyle, terminalBackgroundConfig, appearanceRevision, terminalSettingsRevision, terminalThemeRevision } from "../stores/themeStore";
+import { loadTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stores/terminalBackgroundStore";
 import { sessionStore } from "../stores/sessionStore";
 import { pathLinkStore } from "../stores/pathLinkStore";
 import { LineBuffer, evaluateCommandLine, defaultHomePath, type CwdState } from "../utils/shellCwd";
@@ -17,6 +18,7 @@ interface TerminalViewProps {
   visible?: boolean | (() => boolean);
   shellId?: string;
   onDisconnected?: (error?: unknown) => void;
+  onEnded?: () => void;
 }
 
 interface TerminalState {
@@ -36,8 +38,10 @@ interface TerminalState {
 
 const terminalStates = new Map<string, TerminalState>();
 
+const isLightBackground = (style: string) => style === "solid_light";
+const isLayerBackground = (style: string) => ["midnight", "aurora", "image"].includes(style);
 const terminalCursorColors = (backgroundStyle: string, fallbackCursor: string, fallbackAccent: string) =>
-  backgroundStyle === "striped" || backgroundStyle === "solid_light"
+  isLightBackground(backgroundStyle)
     ? { cursor: "#2563eb", cursorAccent: "#ffffff" }
     : { cursor: fallbackCursor, cursorAccent: fallbackAccent };
 
@@ -83,6 +87,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     return !!props.visible;
   };
   const isLocal = () => props.connection.protocol === "local";
+  const effectiveBackgroundStyle = () => getEffectiveTerminalBackgroundStyle(terminalBackgroundConfig());
 
   const doFit = (state: TerminalState) => {
     try {
@@ -152,13 +157,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     }
 
     const themeConfig = getTerminalThemeConfig();
-    const backgroundStyle = terminalBackgroundStyle();
-    const terminalBackground = backgroundStyle === "striped"
+    const backgroundStyle = effectiveBackgroundStyle();
+    const backgroundConfig = terminalBackgroundConfig();
+    const terminalBackground = isLayerBackground(backgroundStyle)
       ? "#00000000"
       : backgroundStyle === "solid_light" ? "#ffffff"
-      : backgroundStyle === "midnight" ? "#101827"
+      : backgroundStyle === "solid_dark" ? "#1e1e1e"
+      : backgroundStyle === "solid" ? backgroundConfig.solidColor
       : themeConfig.background;
-    const terminalForeground = backgroundStyle === "striped" || backgroundStyle === "solid_light"
+    const terminalForeground = isLightBackground(backgroundStyle)
       ? "#111827"
       : themeConfig.foreground;
     const cursorColors = terminalCursorColors(
@@ -218,6 +225,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
 
     const handleShellFailure = (error: unknown) => {
       if (disconnectHandled || stopped) return;
+      const normalRemoteEnd = error instanceof SshApiError
+        && error.code === "REMOTE_CLOSED"
+        && /远端\s*Shell\s*已关闭|remote\s+shell\s+(?:was\s+)?closed/i.test(error.message);
+      if (normalRemoteEnd) {
+        disconnectHandled = true;
+        stopped = true;
+        props.onEnded?.();
+        return;
+      }
       disconnectHandled = true;
       console.error("[TerminalView] SSH session disconnected:", error);
       terminal.writeln("");
@@ -328,13 +344,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     });
     resizeObserver.observe(containerRef);
 
-    terminal.writeln(`\x1b[1;32mConnected to ${props.connection.name}\x1b[0m`);
     if (isLocal()) {
       terminal.writeln(`\x1b[32m本机终端 · ${localShellDisplayName(parseLocalProfile(props.connection.options).shell_type)}\x1b[0m`);
-    } else {
-      terminal.writeln(`\x1b[32mHost: ${props.connection.host}:${props.connection.port}\x1b[0m`);
+      terminal.writeln("");
     }
-    terminal.writeln("");
 
     const sendData = (data: string) => {
       return sessionStore.sendText(sessionKey, data).catch(error => {
@@ -534,7 +547,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   }, { defer: true }));
 
   createEffect(() => {
-    const style = terminalBackgroundStyle();
+    const style = effectiveBackgroundStyle();
+    const backgroundConfig = terminalBackgroundConfig();
+    appearanceRevision();
+    if (style === "image") void loadTerminalBackgroundImage(backgroundConfig.imageAssetId);
     terminalSettingsRevision();
     terminalThemeRevision();
     const state = props.sessionKey ? terminalStates.get(props.sessionKey) : undefined;
@@ -543,11 +559,12 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const cursorColors = terminalCursorColors(style, theme.cursor, theme.cursorAccent);
     state.terminal.options.theme = {
       ...theme,
-      background: style === "striped" ? "#00000000"
+      background: isLayerBackground(style) ? "#00000000"
         : style === "solid_light" ? "#ffffff"
-        : style === "midnight" ? "#101827"
+        : style === "solid_dark" ? "#1e1e1e"
+        : style === "solid" ? backgroundConfig.solidColor
         : theme.background,
-      foreground: style === "striped" || style === "solid_light" ? "#111827" : theme.foreground,
+      foreground: isLightBackground(style) ? "#111827" : theme.foreground,
       cursor: cursorColors.cursor,
       cursorAccent: cursorColors.cursorAccent,
     };
@@ -557,7 +574,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     state.terminal.options.lineHeight = settings.lineHeight;
     state.terminal.options.letterSpacing = settings.letterSpacing;
     state.terminal.options.scrollback = settings.scrollback;
-    doFit(state);
+    // Let theme/background classes settle before xterm measures its canvas.
+    window.requestAnimationFrame(() => {
+      if (state.terminal.element?.isConnected) doFit(state);
+    });
   });
 
   onMount(() => {
@@ -565,6 +585,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const vis = isVisible();
     const shellId = props.shellId;
     const sessionKey = props.sessionKey;
+    void loadTerminalBackgroundImage(terminalBackgroundConfig().imageAssetId);
 
     if (vis && shellId && sessionKey && containerRef) {
       initTerminal();
@@ -604,7 +625,18 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   };
 
   return (
-    <div class="terminal-view">
+    <div class={`terminal-view terminal-background-${effectiveBackgroundStyle()}`} style={{
+      "--terminal-solid": effectiveBackgroundStyle() === "theme" ? getTerminalThemeConfig().background
+        : effectiveBackgroundStyle() === "solid_light" ? "#ffffff"
+        : effectiveBackgroundStyle() === "solid_dark" ? "#1e1e1e"
+        : terminalBackgroundConfig().solidColor,
+      "--terminal-image": terminalBackgroundImageUrl() ? `url("${terminalBackgroundImageUrl()}")` : "none",
+      "--terminal-image-size": terminalBackgroundConfig().imageFit === "fill" ? "100% 100%" : terminalBackgroundConfig().imageFit,
+      "--terminal-image-opacity": String(terminalBackgroundConfig().imageOpacity),
+      "--terminal-image-overlay": String(terminalBackgroundConfig().imageOverlay),
+      "--terminal-image-blur": `${terminalBackgroundConfig().imageBlur}px`,
+    }}>
+      <div class="terminal-background-layer" aria-hidden="true" />
       <Show when={showSearch()}>
         <div class="terminal-search-bar">
           <input ref={searchInputRef} value={searchTerm()} placeholder="搜索终端输出" onInput={event => { setSearchTerm(event.currentTarget.value); search(); }} onKeyDown={event => {
@@ -615,7 +647,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
           <button onClick={() => setShowSearch(false)} title="关闭">×</button>
         </div>
       </Show>
-      <div ref={containerRef} class={`terminal-container terminal-background-${terminalBackgroundStyle()}`} />
+      <div ref={containerRef} class="terminal-container" />
     </div>
   );
 };

@@ -99,3 +99,69 @@
 .mysql-dialog footer { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
 .mysql-dialog footer button { min-width:76px; min-height:30px; color:var(--text-primary); background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; }
 .mysql-dialog footer button.primary { color:#fff; background:var(--accent); border-color:var(--accent); }
+
+/* Professional database workspace skin */
+.mysql-workspace { font-family:var(--font-ui); font-size:13px; background:var(--bg-primary); }
+.mysql-tree { width:292px; background:var(--bg-secondary); border-color:var(--border-light); }
+.mysql-tree header { min-height:48px; padding:8px 10px 8px 14px; gap:8px; box-shadow:0 1px 0 var(--border-light); }
+.mysql-tree header strong { font-size:13px; font-weight:650; }
+.mysql-tree button,.mysql-toolbar button,.mysql-panel-actions button,.mysql-empty button,.mysql-query button,.mysql-designer button,.mysql-result button { display:inline-flex; min-height:32px; align-items:center; justify-content:center; gap:6px; padding:5px 10px; border-color:var(--border-color); border-radius:var(--radius-sm); font-family:var(--font-ui); }
+.mysql-tree button.icon-only { width:32px; padding:0; }
+.mysql-workspace button svg { width:16px; height:16px; flex:none; }
+.mysql-filter-wrap { position:relative; margin:10px; }
+.mysql-filter-wrap > svg { position:absolute; z-index:1; left:10px; top:50%; width:15px; height:15px; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+.mysql-filter { width:100%; height:34px; margin:0; padding:0 10px 0 32px; border-radius:var(--radius-sm); }
+.mysql-filter:focus { box-shadow:0 0 0 3px var(--focus-ring); }
+.mysql-tree-row { min-height:32px; margin:1px 6px; padding:5px 8px; border-radius:6px; gap:7px; }
+.mysql-tree-row > span { display:inline-flex; color:var(--text-muted); }
+.mysql-tree-row.database > span { color:var(--accent); }
+.mysql-tree-row > span svg { width:16px; height:16px; }
+.mysql-tree-toggle svg { width:13px !important; height:13px !important; transition:transform .15s ease; }
+.mysql-tree-toggle.expanded svg { transform:rotate(90deg); }
+.mysql-tree-row:hover { background:color-mix(in srgb,var(--accent) 7%,var(--bg-hover)); }
+.mysql-tree-row.active { color:var(--accent); background:color-mix(in srgb,var(--accent) 11%,var(--bg-secondary)); box-shadow:none; }
+.mysql-object-group { height:31px; margin:1px 6px; border-radius:6px; }
+.mysql-object-group em { font-family:var(--font-numeric); font-variant-numeric:tabular-nums; border-radius:9px; }
+.mysql-main { background:var(--bg-secondary); }
+.mysql-inner-tabs { min-height:39px; align-items:stretch; background:var(--bg-tertiary); }
+.mysql-inner-tabs button { height:39px; min-width:132px; padding:0 8px 0 11px; border-top:0; border-bottom:2px solid transparent; background:transparent; font-family:var(--font-ui); }
+.mysql-inner-tabs button.active { background:var(--bg-secondary); border-bottom-color:var(--accent); }
+.mysql-inner-tabs button span { display:inline-flex; color:var(--text-muted); }
+.mysql-inner-tabs button.active span { color:var(--accent); }
+.mysql-inner-tabs button i { width:22px; height:22px; }
+.mysql-inner-tabs button i svg { width:14px; height:14px; }
+.mysql-toolbar { min-height:50px; padding:0 14px; background:var(--bg-secondary); }
+.mysql-panel,.mysql-query,.mysql-designer { padding:12px; }
+.mysql-panel-actions { min-height:38px; gap:7px; }
+.mysql-main table { font-size:12px; border:1px solid var(--border-light); border-radius:8px; overflow:hidden; }
+.mysql-main th,.mysql-main td { height:32px; padding:6px 10px; }
+.mysql-main th { background:var(--bg-tertiary); font-weight:650; }
+.mysql-main td.object-name,.mysql-object-card strong,.mysql-query textarea,.mysql-designer pre { font-family:var(--font-mono); }
+.mysql-main .row-number,.mysql-result-meta,.mysql-object-card em { font-family:var(--font-numeric); font-variant-numeric:tabular-nums; }
+.mysql-object-grid { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; padding:12px 3px; }
+.mysql-object-card { min-height:132px; border-radius:10px; box-shadow:var(--shadow-sm); }
+.mysql-object-card:hover { transform:translateY(-1px); box-shadow:var(--shadow-md); }
+.mysql-query textarea { min-height:190px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.6; resize:vertical; }
+.mysql-query textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--focus-ring); }
+.mysql-result { margin-top:10px; border-radius:8px; }
+.mysql-empty { max-width:420px; }
+.mysql-empty-icon { display:grid; width:52px; height:52px; margin:0 auto 14px; place-items:center; color:var(--accent); background:color-mix(in srgb,var(--accent) 11%,var(--bg-secondary)); border-radius:14px; }
+.mysql-empty-icon svg { width:27px; height:27px; }
+.mysql-error { padding:9px 14px; }
+.mysql-loading { border-radius:7px; box-shadow:var(--shadow-md); }
+.mysql-dialog { padding:20px; gap:14px; border-radius:12px; box-shadow:var(--shadow-md); }
+.mysql-dialog input,.mysql-dialog select { min-height:36px; border-radius:6px; }
+.mysql-context { font-family:var(--font-ui); }
+.mysql-object-name { min-width:0; overflow:hidden; color:var(--text-primary); font-family:var(--font-mono); font-weight:550; text-overflow:ellipsis; white-space:nowrap; }
+.mysql-table-icon,.mysql-object-type-icon { display:inline-flex; color:color-mix(in srgb,var(--accent) 88%,var(--text-primary)) !important; }
+.mysql-table-icon svg,.mysql-object-type-icon svg { width:16px; height:16px; stroke-width:2; }
+.mysql-group-arrow { display:inline-flex; align-items:center; justify-content:center; }
+.mysql-group-arrow svg { width:13px; height:13px; transition:transform .15s ease; }
+.mysql-group-arrow.expanded svg { transform:rotate(90deg); }
+.mysql-tree-row.object { color:var(--text-primary); }
+.mysql-tree-row.object:hover .mysql-object-name,.mysql-tree-row.object.active .mysql-object-name { color:var(--text-primary); }
+[data-theme="dark"] .mysql-table-icon,[data-theme="dark"] .mysql-object-type-icon { color:#79b8ff !important; }
+[data-theme="dark"] .mysql-object-name { color:#e5edf8; }
+[data-theme="dark"] .mysql-object-group b { color:#c8d3e1; }
+[data-theme="dark"] .mysql-object-card-icon { color:#79b8ff; }
+[data-theme="dark"] .mysql-object-card strong { color:#eef4fc; }
