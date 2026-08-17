@@ -1,11 +1,11 @@
 {
-  "version": "0.0.6",
-  "notes": "PortNest 0.0.6 fixes the About dialog so it reads the actual application version at runtime and updates the capability summary to include local terminals and MySQL management.",
-  "pub_date": "2026-08-12T06:22:58Z",
+  "version": "0.0.7",
+  "notes": "PortNest v0.0.7 完成全局界面与终端外观升级：新增独立设置窗口、浅深色终端配色和背景图片，统一协议图标、字体、菜单及状态指示，优化 MySQL 工作区，并改进 SSH 正常退出和应用关闭流程。",
+  "pub_date": "2026-08-17T02:46:27Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjVXbGJpMkJJYUZvUys0ZkhuS01iQjNUakFaS2pTZEFlMFB2eExqb0crNlhHVnJRd2dpT2JKRUJGZXBzY3U1OUVmR1lqYWl4eWl3bnNKdVNYMFplVlFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2NTE1NzcyCWZpbGU6UG9ydE5lc3RfMC4wLjZfeDY0LXNldHVwLmV4ZQovVTFibmdJVUdWMGZDUTNBYm5WSHluZnQ5bExhS29ENHBOT0wwd3lYaTVpcncxMkwwcFliTVFuamlqRmZlSkN3UmswY3lLZ2p4S2ljbnd4YlpwbldBUT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/0.0.6/PortNest_0.0.6_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjRzUkhiOHp1TUxDZkxuc2diaCtkV2ZkVzRpYjFPVnJLQnpQUkpCUVY1eTI2OFhTeDVrOWVSRXRQdHJScHVRNU9Lb2N2UHdwQ1RaUlBuYlZ4Ym5pN0FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2OTM0NjI5CWZpbGU6UG9ydE5lc3RfMC4wLjdfeDY0LXNldHVwLmV4ZQp3bUJuWkJoUi9FTHM2ZHVlc3grNFR0ZC9wcHpLSkMzeVRjTUpWSE9FVFYzL1ZXL1JsdXJBcHBqSEtvdUl2djE5UW5nbU1tL1dWcTM4cXJwMmRPYXJCQT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.0.7/PortNest_0.0.7_x64-setup.exe"
     }
   }
 }
