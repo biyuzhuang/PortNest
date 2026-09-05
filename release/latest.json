@@ -1,11 +1,11 @@
 {
-  "version": "0.0.7",
-  "notes": "PortNest v0.0.7 完成全局界面与终端外观升级：新增独立设置窗口、浅深色终端配色和背景图片，统一协议图标、字体、菜单及状态指示，优化 MySQL 工作区，并改进 SSH 正常退出和应用关闭流程。",
-  "pub_date": "2026-08-17T02:46:27Z",
+  "version": "0.0.8",
+  "notes": "PortNest v0.0.8 改进 SSH 主机密钥变化后的安全恢复流程：展示旧、新指纹供用户核验，仅在明确确认后更新当前连接的信任记录并重连。",
+  "pub_date": "2026-09-05T03:12:13Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjRzUkhiOHp1TUxDZkxuc2diaCtkV2ZkVzRpYjFPVnJLQnpQUkpCUVY1eTI2OFhTeDVrOWVSRXRQdHJScHVRNU9Lb2N2UHdwQ1RaUlBuYlZ4Ym5pN0FFPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2OTM0NjI5CWZpbGU6UG9ydE5lc3RfMC4wLjdfeDY0LXNldHVwLmV4ZQp3bUJuWkJoUi9FTHM2ZHVlc3grNFR0ZC9wcHpLSkMzeVRjTUpWSE9FVFYzL1ZXL1JsdXJBcHBqSEtvdUl2djE5UW5nbU1tL1dWcTM4cXJwMmRPYXJCQT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.0.7/PortNest_0.0.7_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTi9ESzNPNTM5U2dZNFFhbHBCRzM5cXZHVXBXSDFvaHF1cEt4Y05CS0pGL1ZLa05MR3Y5MkJZMGRrSnFYWU1LWjlkY294K01KTVAzVmw4UGxhbHJ5TkF3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4NTc3OTE5CWZpbGU6UG9ydE5lc3RfMC4wLjhfeDY0LXNldHVwLmV4ZQpESXF2ZmI1dFpNM3FQaXJBNXF5NXBBV3NHNXl5VGtZcEhMdDU2K08vOTRQTTczbnkvUHRMQzNreVFBRmRGOHhBbmNab3oxcE5FRGJWWk5EK3hwU3BDZz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.0.8/PortNest_0.0.8_x64-setup.exe"
     }
   }
 }
