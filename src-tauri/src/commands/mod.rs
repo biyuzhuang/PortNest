@@ -736,6 +736,48 @@ pub async fn ping_host(host: String, port: u16) -> Result<PingResult, String> {
     }
 }
 
+/// 将某个已保存连接的主机密钥更新为用户已经核验过的新指纹。
+///
+/// 调用方必须先向用户展示密钥变化警告并取得确认。这里接收连接 ID 而不是任意
+/// host/port，避免前端误改其它主机的信任记录。直接写入已核验的指纹还能避免
+/// “删除旧记录后、下次握手前”盲目信任其它密钥的竞态窗口。
+#[tauri::command]
+pub async fn update_ssh_host_key(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    let connections = state.db.get_connections().map_err(|e| e.to_string())?;
+    let conn = connections
+        .iter()
+        .find(|connection| connection.id == connection_id)
+        .ok_or_else(|| "连接未找到".to_string())?;
+    if conn.protocol != "ssh" {
+        return Err("仅 SSH 连接具有主机密钥记录".to_string());
+    }
+
+    let path = crate::app_data_dir().join("known-hosts.json");
+    let fingerprint = fingerprint.trim();
+    if fingerprint.is_empty() || fingerprint.len() > 512 || fingerprint.contains(['\r', '\n']) {
+        return Err("SSH 主机密钥指纹无效".to_string());
+    }
+    let mut known: HashMap<String, String> = if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|error| format!("读取主机密钥记录失败: {error}"))?;
+        serde_json::from_str(&content)
+            .map_err(|error| format!("主机密钥记录已损坏: {error}"))?
+    } else {
+        HashMap::new()
+    };
+    let key = format!("{}:{}", conn.host, conn.port);
+    known.insert(key.clone(), fingerprint.to_string());
+    let content = serde_json::to_vec_pretty(&known)
+        .map_err(|error| format!("序列化主机密钥失败: {error}"))?;
+    std::fs::write(&path, content).map_err(|error| format!("保存主机密钥失败: {error}"))?;
+    tracing::warn!("用户确认后已更新 SSH 主机密钥记录: {key}");
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn open_shell(
     state: tauri::State<'_, AppState>,

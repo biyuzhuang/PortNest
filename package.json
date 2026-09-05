@@ -1,6 +1,6 @@
 {
   "name": "portnest",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "A focused SSH and SFTP workspace",
   "type": "module",
   "scripts": {

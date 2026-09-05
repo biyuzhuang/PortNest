@@ -265,6 +265,10 @@ export const api = {
     return invoke("ping_host", { host, port });
   },
 
+  async updateSshHostKey(connectionId: string, fingerprint: string): Promise<void> {
+    return sshInvoke("update_ssh_host_key", { connectionId, fingerprint });
+  },
+
   // Shell operations
   async openShell(connectionId: string, cols: number, rows: number): Promise<ShellOpenResponse> {
     return sshInvoke("open_shell", { connectionId, cols, rows });

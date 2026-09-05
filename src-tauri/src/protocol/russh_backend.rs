@@ -72,7 +72,9 @@ impl client::Handler for HostKeyVerifier {
 
             if let Some(expected) = known.get(&key) {
                 if expected != &fingerprint && legacy_fingerprint.as_ref() != Some(expected) {
-                    return Err(format!("SSH 主机密钥已变化，已拒绝连接。主机: {key}"));
+                    return Err(format!(
+                        "SSH 主机密钥已变化，已拒绝连接。主机: {key}，旧指纹: {expected}，新指纹: {fingerprint}"
+                    ));
                 }
                 return Ok(true);
             }

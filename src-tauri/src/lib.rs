@@ -89,6 +89,7 @@ pub fn run() {
             commands::get_protocols,
             commands::get_connection_config,
             commands::ping_host,
+            commands::update_ssh_host_key,
             commands::open_shell,
             commands::open_local_shell,
             commands::write_shell,

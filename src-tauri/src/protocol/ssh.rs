@@ -322,7 +322,9 @@ impl SshPlugin {
         };
 
         if let Some(expected) = known.get(&key) {
-            if expected != &fingerprint {
+            if expected != &fingerprint
+                && expected.strip_prefix("SHA256:") != Some(fingerprint.as_str())
+            {
                 return Err(Error::AuthenticationFailed(format!(
                     "SSH 主机密钥已变化，已拒绝连接。主机: {}，新指纹: SHA256:{}",
                     key, fingerprint

@@ -285,6 +285,21 @@ const App: Component = () => {
     ));
   };
 
+  const recoverChangedHostKey = async (sessionId: string, conn: ConnectionRecord, cause: unknown) => {
+    if (!(cause instanceof SshApiError) || cause.code !== "HOST_KEY") return false;
+    const fingerprint = cause.message.match(/新指纹:\s*(\S+)/)?.[1];
+    if (!fingerprint) return false;
+    const accepted = await feedback.confirm(
+      `${cause.message}\n\n这可能是服务器重装导致，也可能表示连接被劫持。请先通过服务器控制台或可信渠道核对新指纹。确认该变化可信后，是否移除旧记录并重新连接？`,
+      "SSH 主机身份已变化",
+    );
+    if (!accepted || !sessions().some(session => session.id === sessionId)) return false;
+    await api.updateSshHostKey(conn.id, fingerprint);
+    await openShellForSession(sessionId, conn);
+    feedback.success(`已更新 ${conn.host}:${conn.port} 的 SSH 主机密钥`);
+    return true;
+  };
+
   // 一键打开默认本地终端（不创建连接记录，不参与资产树）
   const openQuickLocalTerminal = () => {
     const record: ConnectionRecord = {
@@ -319,6 +334,12 @@ const App: Component = () => {
           await openShellForSession(sessionId, conn);
         } catch (e) {
           console.error("SSH connection failed:", e);
+          try {
+            if (await recoverChangedHostKey(sessionId, conn, e)) return;
+          } catch (recoveryError) {
+            e = recoveryError;
+            console.error("SSH host key recovery failed:", recoveryError);
+          }
           sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
         }
       })();
@@ -473,6 +494,12 @@ const App: Component = () => {
       await openShellForSession(sessionId, session.connection);
     } catch (e) {
       console.error("[handleReconnect] openShell failed:", e);
+      try {
+        if (await recoverChangedHostKey(sessionId, session.connection, e)) return;
+      } catch (recoveryError) {
+        e = recoveryError;
+        console.error("[handleReconnect] SSH host key recovery failed:", recoveryError);
+      }
       const message = String(e);
       sessionStore.update(sessionId, { status: "error", error: message, shellId: undefined });
       const retryable = e instanceof SshApiError ? e.retryable : !/认证|主机密钥|Authentication|host key/i.test(message);
