@@ -5,11 +5,13 @@
 //! during the migration.
 
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::oneshot;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::{oneshot, Mutex};
 use tokio::sync::Notify;
 use uuid::Uuid;
 
@@ -119,6 +121,9 @@ pub trait ShellHandle: Send + Sync {
 
 /// 传输进度回调：参数为 (已传输字节, 总字节)
 pub type TransferProgress = Arc<dyn Fn(u64, u64) + Send + Sync + 'static>;
+pub trait AsyncIo: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T> AsyncIo for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
+pub type BoxedIo = Box<dyn AsyncIo>;
 
 #[async_trait]
 pub trait SftpHandle: Send + Sync {
@@ -153,12 +158,13 @@ pub trait SshSession: Send + Sync {
     async fn open_shell(&self, size: TerminalSize) -> Result<Arc<dyn ShellHandle>>;
     async fn open_sftp(&self) -> Result<Arc<dyn SftpHandle>>;
     async fn exec(&self, command: &str) -> Result<ExecResult>;
-    async fn relay_direct_tcpip(
+    async fn open_direct_tcpip(
         &self,
-        _stream: TcpStream,
         _target_host: &str,
         _target_port: u16,
-    ) -> Result<()> {
+        _origin_host: &str,
+        _origin_port: u16,
+    ) -> Result<BoxedIo> {
         Err(Error::ProtocolError(
             "当前 SSH 后端不支持端口转发".to_string(),
         ))
@@ -172,6 +178,8 @@ pub trait SshSession: Send + Sync {
         _cancellation: CancellationToken,
         ready: oneshot::Sender<std::result::Result<u16, String>>,
         _active_connections: Arc<AtomicUsize>,
+        _total_connections: Arc<AtomicUsize>,
+        _report_error: Arc<dyn Fn(String) + Send + Sync>,
     ) -> Result<()> {
         let message = "当前 SSH 后端不支持远程端口转发".to_string();
         let _ = ready.send(Err(message.clone()));
@@ -189,6 +197,124 @@ pub trait SshBackend: Send + Sync {
         credential: &Credential,
         options: &ConnectionOptions,
     ) -> Result<Arc<dyn SshSession>>;
+}
+
+struct PooledSession {
+    session: Arc<dyn SshSession>,
+    owners: HashSet<String>,
+}
+
+/// Shares one multiplexed SSH transport between shells, SFTP and tunnels.
+#[derive(Clone, Default)]
+pub struct SshSessionPool {
+    entries: Arc<Mutex<HashMap<String, PooledSession>>>,
+}
+
+impl SshSessionPool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn acquire(
+        &self,
+        key: String,
+        owner: String,
+        backend: Arc<dyn SshBackend>,
+        target: &ConnectionTarget,
+        credential: &Credential,
+        options: &ConnectionOptions,
+    ) -> Result<Arc<dyn SshSession>> {
+        {
+            let mut entries = self.entries.lock().await;
+            if let Some(entry) = entries.get_mut(&key) {
+                if entry.session.status() == SessionStatus::Connected {
+                    entry.owners.insert(owner);
+                    return Ok(entry.session.clone());
+                }
+                entries.remove(&key);
+            }
+        }
+
+        let created = backend.connect(target, credential, options).await?;
+        let mut entries = self.entries.lock().await;
+        if let Some(entry) = entries.get_mut(&key) {
+            if entry.session.status() == SessionStatus::Connected {
+                entry.owners.insert(owner);
+                let existing = entry.session.clone();
+                drop(entries);
+                let _ = created.disconnect().await;
+                return Ok(existing);
+            }
+        }
+        entries.insert(
+            key,
+            PooledSession {
+                session: created.clone(),
+                owners: HashSet::from([owner]),
+            },
+        );
+        Ok(created)
+    }
+
+    pub async fn release(&self, key: &str, owner: &str) {
+        let session = {
+            let mut entries = self.entries.lock().await;
+            let Some(entry) = entries.get_mut(key) else { return };
+            entry.owners.remove(owner);
+            if entry.owners.is_empty() {
+                entries.remove(key).map(|entry| entry.session)
+            } else {
+                None
+            }
+        };
+        if let Some(session) = session {
+            let _ = session.disconnect().await;
+        }
+    }
+
+    pub async fn retain(&self, key: &str, owner: String) -> Option<Arc<dyn SshSession>> {
+        let mut entries = self.entries.lock().await;
+        let entry = entries.get_mut(key)?;
+        if entry.session.status() != SessionStatus::Connected { return None; }
+        entry.owners.insert(owner);
+        Some(entry.session.clone())
+    }
+}
+
+pub fn session_pool_key(
+    connection_id: &str,
+    target: &ConnectionTarget,
+    credential: &Credential,
+    options: &ConnectionOptions,
+) -> String {
+    let serialized_options = serde_json::to_string(options).unwrap_or_default();
+    let jump_material = options.proxy.as_ref().and_then(|proxy| proxy.jump.as_ref()).map(|jump| {
+        format!(
+            "{}:{}:{}:{:?}:{}:{}:{}:{}",
+            jump.target.host,
+            jump.target.port,
+            jump.target.username,
+            jump.credential.credential_type,
+            jump.credential.password.as_deref().unwrap_or(""),
+            jump.credential.private_key.as_deref().unwrap_or(""),
+            jump.credential.passphrase.as_deref().unwrap_or(""),
+            serde_json::to_string(&jump.options).unwrap_or_default(),
+        )
+    }).unwrap_or_default();
+    let material = format!(
+        "{}\0{}\0{}\0{:?}\0{}\0{}\0{}\0{}\0{}",
+        target.host,
+        target.port,
+        target.username,
+        credential.credential_type,
+        credential.password.as_deref().unwrap_or(""),
+        credential.private_key.as_deref().unwrap_or(""),
+        credential.passphrase.as_deref().unwrap_or(""),
+        serialized_options,
+        jump_material,
+    );
+    let digest = Sha256::digest(material.as_bytes());
+    format!("{connection_id}:{}", digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
 }
 
 #[derive(Debug, Default)]

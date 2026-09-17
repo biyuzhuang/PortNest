@@ -18,7 +18,7 @@
   color: #383c40;
   background: #eef0f2;
   box-shadow: 0 16px 42px rgba(28, 33, 39, 0.24);
-  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  font-family: var(--font-ui);
 }
 
 .key-picker-modal {
@@ -55,8 +55,7 @@
   font-size: 12px;
 }
 
-.key-dialog-close,
-.ssh-config-close {
+.key-dialog-close {
   display: grid;
   width: 28px;
   height: 28px;
@@ -69,11 +68,9 @@
   cursor: pointer;
 }
 
-.key-dialog-close:hover,
-.ssh-config-close:hover { background: #cdd2d6; }
+.key-dialog-close:hover { background: #cdd2d6; }
 
-.key-dialog-close svg,
-.ssh-config-close svg {
+.key-dialog-close svg {
   width: 16px;
   height: 16px;
   fill: none;
@@ -133,7 +130,7 @@
   min-height: 28px;
   color: #4c5054;
   background: #f6f7f8;
-  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  font-family: var(--font-ui);
   font-weight: 500;
 }
 

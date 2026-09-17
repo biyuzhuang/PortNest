@@ -1,6 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { getTerminalThemeConfig } from "../stores/themeStore";
+import { getTerminalSettings, getTerminalThemeConfig } from "../stores/themeStore";
 
 export interface TerminalInstance {
   terminal: Terminal;
@@ -23,9 +23,12 @@ class TerminalManager {
     this.disposeTerminal(sessionKey);
 
     const themeConfig = getTerminalThemeConfig();
+    const terminalSettings = getTerminalSettings();
     const terminal = new Terminal({
-      fontFamily: "Cascadia Code, Consolas, monospace",
-      fontSize: 14,
+      fontFamily: terminalSettings.fontFamily,
+      fontSize: terminalSettings.fontSize,
+      lineHeight: terminalSettings.lineHeight,
+      letterSpacing: terminalSettings.letterSpacing,
       theme: {
         background: themeConfig.background,
         foreground: themeConfig.foreground,
@@ -51,7 +54,7 @@ class TerminalManager {
       },
       cursorBlink: true,
       cursorStyle: "block",
-      scrollback: 10000,
+      scrollback: terminalSettings.scrollback,
       convertEol: true,
     });
 

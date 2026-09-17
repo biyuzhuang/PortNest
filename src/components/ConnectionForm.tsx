@@ -1,8 +1,9 @@
-import { Component, For, Show, createSignal, onMount } from "solid-js";
+import { Component, For, Index, Show, createSignal, onMount } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { api, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
+import { Icon } from "./Icon";
 
 interface ConnectionFormProps {
   connection?: ConnectionConfig;
@@ -43,11 +44,12 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [color, setColor] = createSignal(props.connection?.color || "");
   const [remark, setRemark] = createSignal(props.connection?.tags || "");
   const [showPassword, setShowPassword] = createSignal(false);
-  const [proxyType, setProxyType] = createSignal(props.connection?.proxy_type || "");
+  const [proxyType, setProxyType] = createSignal<ConnectionConfig["proxy_type"] | "">(props.connection?.proxy_type || "");
   const [proxyHost, setProxyHost] = createSignal(props.connection?.proxy_host || "");
   const [proxyPort, setProxyPort] = createSignal(props.connection?.proxy_port || 1080);
   const [proxyUsername, setProxyUsername] = createSignal(props.connection?.proxy_username || "");
   const [proxyPassword, setProxyPassword] = createSignal(props.connection?.proxy_password || "");
+  const [jumpConnectionId, setJumpConnectionId] = createSignal(props.connection?.jump_connection_id || "");
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [database, setDatabase] = createSignal(props.connection?.database || "");
@@ -76,6 +78,8 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     if (authType() === "password" && !password() && !props.connection?.id) return false;
     if ((authType() === "key" || authType() === "key_with_passphrase") &&
         !keyId() && !privateKey() && !props.connection?.id) return false;
+    if (proxyType() === "ssh_jump" && !jumpConnectionId()) return false;
+    if ((proxyType() === "socks5" || proxyType() === "http") && (!proxyHost().trim() || proxyPort() < 1 || proxyPort() > 65535)) return false;
     return true;
   };
 
@@ -118,6 +122,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       proxy_port: proxyPort() || undefined,
       proxy_username: proxyUsername() || undefined,
       proxy_password: proxyPassword() || undefined,
+      jump_connection_id: proxyType() === "ssh_jump" ? jumpConnectionId() || undefined : undefined,
       tunnel_rules: tunnelRules(),
       database: protocol() === "mysql" ? database().trim() || undefined : undefined,
     };
@@ -179,7 +184,12 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     setTesting(true);
     setTestResult(null);
     try {
-      setTestResult(`success:${await api.testConnection(buildConfig())}`);
+      if (protocol() === "ssh") {
+        const result = await api.testSshRoute(buildConfig());
+        setTestResult(`${result.success ? "success" : "error"}:${result.route} · 阶段 ${result.stage} · ${result.message}${result.suggestion ? `；建议：${result.suggestion}` : ""}`);
+      } else {
+        setTestResult(`success:${await api.testConnection(buildConfig())}`);
+      }
     } catch (error) {
       setTestResult(`error:${String(error)}`);
     } finally {
@@ -216,7 +226,9 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       <div class="ssh-config-modal" onClick={event => event.stopPropagation()}>
         <header class="ssh-config-header">
           <h2>{protocol() === "local" ? "本地终端配置" : protocol() === "mysql" ? "MySQL 连接配置" : "SSH 连接配置"}</h2>
-          <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">×</button>
+          <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">
+            <Icon name="close" size={17} />
+          </button>
         </header>
 
         <form class="ssh-config-form" onSubmit={handleSubmit}>
@@ -265,7 +277,9 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                         onClick={() => setColor(item)}
                       />
                     )}</For>
-                    <button type="button" class="ssh-color-clear" onClick={() => setColor("")}>×</button>
+                    <button type="button" class="ssh-color-clear" aria-label="清除颜色标签" title="清除颜色标签" onClick={() => setColor("")}>
+                      <Icon name="close" size={14} />
+                    </button>
                   </div>
                 </div>
 
@@ -390,54 +404,63 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                 <Show when={tunnelRules().length === 0}>
                   <div class="ssh-tunnel-empty">尚未配置隧道。保存连接后也可从连接右键菜单启动。</div>
                 </Show>
-                <For each={tunnelRules()}>{(rule, index) => {
-                  const publicBind = () => ["0.0.0.0", "::", "[::]"].includes(rule.bind_host);
+                <Index each={tunnelRules()}>{(rule, index) => {
+                  const publicBind = () => ["0.0.0.0", "::", "[::]"].includes(rule().bind_host);
                   return (
                     <section class="ssh-tunnel-rule">
                       <header>
-                        <input class="ssh-tunnel-name" value={rule.name} onInput={event => updateTunnelRule(rule.id, { name: event.currentTarget.value })} />
-                        <label><input type="checkbox" checked={rule.enabled} onChange={event => updateTunnelRule(rule.id, { enabled: event.currentTarget.checked })} />启用</label>
-                        <label><input type="checkbox" checked={rule.auto_start} onChange={event => updateTunnelRule(rule.id, { auto_start: event.currentTarget.checked })} />连接后启动</label>
+                        <input class="ssh-tunnel-name" value={rule().name} onInput={event => updateTunnelRule(rule().id, { name: event.currentTarget.value })} />
+                        <label><input type="checkbox" checked={rule().enabled} onChange={event => updateTunnelRule(rule().id, { enabled: event.currentTarget.checked })} />启用</label>
+                        <label><input type="checkbox" checked={rule().auto_start} onChange={event => updateTunnelRule(rule().id, { auto_start: event.currentTarget.checked })} />连接后启动</label>
                         <div class="ssh-tunnel-rule-actions">
-                          <button type="button" title="上移" disabled={index() === 0} onClick={() => moveTunnelRule(index(), -1)}>↑</button>
-                          <button type="button" title="下移" disabled={index() === tunnelRules().length - 1} onClick={() => moveTunnelRule(index(), 1)}>↓</button>
-                          <button type="button" title="复制" onClick={() => duplicateTunnelRule(rule)}>⧉</button>
-                          <button type="button" class="danger" title="删除" onClick={() => removeTunnelRule(rule.id)}>×</button>
+                          <button type="button" title="上移" disabled={index === 0} onClick={() => moveTunnelRule(index, -1)}>↑</button>
+                          <button type="button" title="下移" disabled={index === tunnelRules().length - 1} onClick={() => moveTunnelRule(index, 1)}>↓</button>
+                          <button type="button" title="复制" onClick={() => duplicateTunnelRule(rule())}>⧉</button>
+                          <button type="button" class="danger" title="删除" onClick={() => removeTunnelRule(rule().id)}>×</button>
                         </div>
                       </header>
                       <div class="ssh-tunnel-grid">
-                        <label><span>类型</span><select value={rule.tunnel_type} onChange={event => {
+                        <label><span>类型</span><select value={rule().tunnel_type} onChange={event => {
                           const tunnel_type = event.currentTarget.value as TunnelType;
-                          updateTunnelRule(rule.id, tunnel_type === "dynamic"
+                          updateTunnelRule(rule().id, tunnel_type === "dynamic"
                             ? { tunnel_type, target_host: undefined, target_port: undefined }
-                            : { tunnel_type, target_host: rule.target_host || "127.0.0.1", target_port: rule.target_port || 80 });
+                            : { tunnel_type, target_host: rule().target_host || "127.0.0.1", target_port: rule().target_port || 80 });
                         }}><option value="local">本地转发</option><option value="remote">远程转发</option><option value="dynamic">动态 SOCKS5</option></select></label>
-                        <label><span>{rule.tunnel_type === "remote" ? "远端监听地址" : "本机监听地址"}</span><input value={rule.bind_host} onInput={event => updateTunnelRule(rule.id, { bind_host: event.currentTarget.value, allow_public_bind: false })} /></label>
-                        <label><span>监听端口</span><input type="number" min="1" max="65535" value={rule.bind_port} onInput={event => updateTunnelRule(rule.id, { bind_port: Number(event.currentTarget.value) })} /></label>
-                        <Show when={rule.tunnel_type !== "dynamic"}>
-                          <label><span>{rule.tunnel_type === "remote" ? "本机目标主机" : "远端目标主机"}</span><input value={rule.target_host || ""} onInput={event => updateTunnelRule(rule.id, { target_host: event.currentTarget.value })} /></label>
-                          <label><span>目标端口</span><input type="number" min="1" max="65535" value={rule.target_port || 0} onInput={event => updateTunnelRule(rule.id, { target_port: Number(event.currentTarget.value) })} /></label>
+                        <label><span>{rule().tunnel_type === "remote" ? "远端监听地址" : "本机监听地址"}</span><input value={rule().bind_host} onInput={event => updateTunnelRule(rule().id, { bind_host: event.currentTarget.value, allow_public_bind: false })} /></label>
+                        <label><span>监听端口</span><input type="number" min="1" max="65535" value={rule().bind_port} onInput={event => updateTunnelRule(rule().id, { bind_port: Number(event.currentTarget.value) })} /></label>
+                        <Show when={rule().tunnel_type !== "dynamic"}>
+                          <label><span>{rule().tunnel_type === "remote" ? "本机目标主机" : "远端目标主机"}</span><input value={rule().target_host || ""} onInput={event => updateTunnelRule(rule().id, { target_host: event.currentTarget.value })} /></label>
+                          <label><span>目标端口</span><input type="number" min="1" max="65535" value={rule().target_port || 0} onInput={event => updateTunnelRule(rule().id, { target_port: Number(event.currentTarget.value) })} /></label>
                         </Show>
                       </div>
                       <Show when={publicBind()}>
-                        <label class="ssh-tunnel-warning"><input type="checkbox" checked={rule.allow_public_bind === true} onChange={event => updateTunnelRule(rule.id, { allow_public_bind: event.currentTarget.checked })} />
+                        <label class="ssh-tunnel-warning"><input type="checkbox" checked={rule().allow_public_bind === true} onChange={event => updateTunnelRule(rule().id, { allow_public_bind: event.currentTarget.checked })} />
                           允许其他设备访问此监听端口；我了解这可能暴露本地服务
                         </label>
                       </Show>
                     </section>
                   );
-                }}</For>
+                }}</Index>
               </div>
             </Show>
 
             <Show when={activeTab() === "proxy"}>
               <div class="ssh-tab-panel">
                 <label class="ssh-field"><span>代理类型</span>
-                  <select value={proxyType()} onChange={event => setProxyType(event.currentTarget.value)}>
-                    <option value="">不使用代理</option><option value="socks5">SOCKS5</option><option value="http">HTTP CONNECT</option>
+                  <select value={proxyType()} onChange={event => setProxyType(event.currentTarget.value as ConnectionConfig["proxy_type"] | "")}>
+                    <option value="">不使用代理</option><option value="socks5">SOCKS5</option><option value="http">HTTP CONNECT</option><option value="ssh_jump">SSH 跳板机</option>
                   </select>
                 </label>
-                <Show when={proxyType()}>
+                <Show when={proxyType() === "ssh_jump"}>
+                  <label class="ssh-field"><span>跳板资产</span><select value={jumpConnectionId()} onChange={event => setJumpConnectionId(event.currentTarget.value)}>
+                    <option value="">请选择已保存的 SSH 连接</option>
+                    <For each={connectionStore.state.connections.filter(connection => connection.protocol === "ssh" && connection.id !== props.connection?.id)}>{connection => (
+                      <option value={connection.id}>{connection.name} · {connection.host}:{connection.port}</option>
+                    )}</For>
+                  </select></label>
+                  <p class="ssh-proxy-note">先连接并校验跳板机，再通过 SSH direct-tcpip 通道连接目标；仅支持单级跳板。</p>
+                </Show>
+                <Show when={proxyType() === "socks5" || proxyType() === "http"}>
                   <label class="ssh-field"><span>代理主机</span><input value={proxyHost()} onInput={event => setProxyHost(event.currentTarget.value)} /></label>
                   <label class="ssh-field"><span>代理端口</span><input type="number" value={proxyPort()} onInput={event => setProxyPort(Number(event.currentTarget.value))} /></label>
                   <label class="ssh-field"><span>代理用户</span><input value={proxyUsername()} onInput={event => setProxyUsername(event.currentTarget.value)} /></label>
@@ -475,7 +498,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
 
           <footer class="ssh-config-actions">
             <button type="button" class="ssh-test-button" disabled={!isValid() || testing() || saving()} onClick={handleTest}>
-              {testing() ? "测试中..." : "测试连接"}
+              {testing() ? "测试中..." : proxyType() ? "测试代理链路" : "测试连接"}
             </button>
             <button type="submit" class="ssh-save-secondary" disabled={!isValid() || saving()}>{saving() ? "保存中…" : "保存"}</button>
             <button type="button" class="ssh-save-button" disabled={!isValid() || saving()} onClick={() => void submit("save-connect")}>{saving() ? "处理中…" : "保存并连接"}</button>

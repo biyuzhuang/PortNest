@@ -8,6 +8,7 @@ import { api, type ConnectionRecord } from "../utils/api";
 import { matchesAssetFilter, uiStore } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
+import { Icon } from "./Icon";
 
 interface AssetListProps {
   onConnect: (connection: ConnectionRecord) => void;
@@ -254,23 +255,32 @@ export const AssetList: Component<AssetListProps> = (props) => {
         <div class="asset-selection">已选择 <strong>{selectedConnections().length}</strong> 个连接</div>
         <div class="asset-toolbar-actions">
           <label class="asset-search">
-            <span>⌕</span>
+            <Icon name="search" size={15} />
             <input
               value={query()}
               onInput={event => setQuery(event.currentTarget.value)}
-              placeholder="名称、IP、User  (Ctrl+F)"
+              placeholder="搜索名称、主机或用户"
             />
+            <kbd>Ctrl F</kbd>
           </label>
-          <button title="刷新当前列表延迟" onClick={refreshVisibleLatencies}>↻</button>
+          <button class="asset-icon-button" title="刷新当前列表延迟" aria-label="刷新当前列表延迟" onClick={refreshVisibleLatencies}>
+            <Icon name="refresh" size={16} />
+          </button>
           <button
-            class={showPing() ? "active" : ""}
+            class={`asset-icon-button ${showPing() ? "active" : ""}`}
             title={showPing() ? "隐藏 Ping 延迟" : "显示 Ping 延迟"}
+            aria-label={showPing() ? "隐藏 Ping 延迟" : "显示 Ping 延迟"}
             onClick={togglePingVisibility}
           >
-            ◉
+            <span class="asset-ping-icon"><i /></span>
           </button>
-          <button title="新建文件夹" onClick={props.onNewFolder}>▱+</button>
-          <button title="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>＋</button>
+          <button class="asset-icon-button asset-folder-add" title="新建文件夹" aria-label="新建文件夹" onClick={props.onNewFolder}>
+            <Icon name="folder" size={16} />
+            <i>+</i>
+          </button>
+          <button class="asset-icon-button asset-add-button" title="新建连接" aria-label="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>
+            <Icon name="plus" size={17} />
+          </button>
         </div>
       </div>
 

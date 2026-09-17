@@ -56,14 +56,17 @@ export const TunnelPanel: Component<TunnelPanelProps> = (props) => {
   };
   const test = async (rule: TunnelRule) => {
     setBusyRuleId(rule.id); setError(null); setMessage(null);
+    let testRuntime: TunnelRuntimeInfo | undefined;
     try {
-      const runtime = await api.startTunnel(props.connection.id, rule.id);
-      await new Promise(resolve => window.setTimeout(resolve, 500));
-      await api.stopTunnel(runtime.id);
-      setMessage(`${rule.name || "隧道"}测试成功，监听端口已释放`);
-      await refresh();
+      testRuntime = await api.startTunnel(props.connection.id, rule.id);
+      const result = await api.probeTunnel(testRuntime.id, props.connection.host, props.connection.port);
+      setMessage(`${rule.name || "隧道"}测试成功：${result}；测试监听已释放`);
     } catch (reason) { setError(`测试失败：${String(reason)}`); }
-    finally { setBusyRuleId(null); }
+    finally {
+      if (testRuntime) await api.stopTunnel(testRuntime.id).catch(() => undefined);
+      await refresh();
+      setBusyRuleId(null);
+    }
   };
 
   return (
@@ -81,7 +84,7 @@ export const TunnelPanel: Component<TunnelPanelProps> = (props) => {
               return <article class="tunnel-runtime-row">
                 <span class={`session-status-dot status-${runtime()?.status || "stopped"}`} />
                 <div><strong>{rule.name}</strong><small>{rule.tunnel_type.toUpperCase()} · {rule.bind_host}:{rule.bind_port} → {target()}</small><Show when={runtime()?.error}><em>{runtime()!.error}</em></Show></div>
-                <span class="tunnel-connections">{runtime()?.active_connections || 0} 连接</span>
+                <span class="tunnel-connections">{runtime()?.active_connections || 0} 活动 / {runtime()?.total_connections || 0} 累计</span>
                 <Show when={runtime()} fallback={<span class="tunnel-row-actions"><button disabled={!rule.enabled || busyRuleId() !== null} onClick={() => void test(rule)}>测试</button><button disabled={!rule.enabled || busyRuleId() !== null} onClick={() => void start(rule)}>启动</button></span>}>
                   {current => current().status === "error"
                     ? <button disabled={busyRuleId() !== null} onClick={() => void start(rule)}>重试</button>

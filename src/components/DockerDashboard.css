@@ -87,7 +87,7 @@
 }
 
 .container-id {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-secondary, #9d9d9d);
 }
@@ -97,12 +97,12 @@
 }
 
 .cell-ports {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .cell-mountpoint {
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary, #9d9d9d);
   max-width: 300px;
@@ -189,7 +189,7 @@
   border: 1px solid var(--border-color, #3c3c3c);
   border-radius: 4px;
   padding: 16px;
-  font-family: "Consolas", "Monaco", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-primary, #cccccc);
@@ -286,7 +286,7 @@
   color: var(--text-primary, #cccccc);
   font-size: 14px;
   font-weight: 500;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .system-info {

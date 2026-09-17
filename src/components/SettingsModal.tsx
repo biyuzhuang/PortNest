@@ -11,10 +11,12 @@ import { Icon } from "./Icon";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
+import packageInfo from "../../package.json";
 import "./SettingsModal.css";
 
 interface SettingsModalProps { onClose: () => void; standalone?: boolean; }
-type Page = "appearance" | "terminalAppearance" | "general" | "ssh";
+type Page = "appearance" | "ssh" | "version";
 
 const BACKGROUNDS: Array<[TerminalBackgroundStyle, string]> = [
   ["theme", "跟随主题"], ["solid", "自定义纯色"], ["midnight", "午夜渐变"], ["aurora", "极光渐变"], ["image", "背景图片"],
@@ -39,9 +41,13 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [checkingUpdate, setCheckingUpdate] = createSignal(false);
   const [background, setBackground] = createSignal<TerminalBackgroundConfig>(terminalBackgroundConfig());
   const [imageError, setImageError] = createSignal("");
+  const [appVersion, setAppVersion] = createSignal(packageInfo.version);
   let imageInputRef: HTMLInputElement | undefined;
 
-  onMount(() => void loadTerminalBackgroundImage(background().imageAssetId));
+  onMount(() => {
+    void loadTerminalBackgroundImage(background().imageAssetId);
+    void getVersion().then(setAppVersion).catch(() => setAppVersion(packageInfo.version));
+  });
 
   const updateBackground = (patch: Partial<TerminalBackgroundConfig>) => {
     const next = { ...background(), ...patch };
@@ -120,50 +126,56 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
 
       <div class="settings-layout">
         <aside class="settings-sidebar">
-          <h4>外观</h4>
-          {navItem("appearance", "基础")}
-          {navItem("terminalAppearance", "终端")}
-          <h4>通用</h4>
-          {navItem("general", "基础")}
+          <h4>设置</h4>
+          {navItem("appearance", "外观")}
           {navItem("ssh", "SSH / 终端")}
+          {navItem("version", "版本")}
         </aside>
 
         <main class="settings-main">
           <Show when={page() === "appearance"}>
-            <div class="settings-page">
-              <div class="appearance-preview">
-                <div class="preview-titlebar"><i /><i /><i /><b /></div>
-                <div class="preview-layout"><aside /><section><nav /><div class="preview-table" /></section></div>
-              </div>
-              <h3>基础</h3>
-              <div class="settings-grid"><div class="settings-card">
-                <label><span>主题模式</span>
+            <div class="settings-page appearance-settings-page">
+              <section class="settings-live-preview">
+                <header><div><strong>实时预览</strong><span>主题、配色与字体修改会立即呈现在这里</span></div><em>实时生效</em></header>
+                <div class="settings-live-preview-grid">
+                  <div class="appearance-preview">
+                    <div class="preview-titlebar"><i /><i /><i /><b /></div>
+                    <div class="preview-layout"><aside /><section><nav /><div class="preview-table" /></section></div>
+                  </div>
+                  <div class={`terminal-settings-preview terminal-background-${previewBackgroundStyle()}`} style={{
+                    color: terminalThemes[currentTerminalTheme()]?.foreground,
+                    "font-family": terminalSettings().fontFamily,
+                    "font-size": `${terminalSettings().fontSize}px`,
+                    "line-height": String(terminalSettings().lineHeight),
+                    "letter-spacing": `${terminalSettings().letterSpacing}px`,
+                    "--preview-theme-background": terminalThemes[currentTerminalTheme()]?.background,
+                    "--preview-green": terminalThemes[currentTerminalTheme()]?.green,
+                    "--preview-blue": terminalThemes[currentTerminalTheme()]?.blue,
+                    "--preview-solid": background().solidColor,
+                    "--preview-image": terminalBackgroundImageUrl() ? `url("${terminalBackgroundImageUrl()}")` : "none",
+                    "--preview-image-size": background().imageFit === "fill" ? "100% 100%" : background().imageFit,
+                    "--preview-opacity": String(background().imageOpacity),
+                    "--preview-overlay": String(background().imageOverlay),
+                    "--preview-blur": `${background().imageBlur}px`,
+                  }}>
+                    <i class="terminal-preview-background" />
+                    <div><span>user@server</span>:<b>~/app$</b> ls -all</div>
+                    <div>drwxr-xr-x deploy deploy 4096 dist</div>
+                    <div>-rw-r--r-- deploy deploy 256 .env</div>
+                    <div><span>user@server</span>:<b>~/app$</b> <i class="terminal-preview-cursor" /></div>
+                  </div>
+                </div>
+              </section>
+
+              <h3>应用外观</h3>
+              <div class="settings-grid settings-grid-single"><div class="settings-card">
+                <label><span><b>主题模式</b><small>控制应用窗口、菜单和面板的明暗外观</small></span>
                   <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
                     <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
                   </select>
                 </label>
               </div></div>
-            </div>
-          </Show>
 
-          <Show when={page() === "terminalAppearance"}>
-            <div class="settings-page">
-              <div class={`terminal-settings-preview terminal-background-${previewBackgroundStyle()}`} style={{
-                color: terminalThemes[currentTerminalTheme()]?.foreground,
-                "--preview-theme-background": terminalThemes[currentTerminalTheme()]?.background,
-                "--preview-solid": background().solidColor,
-                "--preview-image": terminalBackgroundImageUrl() ? `url("${terminalBackgroundImageUrl()}")` : "none",
-                "--preview-image-size": background().imageFit === "fill" ? "100% 100%" : background().imageFit,
-                "--preview-opacity": String(background().imageOpacity),
-                "--preview-overlay": String(background().imageOverlay),
-                "--preview-blur": `${background().imageBlur}px`,
-              }}>
-                <i class="terminal-preview-background" />
-                <div><span>user@server</span>:<b>~/app$</b> ls -all</div>
-                <div>drwxr-xr-x deploy deploy 4096 dist</div>
-                <div>-rw-r--r-- deploy deploy 256 .env</div>
-                <div><span>user@server</span>:<b>~/app$</b></div>
-              </div>
               <h3>终端配色</h3>
               <div class="terminal-theme-grid">
                 <For each={Object.entries(terminalThemes)}>{([key, value]) =>
@@ -173,8 +185,11 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   </button>
                 }</For>
               </div>
+
+              <h3>终端样式</h3>
               <div class="settings-grid">
                 <div class="settings-card">
+                  <div class="settings-card-title"><strong>配色与字体</strong><span>决定终端文字的显示效果</span></div>
                   <label><span>配色模式</span><select value={terminalThemePreferences().mode} onChange={event => updateThemePreferences({ mode: event.currentTarget.value as "follow" | "fixed" })}><option value="follow">跟随应用明暗主题</option><option value="fixed">固定终端配色</option></select></label>
                   <Show when={terminalThemePreferences().mode === "follow"}>
                     <label><span>浅色终端主题</span><select value={terminalThemePreferences().lightTheme} onChange={event => updateThemePreferences({ lightTheme: event.currentTarget.value })}>
@@ -195,11 +210,12 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                       <option>Cascadia Code, Consolas, monospace</option><option>Consolas, monospace</option>
                     </select>
                   </label>
-                  <label><span>终端字号</span><input type="number" min="9" max="28" value={terminalSettings().fontSize} onChange={event => updateSetting("fontSize", Number(event.currentTarget.value))} /></label>
-                  <label><span>终端行高</span><input type="number" min="1" max="2" step="0.1" value={terminalSettings().lineHeight} onChange={event => updateSetting("lineHeight", Number(event.currentTarget.value))} /></label>
-                  <label><span>终端间距</span><input type="number" min="-2" max="8" value={terminalSettings().letterSpacing} onChange={event => updateSetting("letterSpacing", Number(event.currentTarget.value))} /></label>
+                  <label><span>终端字号</span><input type="number" min="9" max="28" value={terminalSettings().fontSize} onInput={event => updateSetting("fontSize", Number(event.currentTarget.value))} /></label>
+                  <label><span>终端行高</span><input type="number" min="1" max="2" step="0.1" value={terminalSettings().lineHeight} onInput={event => updateSetting("lineHeight", Number(event.currentTarget.value))} /></label>
+                  <label><span>终端间距</span><input type="number" min="-2" max="8" value={terminalSettings().letterSpacing} onInput={event => updateSetting("letterSpacing", Number(event.currentTarget.value))} /></label>
                 </div>
                 <div class="settings-card">
+                  <div class="settings-card-title"><strong>终端背景</strong><span>背景风格和滚动缓存设置</span></div>
                   <label><span>终端背景</span>
                     <select value={background().style} onChange={event => updateBackground({ style: event.currentTarget.value as TerminalBackgroundStyle })}>
                       <For each={BACKGROUNDS}>{([key, label]) => <option value={key}>{label}</option>}</For>
@@ -221,27 +237,18 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
             </div>
           </Show>
 
-          <Show when={page() === "general"}>
-            <div class="settings-page">
-              <h3>基础</h3>
-              <div class="settings-grid">
-                <div class="settings-card">
-                  <label><span>应用更新</span><button class="settings-inline-button" disabled={checkingUpdate()} onClick={handleCheckUpdate}>{updateStatus()}</button></label>
-                  <p class="settings-note">会话标签、顺序、固定状态和活动标签会自动保存；应用启动后以离线标签恢复，不会自动批量连接。</p>
-                </div>
-              </div>
-            </div>
-          </Show>
-
           <Show when={page() === "ssh"}>
             <div class="settings-page">
-              <h3>终端</h3>
+              <div class="settings-page-heading"><h2>SSH / 终端</h2><p>管理终端交互、连接恢复和 SFTP 工作区行为。</p></div>
+              <h3>终端交互</h3>
               <div class="settings-grid">
                 <div class="settings-card">
-                  <label><span>鼠标选中自动复制</span><Toggle checked={terminalSettings().copyOnSelect} onChange={value => updateSetting("copyOnSelect", value)} /></label>
+                  <div class="settings-card-title"><strong>剪贴板</strong><span>控制复制和粘贴快捷操作</span></div>
+                  <label><span><b>选中后自动复制</b><small>鼠标选中文本后立即写入剪贴板</small></span><Toggle checked={terminalSettings().copyOnSelect} onChange={value => updateSetting("copyOnSelect", value)} /></label>
+                  <label><span><b>Ctrl+V 粘贴</b><small>在终端中使用系统粘贴快捷键</small></span><Toggle checked={terminalSettings().ctrlVPaste} onChange={value => updateSetting("ctrlVPaste", value)} /></label>
                 </div>
                 <div class="settings-card">
-                  <label><span>连接断开自动重连</span><Toggle checked={terminalSettings().reconnectOnDisconnect} onChange={value => updateSetting("reconnectOnDisconnect", value)} /></label>
+                  <div class="settings-card-title"><strong>鼠标操作</strong><span>设置终端内鼠标按键行为</span></div>
                   <label><span>鼠标中键执行</span>
                     <select value={terminalSettings().middleClickAction} onChange={event => updateSetting("middleClickAction", event.currentTarget.value as "paste" | "none")}>
                       <option value="none">不执行</option><option value="paste">粘贴</option>
@@ -252,21 +259,47 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                       <option value="paste">粘贴</option><option value="none">不执行</option>
                     </select>
                   </label>
-                  <label><span>Ctrl+V 粘贴</span><Toggle checked={terminalSettings().ctrlVPaste} onChange={value => updateSetting("ctrlVPaste", value)} /></label>
                 </div>
               </div>
-              <h3>SFTP</h3>
+
+              <h3>连接与文件管理</h3>
               <div class="settings-grid">
                 <div class="settings-card">
+                  <div class="settings-card-title"><strong>SSH 会话</strong><span>连接异常中断后的处理方式</span></div>
+                  <label><span><b>断开后自动重连</b><small>网络恢复后自动尝试重新建立会话</small></span><Toggle checked={terminalSettings().reconnectOnDisconnect} onChange={value => updateSetting("reconnectOnDisconnect", value)} /></label>
+                </div>
+                <div class="settings-card">
+                  <div class="settings-card-title"><strong>SFTP 文件管理</strong><span>设置文件工作区的默认行为</span></div>
                   <label><span>文件列表布局</span>
                     <select value={uiStore.filesStacked() ? "stacked" : "side"} onChange={event => uiStore.setFilesStacked(event.currentTarget.value === "stacked")}>
                       <option value="side">左右布局</option><option value="stacked">上下布局</option>
                     </select>
                   </label>
+                  <label><span><b>连接后打开文件管理</b><small>SSH 会话建立后自动显示 SFTP 面板</small></span><Toggle checked={terminalSettings().openFileManagerOnConnect} onChange={value => updateSetting("openFileManagerOnConnect", value)} /></label>
                 </div>
-                <div class="settings-card">
-                  <label><span>连接会话时默认打开文件管理</span><Toggle checked={terminalSettings().openFileManagerOnConnect} onChange={value => updateSetting("openFileManagerOnConnect", value)} /></label>
+              </div>
+              <p class="settings-note settings-session-note">会话标签、顺序、固定状态和活动标签会自动保存；应用启动后以离线标签恢复，不会自动批量连接。</p>
+            </div>
+          </Show>
+
+          <Show when={page() === "version"}>
+            <div class="settings-page version-settings-page">
+              <div class="settings-page-heading"><h2>版本</h2><p>查看当前版本并获取 PortNest 的最新更新。</p></div>
+              <section class="version-card">
+                <div class="version-mark">P</div>
+                <div class="version-summary">
+                  <strong>PortNest</strong>
+                  <span>当前版本 {appVersion()}</span>
+                  <p>SSH、SFTP、数据库与本地终端工作区</p>
                 </div>
+                <button class="version-update-button" disabled={checkingUpdate()} onClick={handleCheckUpdate}>
+                  <Icon name="refresh" size={16} />
+                  {updateStatus()}
+                </button>
+              </section>
+              <div class="version-details">
+                <div><span>更新方式</span><strong>自动下载并安装</strong></div>
+                <div><span>设置存储</span><strong>本地保存</strong></div>
               </div>
             </div>
           </Show>

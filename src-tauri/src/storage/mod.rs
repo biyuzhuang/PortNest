@@ -24,6 +24,8 @@ pub struct CredentialData {
     pub passphrase: Option<String>,
     #[serde(default)]
     pub key_id: Option<String>,
+    #[serde(default)]
+    pub proxy_password: Option<String>,
 }
 
 /// 数据库管理器
@@ -129,6 +131,7 @@ impl Database {
                         private_key: None,
                         passphrase: None,
                         key_id: None,
+                        proxy_password: None,
                     })
                     .map_err(|e| Error::EncryptionError(format!("重置损坏凭据失败: {}", e)))?
                 }

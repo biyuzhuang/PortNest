@@ -31,6 +31,13 @@
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --font-numeric: "Cascadia Code", "Segoe UI", monospace;
+  --font-size-ui: 14px;
+  --font-size-compact: 12px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 550;
+  --font-weight-strong: 650;
+  --line-height-ui: 1.5;
+  --control-height: 32px;
 }
 
 * {
@@ -45,8 +52,8 @@ body {
   color: var(--text-primary);
   min-height: 100vh;
   overflow: hidden;
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--font-size-ui);
+  line-height: var(--line-height-ui);
 }
 
 .app-container {
@@ -665,7 +672,7 @@ body {
   border-radius: 9px;
   color: #07110b;
   background: var(--accent-primary);
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-weight: 800;
 }
 
@@ -717,11 +724,11 @@ body {
 
 .asset-toolbar {
   display: grid;
-  min-height: 42px;
-  grid-template-columns: minmax(180px, 1fr) auto minmax(330px, 1fr);
+  min-height: 48px;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(360px, 1.2fr);
   align-items: center;
-  gap: 16px;
-  padding: 0 10px;
+  gap: 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-primary);
   font-size: 12px;
@@ -751,26 +758,34 @@ body {
 
 .asset-toolbar-actions {
   display: flex;
+  min-width: 0;
   justify-content: flex-end;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .asset-toolbar-actions > button {
-  min-width: 30px;
-  height: 28px;
-  padding: 0 7px;
-  border: 1px solid transparent;
-  border-radius: 5px;
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
   color: var(--text-secondary);
-  background: transparent;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .15s ease;
 }
 
 .asset-toolbar-actions > button:hover {
   border-color: var(--border);
   color: var(--accent);
   background: var(--bg-tertiary);
+  transform: translateY(-1px);
 }
 
 .asset-toolbar-actions > button.active {
@@ -781,25 +796,88 @@ body {
 
 .asset-search {
   display: flex;
-  width: 230px;
-  height: 29px;
+  width: clamp(190px, 25vw, 300px);
+  min-width: 0;
+  height: 32px;
   align-items: center;
   gap: 6px;
-  padding: 0 9px;
+  padding: 0 8px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg-secondary);
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  box-shadow: var(--shadow-sm);
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
 
-.asset-search:focus-within { border-color: var(--accent); }
+.asset-search:focus-within {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.asset-search > svg { flex: 0 0 auto; }
 
 .asset-search input {
+  min-width: 0;
   width: 100%;
+  min-height: 0 !important;
+  padding: 0;
   border: 0;
   outline: 0;
   color: var(--text-primary);
   background: transparent;
+  box-shadow: none !important;
   font-size: 12px;
+}
+
+.asset-search input:focus,
+.asset-search input:focus-visible { border: 0; outline: 0; box-shadow: none !important; }
+
+.asset-search kbd {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  font: 10px/17px var(--font-ui);
+  white-space: nowrap;
+}
+
+.asset-ping-icon {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.asset-ping-icon i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.asset-folder-add { position: relative; }
+.asset-folder-add > i {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  display: grid;
+  width: 11px;
+  height: 11px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+  font: 700 10px/1 var(--font-ui);
+}
+
+.asset-add-button { color: #fff !important; border-color: var(--accent) !important; background: var(--accent) !important; }
+.asset-add-button:hover { background: var(--accent-hover) !important; }
+
+@media (max-width: 960px) {
+  .asset-toolbar { grid-template-columns: minmax(140px, 1fr) auto; }
+  .asset-selection { display: none; }
+  .asset-search { width: clamp(160px, 28vw, 230px); }
+  .asset-search kbd { display: none; }
 }
 
 .asset-table {
@@ -899,7 +977,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
 }
 
 .asset-latency {
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -907,7 +985,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
 .asset-latency.online { color: var(--success); }
 .asset-latency.offline { color: var(--error); }
 
-.asset-mono { font-family: "Cascadia Code", Consolas, monospace; }
+.asset-mono { font-family: var(--font-mono); }
 .asset-muted { color: var(--text-muted); }
 
 .asset-empty {
@@ -2186,21 +2264,22 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
 
 .ssh-config-close {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: #4a4e52;
-  background: #d8dcdf;
-  font-size: 23px;
-  font-weight: 300;
-  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #697078;
+  background: transparent;
   cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
 }
 
-.ssh-config-close:hover { background: #ccd1d5; }
+.ssh-config-close:hover { border-color: #e0b6b9; color: #c9363e; background: #fdebed; }
+.ssh-config-close:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(38, 118, 232, .2); }
 
 .ssh-config-form {
   display: flex;
@@ -2313,32 +2392,52 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
   display: flex;
   height: 32px;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+  width: max-content;
+  padding: 3px 5px;
+  border: 1px solid #e1e5e8;
+  border-radius: 8px;
+  background: #f7f8f9;
 }
 
 .ssh-color-palette button:not(.ssh-color-clear) {
-  width: 12px;
-  height: 12px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
   padding: 0;
-  border: 0;
+  border: 2px solid #fff;
   border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(40, 48, 56, .1);
   cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
 
+.ssh-color-palette button:not(.ssh-color-clear):hover { transform: scale(1.12); }
+
 .ssh-color-palette button.active {
-  outline: 2px solid rgba(35, 110, 180, 0.35);
-  outline-offset: 2px;
+  outline: 2px solid #2676e8;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px rgba(38, 118, 232, .13);
 }
 
 .ssh-color-palette .ssh-color-clear {
-  padding: 0 2px;
-  border: 0;
-  color: #555b60;
+  display: grid;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  margin-left: 2px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #777e86;
   background: transparent;
-  font-size: 20px;
-  font-weight: 300;
   cursor: pointer;
 }
+
+.ssh-color-palette .ssh-color-clear:hover { border-color: #d8dde1; color: #c9363e; background: #fff; }
 
 .ssh-auth-options {
   display: flex;
@@ -2755,8 +2854,12 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
 @keyframes status-led-pulse { 50% { opacity:.45; box-shadow:0 0 0 4px color-mix(in srgb,currentColor 12%,transparent); } }
 
 .app-container, .settings-workspace, button, input, select, textarea { font-family:var(--font-ui); }
+button, input, select, textarea { font-size: inherit; line-height: var(--line-height-ui); }
+button, select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) { min-height: var(--control-height); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .asset-mono, .file-path, .terminal-search-bar input, .mysql-query textarea, .mysql-main td.object-name, .mysql-object-card strong { font-family:var(--font-mono); }
 .protocol-badge, .session-tab-badge, .mysql-result-meta, .metrics-value { font-family:var(--font-numeric); font-variant-numeric:tabular-nums; }
+.ssh-proxy-note { color: var(--text-muted); font-size: var(--font-size-compact); }
 
 /* Theme-coherent session chrome. */
 .main-content.with-tabs, .content-body, .session-content-wrapper { background:var(--bg-secondary); }

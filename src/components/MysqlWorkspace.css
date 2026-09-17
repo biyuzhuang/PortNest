@@ -52,7 +52,7 @@
 .mysql-main tbody tr:nth-child(even) { background:color-mix(in srgb,var(--bg-tertiary) 62%,var(--bg-secondary)); }
 .mysql-main tbody tr:hover { background:var(--bg-hover); }
 .mysql-main td.null { color:var(--text-muted); font-style:italic; }
-.mysql-main td.object-name { color:var(--text-primary); font-family:Consolas,monospace; }
+.mysql-main td.object-name { color:var(--text-primary); font-family:var(--font-mono); }
 .mysql-table-list { padding:0 8px 8px; }
 .mysql-table-list .mysql-panel-actions { position:sticky; top:0; z-index:3; padding:4px 0; background:var(--bg-secondary); }
 .mysql-object-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; padding:10px 2px; align-content:start; }

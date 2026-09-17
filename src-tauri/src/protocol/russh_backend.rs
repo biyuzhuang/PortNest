@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::error::{Error, Result};
 use crate::protocol::sftp::{symbolic_permissions, FileInfo};
 use crate::protocol::ssh_backend::{
-    CancellationToken, ConnectionTarget, ExecResult, SftpHandle, ShellHandle, SshBackend,
+    BoxedIo, CancellationToken, ConnectionTarget, ExecResult, SftpHandle, ShellHandle, SshBackend,
     SshSession, TerminalSize, TransferProgress,
 };
 use crate::protocol::{ConnectionOptions, Credential, CredentialType, SessionStatus};
@@ -131,6 +131,7 @@ pub struct RusshSession {
     id: Uuid,
     handle: Arc<Mutex<client::Handle<HostKeyVerifier>>>,
     forwarded_channels: ForwardRegistry,
+    _parent: Option<Arc<dyn SshSession>>,
 }
 
 struct RusshShellHandle {
@@ -159,7 +160,7 @@ impl SshBackend for RusshBackend {
         options: &ConnectionOptions,
     ) -> Result<Arc<dyn SshSession>> {
         let timeout = Duration::from_millis(options.timeout_ms.unwrap_or(30_000));
-        let stream = tokio::time::timeout(timeout, connect_transport(target, options))
+        let (stream, parent) = tokio::time::timeout(timeout, connect_transport(target, options))
             .await
             .map_err(|_| Error::Timeout(format!("连接 {}:{} 超时", target.host, target.port)))??;
 
@@ -189,8 +190,9 @@ impl SshBackend for RusshBackend {
             ..Default::default()
         };
 
-        let mut handle = client::connect_stream(Arc::new(config), stream, handler)
+        let mut handle = tokio::time::timeout(timeout, client::connect_stream(Arc::new(config), stream, handler))
             .await
+            .map_err(|_| Error::Timeout(format!("SSH 握手 {}:{} 超时", target.host, target.port)))?
             .map_err(|error| {
                 let rejection = rejection.lock().expect("host-key rejection lock").take();
                 Error::ConnectionFailed(
@@ -198,7 +200,7 @@ impl SshBackend for RusshBackend {
                 )
             })?;
 
-        let authenticated = match credential.credential_type {
+        let authenticated = tokio::time::timeout(timeout, async { Ok::<bool, Error>(match credential.credential_type {
             CredentialType::Password => {
                 let password = credential
                     .password
@@ -249,7 +251,8 @@ impl SshBackend for RusshBackend {
                 success
             }
             CredentialType::Agent => authenticate_agent(&mut handle, &target.username).await?,
-        };
+        }) }).await
+            .map_err(|_| Error::Timeout(format!("SSH 认证 {}:{} 超时", target.host, target.port)))??;
 
         if !authenticated {
             return Err(Error::AuthenticationFailed("认证未成功".to_string()));
@@ -259,6 +262,7 @@ impl SshBackend for RusshBackend {
             id: Uuid::new_v4(),
             handle: Arc::new(Mutex::new(handle)),
             forwarded_channels,
+            _parent: parent,
         }))
     }
 }
@@ -402,24 +406,35 @@ impl SshSession for RusshSession {
         exec_on_transport(&self.handle, command).await
     }
 
-    async fn relay_direct_tcpip(
+    async fn open_direct_tcpip(
         &self,
-        stream: TcpStream,
         target_host: &str,
         target_port: u16,
-    ) -> Result<()> {
-        let origin = stream
-            .peer_addr()
-            .map(|address| (address.ip().to_string(), address.port() as u32))
-            .unwrap_or_else(|_| ("127.0.0.1".to_string(), 0));
+        origin_host: &str,
+        origin_port: u16,
+    ) -> Result<BoxedIo> {
         let channel = self
             .handle
             .lock()
             .await
-            .channel_open_direct_tcpip(target_host, target_port as u32, origin.0, origin.1)
+            .channel_open_direct_tcpip(
+                target_host,
+                target_port as u32,
+                origin_host,
+                origin_port as u32,
+            )
             .await
-            .map_err(|error| protocol_error("打开 direct-tcpip Channel 失败", error))?;
-        relay_tcp_channel(stream, channel).await
+            .map_err(|error| {
+                let detail = error.to_string();
+                if detail.contains("AdministrativelyProhibited") {
+                    Error::ProtocolError(
+                        "SSH 端口转发请求被服务端拒绝（AdministrativelyProhibited）。请检查 sshd_config 及 Match 规则：启用 AllowTcpForwarding yes，并确认未设置 DisableForwarding yes 或不匹配的 PermitOpen 限制。".to_string(),
+                    )
+                } else {
+                    protocol_error("打开 direct-tcpip Channel 失败", error)
+                }
+            })?;
+        Ok(Box::new(channel.into_stream()))
     }
 
     async fn serve_remote_forward(
@@ -431,6 +446,8 @@ impl SshSession for RusshSession {
         cancellation: CancellationToken,
         ready: oneshot::Sender<std::result::Result<u16, String>>,
         active_connections: Arc<AtomicUsize>,
+        total_connections: Arc<AtomicUsize>,
+        report_error: Arc<dyn Fn(String) + Send + Sync>,
     ) -> Result<()> {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         self.forwarded_channels
@@ -481,7 +498,9 @@ impl SshSession for RusshSession {
                     let Some(forwarded) = forwarded else { break; };
                     let target_host = target_host.to_string();
                     let active_connections = active_connections.clone();
+                    let report_error = report_error.clone();
                     active_connections.fetch_add(1, Ordering::AcqRel);
+                    total_connections.fetch_add(1, Ordering::AcqRel);
                     tokio::spawn(async move {
                         let result = async {
                             let stream = TcpStream::connect((target_host.as_str(), target_port)).await
@@ -490,6 +509,7 @@ impl SshSession for RusshSession {
                         }.await;
                         if let Err(error) = result {
                             tracing::warn!("远程转发连接失败: {error}");
+                            report_error(error.to_string());
                         }
                         active_connections.fetch_sub(1, Ordering::AcqRel);
                     });
@@ -889,8 +909,30 @@ async fn exec_on_transport(
 async fn connect_transport(
     target: &ConnectionTarget,
     options: &ConnectionOptions,
-) -> Result<tokio::net::TcpStream> {
+) -> Result<(BoxedIo, Option<Arc<dyn SshSession>>)> {
     if let Some(proxy) = &options.proxy {
+        if proxy.proxy_type == "ssh_jump" {
+            let jump = proxy.jump.as_ref().ok_or_else(|| {
+                Error::InvalidConfig("SSH 跳板机配置尚未解析".to_string())
+            })?;
+            if jump
+                .options
+                .proxy
+                .as_ref()
+                .is_some_and(|nested| nested.proxy_type == "ssh_jump")
+            {
+                return Err(Error::InvalidConfig("仅支持单级 SSH 跳板".to_string()));
+            }
+            let jump_session = RusshBackend
+                .connect(&jump.target, &jump.credential, &jump.options)
+                .await
+                .map_err(|error| Error::ConnectionFailed(format!("连接 SSH 跳板机失败: {error}")))?;
+            let stream = jump_session
+                .open_direct_tcpip(&target.host, target.port, "127.0.0.1", 0)
+                .await
+                .map_err(|error| Error::ConnectionFailed(format!("跳板机打开目标通道失败: {error}")))?;
+            return Ok((stream, Some(jump_session)));
+        }
         let mut stream = tokio::net::TcpStream::connect((&*proxy.host, proxy.port))
             .await
             .map_err(|error| Error::ConnectionFailed(format!("连接代理失败: {error}")))?;
@@ -919,17 +961,19 @@ async fn connect_transport(
                 return Err(Error::ProtocolError(format!("不支持的代理类型: {value}")));
             }
         }
-        Ok(stream)
+        Ok((Box::new(stream), None))
     } else {
-        tokio::net::TcpStream::connect((&*target.host, target.port))
+        let stream = tokio::net::TcpStream::connect((&*target.host, target.port))
             .await
-            .map_err(|error| Error::ConnectionFailed(format!("TCP 连接失败: {error}")))
+            .map_err(|error| Error::ConnectionFailed(format!("TCP 连接失败: {error}")))?;
+        Ok((Box::new(stream), None))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::net::TcpListener;
 
     #[tokio::test]
     async fn cancel_interrupts_hung_io() {
@@ -954,10 +998,67 @@ mod tests {
             .expect("task should not panic");
         assert!(matches!(result, Err(Error::TransferCancelled)));
     }
+
+    #[tokio::test]
+    async fn socks5_proxy_connects_domain_with_no_auth() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0_u8; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            stream.write_all(&[5, 0]).await.unwrap();
+            let mut request = [0_u8; 18];
+            stream.read_exact(&mut request).await.unwrap();
+            assert_eq!(&request[..5], &[5, 1, 0, 3, 11]);
+            assert_eq!(&request[5..16], b"example.com");
+            stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 22]).await.unwrap();
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        socks5_connect(&mut client, "example.com", 22, None, None).await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn socks5_rejects_unknown_auth_method() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0_u8; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            stream.write_all(&[5, 1]).await.unwrap();
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        assert!(socks5_connect(&mut client, "example.com", 22, None, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn http_connect_formats_ipv6_and_basic_auth() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let byte = stream.read_u8().await.unwrap();
+                request.push(byte);
+                if request.ends_with(b"\r\n\r\n") { break; }
+            }
+            let request = String::from_utf8(request).unwrap();
+            assert!(request.starts_with("CONNECT [::1]:22 HTTP/1.1\r\n"));
+            assert!(request.contains("Proxy-Authorization: Basic "));
+            stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.unwrap();
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        http_connect(&mut client, "::1", 22, Some("user"), Some("pass")).await.unwrap();
+        server.await.unwrap();
+    }
 }
 
 async fn socks5_connect(
-    stream: &mut tokio::net::TcpStream,
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
     host: &str,
     port: u16,
     username: Option<&str>,
@@ -975,6 +1076,12 @@ async fn socks5_connect(
         return Err(Error::AuthenticationFailed(
             "SOCKS5 代理认证协商失败".to_string(),
         ));
+    }
+    if !matches!(selection[1], 0 | 2) {
+        return Err(Error::ProtocolError(format!(
+            "SOCKS5 代理选择了不支持的认证方式 {}",
+            selection[1]
+        )));
     }
     if selection[1] == 2 {
         let username = username.unwrap_or("");
@@ -994,11 +1101,25 @@ async fn socks5_connect(
             ));
         }
     }
-    if host.len() > 255 {
-        return Err(Error::InvalidConfig("目标主机名过长".to_string()));
+    let mut request = vec![5, 1, 0];
+    if let Ok(address) = host.parse::<std::net::IpAddr>() {
+        match address {
+            std::net::IpAddr::V4(address) => {
+                request.push(1);
+                request.extend_from_slice(&address.octets());
+            }
+            std::net::IpAddr::V6(address) => {
+                request.push(4);
+                request.extend_from_slice(&address.octets());
+            }
+        }
+    } else {
+        if host.len() > 255 {
+            return Err(Error::InvalidConfig("目标主机名过长".to_string()));
+        }
+        request.extend_from_slice(&[3, host.len() as u8]);
+        request.extend_from_slice(host.as_bytes());
     }
-    let mut request = vec![5, 1, 0, 3, host.len() as u8];
-    request.extend_from_slice(host.as_bytes());
     request.extend_from_slice(&port.to_be_bytes());
     stream.write_all(&request).await?;
     let mut response = [0; 4];
@@ -1025,7 +1146,7 @@ async fn socks5_connect(
 }
 
 async fn http_connect(
-    stream: &mut tokio::net::TcpStream,
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
     host: &str,
     port: u16,
     username: Option<&str>,
@@ -1038,15 +1159,23 @@ async fn http_connect(
             format!("Proxy-Authorization: Basic {value}\r\n")
         })
         .unwrap_or_default();
-    let request = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{auth}\r\n");
+    let authority = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    let request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n{auth}\r\n");
     stream.write_all(request.as_bytes()).await?;
     let mut response = Vec::with_capacity(1024);
     loop {
         let mut byte = [0; 1];
         stream.read_exact(&mut byte).await?;
         response.push(byte[0]);
-        if response.ends_with(b"\r\n\r\n") || response.len() >= 16 * 1024 {
+        if response.ends_with(b"\r\n\r\n") {
             break;
+        }
+        if response.len() >= 16 * 1024 {
+            return Err(Error::ProtocolError("HTTP CONNECT 响应头超过 16 KiB".to_string()));
         }
     }
     let status = String::from_utf8_lossy(&response);

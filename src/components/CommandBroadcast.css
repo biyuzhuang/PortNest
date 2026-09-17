@@ -91,7 +91,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 13px;
-  font-family: monospace;
+  font-family: var(--font-mono);
 }
 
 .command-input:focus {
@@ -194,7 +194,7 @@
   flex: 1;
   padding: 8px;
   overflow: auto;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.4;
 }

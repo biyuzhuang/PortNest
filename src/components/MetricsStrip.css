@@ -64,5 +64,5 @@
   font-weight: 500;
   min-width: 32px;
   text-align: left;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-numeric);
 }

@@ -70,11 +70,27 @@ impl Default for ConnectionOptions {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
     #[serde(alias = "type")]
-    pub proxy_type: String, // socks5, http
+    pub proxy_type: String, // socks5, http, ssh_jump
+    #[serde(default)]
     pub host: String,
+    #[serde(default)]
     pub port: u16,
+    #[serde(default)]
     pub username: Option<String>,
+    #[serde(default)]
     pub password: Option<String>,
+    #[serde(default)]
+    pub jump_connection_id: Option<String>,
+    /// Resolved at runtime only. Never serialized to connection options.
+    #[serde(skip)]
+    pub jump: Option<Box<ResolvedJumpConfig>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedJumpConfig {
+    pub target: crate::protocol::ssh_backend::ConnectionTarget,
+    pub credential: Credential,
+    pub options: ConnectionOptions,
 }
 
 /// 命令执行结果

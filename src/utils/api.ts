@@ -63,6 +63,7 @@ export interface TunnelRuntimeInfo {
   target_port?: number;
   status: TunnelStatus;
   active_connections: number;
+  total_connections: number;
   error?: string;
 }
 
@@ -82,11 +83,12 @@ export interface ConnectionConfig {
   tags?: string;
   color?: string;
   folder_id?: string;
-  proxy_type?: string;
+  proxy_type?: "socks5" | "http" | "ssh_jump";
   proxy_host?: string;
   proxy_port?: number;
   proxy_username?: string;
   proxy_password?: string;
+  jump_connection_id?: string;
   encoding?: string;
   timeout_ms?: number;
   database?: string;
@@ -148,6 +150,14 @@ export interface AIAnalyzeResult {
 export interface ShellOpenResponse {
   shell_id: string;
   encoding: string;
+}
+
+export interface SshRouteTestResult {
+  success: boolean;
+  route: string;
+  stage: string;
+  message: string;
+  suggestion?: string;
 }
 
 export interface LocalShellProfile {
@@ -321,6 +331,10 @@ export const api = {
     return sshInvoke("list_tunnels", { connectionId: connectionId ?? null });
   },
 
+  async probeTunnel(tunnelId: string, dynamicHost: string, dynamicPort: number): Promise<string> {
+    return sshInvoke("probe_tunnel", { tunnelId, dynamicHost, dynamicPort });
+  },
+
   async stopAllTunnels(connectionId?: string): Promise<void> {
     return sshInvoke("stop_all_tunnels", { connectionId: connectionId ?? null });
   },
@@ -463,6 +477,10 @@ export const api = {
   // Test connection
   async testConnection(config: ConnectionConfig): Promise<string> {
     return sshInvoke("test_connection", { config });
+  },
+
+  async testSshRoute(config: ConnectionConfig): Promise<SshRouteTestResult> {
+    return invoke("test_ssh_route", { config });
   },
 };
 

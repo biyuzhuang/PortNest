@@ -1,4 +1,4 @@
-use parking_lot::RwLock;
+use parking_lot::{Mutex as ParkingMutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -6,11 +6,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use crate::protocol::ssh_backend::{CancellationToken, ConnectionTarget, SshBackend, SshSession};
+use crate::protocol::ssh_backend::{
+    session_pool_key, CancellationToken, ConnectionTarget, SshBackend, SshSession, SshSessionPool,
+};
 use crate::protocol::{ConnectionOptions, Credential};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,6 +71,7 @@ pub struct TunnelRuntimeInfo {
     pub target_port: Option<u16>,
     pub status: TunnelStatus,
     pub active_connections: usize,
+    pub total_connections: usize,
     pub error: Option<String>,
 }
 
@@ -76,17 +79,21 @@ struct TunnelRuntime {
     info: TunnelRuntimeInfo,
     cancellation: CancellationToken,
     active_connections: Arc<AtomicUsize>,
+    total_connections: Arc<AtomicUsize>,
+    last_error: Arc<ParkingMutex<Option<String>>>,
+    lease_key: String,
+    lease_owner: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TunnelManager {
     runtimes: Arc<RwLock<HashMap<String, TunnelRuntime>>>,
-    sessions: Arc<Mutex<HashMap<String, Arc<dyn SshSession>>>>,
+    pool: Arc<SshSessionPool>,
 }
 
 impl TunnelManager {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(pool: Arc<SshSessionPool>) -> Self {
+        Self { runtimes: Arc::new(RwLock::new(HashMap::new())), pool }
     }
 
     pub async fn start(
@@ -115,25 +122,26 @@ impl TunnelManager {
                 return Ok(existing);
             }
             self.runtimes.write().remove(&existing.id);
-            if let Some(session) = self.sessions.lock().await.remove(&connection_id) {
-                let _ = session.disconnect().await;
-            }
         }
 
-        let session = {
-            let mut sessions = self.sessions.lock().await;
-            if let Some(session) = sessions.get(&connection_id).cloned() {
-                session
-            } else {
-                let session = backend.connect(&target, &credential, &options).await?;
-                sessions.insert(connection_id.clone(), session.clone());
-                session
-            }
-        };
-
         let tunnel_id = Uuid::new_v4().to_string();
+        let lease_owner = format!("tunnel:{tunnel_id}");
+        let lease_key = session_pool_key(&connection_id, &target, &credential, &options);
+        let session = self
+            .pool
+            .acquire(
+                lease_key.clone(),
+                lease_owner.clone(),
+                backend,
+                &target,
+                &credential,
+                &options,
+            )
+            .await?;
         let cancellation = CancellationToken::default();
         let active_connections = Arc::new(AtomicUsize::new(0));
+        let total_connections = Arc::new(AtomicUsize::new(0));
+        let last_error = Arc::new(ParkingMutex::new(None));
         let mut info = TunnelRuntimeInfo {
             id: tunnel_id.clone(),
             connection_id: connection_id.clone(),
@@ -150,19 +158,21 @@ impl TunnelManager {
             target_port: rule.target_port,
             status: TunnelStatus::Starting,
             active_connections: 0,
+            total_connections: 0,
             error: None,
         };
 
         match rule.tunnel_type {
             TunnelType::Local | TunnelType::Dynamic => {
-                let listener = TcpListener::bind((rule.bind_host.as_str(), rule.bind_port))
-                    .await
-                    .map_err(|error| {
-                        Error::ConnectionFailed(format!(
-                            "监听 {}:{} 失败: {error}",
-                            rule.bind_host, rule.bind_port
-                        ))
-                    })?;
+                let listener = match TcpListener::bind((rule.bind_host.as_str(), rule.bind_port)).await {
+                    Ok(listener) => listener,
+                    Err(error) => {
+                        self.pool.release(&lease_key, &lease_owner).await;
+                        return Err(Error::ConnectionFailed(format!(
+                            "监听 {}:{} 失败: {error}", rule.bind_host, rule.bind_port
+                        )));
+                    }
+                };
                 info.status = TunnelStatus::Running;
                 self.runtimes.write().insert(
                     tunnel_id.clone(),
@@ -170,6 +180,10 @@ impl TunnelManager {
                         info: info.clone(),
                         cancellation: cancellation.clone(),
                         active_connections: active_connections.clone(),
+                        total_connections: total_connections.clone(),
+                        last_error: last_error.clone(),
+                        lease_key: lease_key.clone(),
+                        lease_owner: lease_owner.clone(),
                     },
                 );
                 let manager = self.clone();
@@ -180,12 +194,26 @@ impl TunnelManager {
                         rule,
                         cancellation,
                         active_connections,
+                        total_connections,
+                        last_error,
                     )
                     .await;
                     manager.finish_runtime(&tunnel_id, result);
                 });
             }
             TunnelType::Remote => {
+                self.runtimes.write().insert(
+                    tunnel_id.clone(),
+                    TunnelRuntime {
+                        info: info.clone(),
+                        cancellation: cancellation.clone(),
+                        active_connections: active_connections.clone(),
+                        total_connections: total_connections.clone(),
+                        last_error: last_error.clone(),
+                        lease_key: lease_key.clone(),
+                        lease_owner: lease_owner.clone(),
+                    },
+                );
                 let (ready_sender, ready_receiver) = oneshot::channel();
                 let bind_host = rule.bind_host.clone();
                 let target_host = rule.target_host.clone().expect("validated remote target");
@@ -193,6 +221,7 @@ impl TunnelManager {
                 let session_for_task = session.clone();
                 let cancellation_for_task = cancellation.clone();
                 let active_for_task = active_connections.clone();
+                let error_for_task = last_error.clone();
                 let manager = self.clone();
                 let runtime_id = tunnel_id.clone();
                 tokio::spawn(async move {
@@ -205,50 +234,55 @@ impl TunnelManager {
                             cancellation_for_task,
                             ready_sender,
                             active_for_task,
+                            total_connections.clone(),
+                            Arc::new(move |message| *error_for_task.lock() = Some(message)),
                         )
                         .await;
                     manager.finish_runtime(&runtime_id, result);
                 });
-                let allocated = ready_receiver
-                    .await
-                    .map_err(|_| Error::ConnectionFailed("远程转发启动任务意外结束".to_string()))?
-                    .map_err(Error::ConnectionFailed)?;
+                let startup_timeout = std::time::Duration::from_millis(
+                    options.timeout_ms.unwrap_or(30_000),
+                );
+                let allocated_result = match tokio::time::timeout(startup_timeout, ready_receiver).await {
+                    Err(_) => Err(Error::Timeout("等待远程转发确认超时".to_string())),
+                    Ok(Err(_)) => Err(Error::ConnectionFailed("远程转发启动任务意外结束".to_string())),
+                    Ok(Ok(Err(message))) => Err(Error::ConnectionFailed(message)),
+                    Ok(Ok(Ok(port))) => Ok(port),
+                };
+                let allocated = match allocated_result {
+                    Ok(port) => port,
+                    Err(error) => {
+                        cancellation.cancel();
+                        self.finish_runtime(&tunnel_id, Err(Error::ConnectionFailed(error.to_string())));
+                        return Err(error);
+                    }
+                };
                 info.bind_port = allocated;
                 info.status = TunnelStatus::Running;
-                self.runtimes.write().insert(
-                    tunnel_id.clone(),
-                    TunnelRuntime {
-                        info: info.clone(),
-                        cancellation,
-                        active_connections,
-                    },
-                );
+                let mut runtimes = self.runtimes.write();
+                let runtime = runtimes.get_mut(&tunnel_id)
+                    .ok_or_else(|| Error::ConnectionFailed("远程转发启动后状态丢失".to_string()))?;
+                if runtime.info.status == TunnelStatus::Error {
+                    return Err(Error::ConnectionFailed(runtime.info.error.clone().unwrap_or_else(|| "远程转发启动失败".to_string())));
+                }
+                runtime.info = info.clone();
             }
         }
         Ok(info)
     }
 
     pub async fn stop(&self, tunnel_id: &str) -> Result<()> {
-        let connection_id = {
+        let (lease_key, lease_owner) = {
             let mut runtimes = self.runtimes.write();
             let runtime = runtimes
                 .get_mut(tunnel_id)
                 .ok_or_else(|| Error::InvalidConfig("隧道不存在或已经停止".to_string()))?;
             runtime.info.status = TunnelStatus::Stopping;
             runtime.cancellation.cancel();
-            runtime.info.connection_id.clone()
+            (runtime.lease_key.clone(), runtime.lease_owner.clone())
         };
         self.runtimes.write().remove(tunnel_id);
-        let has_more = self
-            .runtimes
-            .read()
-            .values()
-            .any(|runtime| runtime.info.connection_id == connection_id);
-        if !has_more {
-            if let Some(session) = self.sessions.lock().await.remove(&connection_id) {
-                let _ = session.disconnect().await;
-            }
-        }
+        self.pool.release(&lease_key, &lease_owner).await;
         Ok(())
     }
 
@@ -283,8 +317,41 @@ impl TunnelManager {
             .collect()
     }
 
+    pub async fn probe(&self, tunnel_id: &str, dynamic_host: &str, dynamic_port: u16) -> Result<String> {
+        let info = self.runtimes.read().get(tunnel_id).map(runtime_info)
+            .ok_or_else(|| Error::InvalidConfig("隧道不存在或已经停止".to_string()))?;
+        if info.tunnel_type == TunnelType::Remote {
+            return Ok(format!("远程监听 {}:{} 已由 SSH 服务端确认", info.bind_host, info.bind_port));
+        }
+        let mut stream = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            TcpStream::connect((info.bind_host.as_str(), info.bind_port)),
+        ).await.map_err(|_| Error::Timeout("连接隧道监听端口超时".to_string()))?
+            .map_err(Error::IoError)?;
+        if info.tunnel_type == TunnelType::Dynamic {
+            stream.write_all(&[5, 1, 0]).await.map_err(Error::IoError)?;
+            let mut method = [0_u8; 2];
+            stream.read_exact(&mut method).await.map_err(Error::IoError)?;
+            if method != [5, 0] { return Err(Error::ProtocolError("动态 SOCKS5 协商失败".to_string())); }
+            let host = dynamic_host.as_bytes();
+            if host.len() > 255 { return Err(Error::InvalidConfig("测试目标主机名过长".to_string())); }
+            let mut request = vec![5, 1, 0, 3, host.len() as u8];
+            request.extend_from_slice(host);
+            request.extend_from_slice(&dynamic_port.to_be_bytes());
+            stream.write_all(&request).await.map_err(Error::IoError)?;
+            let mut response = [0_u8; 10];
+            stream.read_exact(&mut response).await.map_err(Error::IoError)?;
+            if response[1] != 0 { return Err(Error::ConnectionFailed(format!("动态 SOCKS5 测试失败，错误码 {}", response[1]))); }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if let Some(error) = self.runtimes.read().get(tunnel_id).and_then(|runtime| runtime.last_error.lock().clone()) {
+            return Err(Error::ConnectionFailed(error));
+        }
+        Ok(format!("已通过 SSH 打开目标通道；监听 {}:{} 可用", info.bind_host, info.bind_port))
+    }
+
     fn finish_runtime(&self, tunnel_id: &str, result: Result<()>) {
-        if let Some(runtime) = self.runtimes.write().get_mut(tunnel_id) {
+        let lease = if let Some(runtime) = self.runtimes.write().get_mut(tunnel_id) {
             match result {
                 Ok(()) => runtime.info.status = TunnelStatus::Stopped,
                 Err(error) => {
@@ -292,6 +359,11 @@ impl TunnelManager {
                     runtime.info.error = Some(error.to_string());
                 }
             }
+            Some((runtime.lease_key.clone(), runtime.lease_owner.clone()))
+        } else { None };
+        if let Some((key, owner)) = lease {
+            let pool = self.pool.clone();
+            tokio::spawn(async move { pool.release(&key, &owner).await; });
         }
     }
 }
@@ -299,6 +371,10 @@ impl TunnelManager {
 fn runtime_info(runtime: &TunnelRuntime) -> TunnelRuntimeInfo {
     let mut info = runtime.info.clone();
     info.active_connections = runtime.active_connections.load(Ordering::Acquire);
+    info.total_connections = runtime.total_connections.load(Ordering::Acquire);
+    if let Some(error) = runtime.last_error.lock().clone() {
+        info.error = Some(error);
+    }
     info
 }
 
@@ -333,6 +409,8 @@ async fn serve_local_listener(
     rule: TunnelRule,
     cancellation: CancellationToken,
     active_connections: Arc<AtomicUsize>,
+    total_connections: Arc<AtomicUsize>,
+    last_error: Arc<ParkingMutex<Option<String>>>,
 ) -> Result<()> {
     loop {
         tokio::select! {
@@ -342,7 +420,10 @@ async fn serve_local_listener(
                 let session = session.clone();
                 let rule = rule.clone();
                 let active_connections = active_connections.clone();
+                let total_connections = total_connections.clone();
+                let last_error = last_error.clone();
                 active_connections.fetch_add(1, Ordering::AcqRel);
+                total_connections.fetch_add(1, Ordering::AcqRel);
                 tokio::spawn(async move {
                     let result = async {
                         let (target_host, target_port) = if matches!(rule.tunnel_type, TunnelType::Dynamic) {
@@ -350,9 +431,33 @@ async fn serve_local_listener(
                         } else {
                             (rule.target_host.clone().expect("validated target"), rule.target_port.expect("validated port"))
                         };
-                        session.relay_direct_tcpip(stream, &target_host, target_port).await
+                        let origin = stream.peer_addr()
+                            .map(|address| (address.ip().to_string(), address.port()))
+                            .unwrap_or_else(|_| ("127.0.0.1".to_string(), 0));
+                        let mut channel = match session
+                            .open_direct_tcpip(&target_host, target_port, &origin.0, origin.1)
+                            .await
+                        {
+                            Ok(channel) => channel,
+                            Err(error) => {
+                                if matches!(rule.tunnel_type, TunnelType::Dynamic) {
+                                    let _ = stream.write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0]).await;
+                                }
+                                return Err(error);
+                            }
+                        };
+                        if matches!(rule.tunnel_type, TunnelType::Dynamic) {
+                            stream.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await.map_err(Error::IoError)?;
+                        }
+                        tokio::io::copy_bidirectional(&mut stream, &mut channel)
+                            .await
+                            .map_err(Error::IoError)?;
+                        Ok(())
                     }.await;
-                    if let Err(error) = result { tracing::warn!("隧道连接失败: {error}"); }
+                    if let Err(error) = result {
+                        tracing::warn!("隧道连接失败: {error}");
+                        *last_error.lock() = Some(error.to_string());
+                    }
                     active_connections.fetch_sub(1, Ordering::AcqRel);
                 });
             }
@@ -421,10 +526,6 @@ async fn socks5_handshake(stream: &mut TcpStream) -> Result<(String, u16)> {
         _ => return Err(Error::ProtocolError("SOCKS5 地址类型不受支持".to_string())),
     };
     let port = stream.read_u16().await.map_err(Error::IoError)?;
-    stream
-        .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
-        .await
-        .map_err(Error::IoError)?;
     Ok((host, port))
 }
 
@@ -437,7 +538,9 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            socks5_handshake(&mut stream).await
+            let target = socks5_handshake(&mut stream).await?;
+            stream.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]).await.map_err(Error::IoError)?;
+            Ok(target)
         });
         let mut client = TcpStream::connect(address).await.unwrap();
         client.write_all(&[5, 1, 0]).await.unwrap();

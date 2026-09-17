@@ -13,8 +13,8 @@ use crate::protocol::docker::{
     NetworkInfo, VolumeInfo,
 };
 use crate::protocol::ssh_backend::{
-    CancellationToken, ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend, SshBackend,
-    SshSession, TerminalSize,
+    session_pool_key, CancellationToken, ConnectionTarget, SftpHandle, ShellHandle, Ssh2Backend,
+    SshBackend, SshSession, SshSessionPool, TerminalSize,
 };
 use crate::protocol::terminal_codec::{normalize_encoding, TerminalCodec};
 use crate::protocol::tunnel::{TunnelManager, TunnelRule, TunnelRuntimeInfo};
@@ -39,7 +39,8 @@ fn parse_connection_options(
 
 /// Shell 会话信息
 struct ShellSessionInfo {
-    _connection_id: String,
+    lease_key: Option<String>,
+    lease_owner: Option<String>,
     /// 本地终端（local 协议）没有 SSH 会话；SFTP 等能力依赖该字段，为空时拒绝
     session: Option<Arc<dyn SshSession>>,
     shell: Arc<dyn ShellHandle>,
@@ -61,7 +62,9 @@ impl ShellManager {
     fn insert(
         &self,
         shell_id: String,
-        connection_id: String,
+        _connection_id: String,
+        lease_key: Option<String>,
+        lease_owner: Option<String>,
         session: Option<Arc<dyn SshSession>>,
         shell: Arc<dyn ShellHandle>,
         encoding: &str,
@@ -70,7 +73,8 @@ impl ShellManager {
         self.sessions.write().insert(
             shell_id,
             ShellSessionInfo {
-                _connection_id: connection_id,
+                lease_key,
+                lease_owner,
                 session,
                 shell,
                 codec,
@@ -90,6 +94,12 @@ impl ShellManager {
         self.sessions.write().remove(shell_id);
     }
 
+    fn lease(&self, shell_id: &str) -> Option<(String, String)> {
+        self.sessions.read().get(shell_id).and_then(|entry| {
+            Some((entry.lease_key.clone()?, entry.lease_owner.clone()?))
+        })
+    }
+
     fn codec(&self, shell_id: &str) -> Option<Arc<Mutex<TerminalCodec>>> {
         self.sessions
             .read()
@@ -102,10 +112,8 @@ impl ShellManager {
 struct SftpSessionInfo {
     _connection_id: String,
     handle: Arc<dyn SftpHandle>,
-    session: Arc<dyn SshSession>,
-    /// 是否为独立建立的 SSH 会话（`open_sftp` 创建）。关闭时需要主动断开传输；
-    /// 复用 Shell 会话（`open_sftp_for_shell`）创建的不能断开，否则会连带终端。
-    owns_session: bool,
+    lease_key: String,
+    lease_owner: String,
 }
 
 /// SFTP 会话管理器
@@ -127,16 +135,16 @@ impl SftpManager {
         sftp_id: String,
         connection_id: String,
         handle: Arc<dyn SftpHandle>,
-        session: Arc<dyn SshSession>,
-        owns_session: bool,
+        lease_key: String,
+        lease_owner: String,
     ) {
         self.sessions.write().insert(
             sftp_id,
             SftpSessionInfo {
                 _connection_id: connection_id,
                 handle,
-                session,
-                owns_session,
+                lease_key,
+                lease_owner,
             },
         );
     }
@@ -145,16 +153,9 @@ impl SftpManager {
         self.sessions.read().get(sftp_id).map(|s| s.handle.clone())
     }
 
-    fn get_session(&self, sftp_id: &str) -> Option<Arc<dyn SshSession>> {
-        self.sessions.read().get(sftp_id).map(|s| s.session.clone())
-    }
-
-    fn owns_session(&self, sftp_id: &str) -> bool {
-        self.sessions
-            .read()
-            .get(sftp_id)
-            .map(|s| s.owns_session)
-            .unwrap_or(false)
+    fn lease(&self, sftp_id: &str) -> Option<(String, String)> {
+        self.sessions.read().get(sftp_id)
+            .map(|session| (session.lease_key.clone(), session.lease_owner.clone()))
     }
 
     fn remove(&self, sftp_id: &str) {
@@ -237,6 +238,7 @@ pub struct AppState {
     pub(crate) shell_manager: Arc<ShellManager>,
     pub(crate) sftp_manager: Arc<SftpManager>,
     pub(crate) tunnel_manager: Arc<TunnelManager>,
+    pub(crate) ssh_session_pool: Arc<SshSessionPool>,
     pub(crate) docker_manager: Arc<DockerManager>,
     pub(crate) mysql_manager: Arc<mysql_admin::MysqlManager>,
 }
@@ -252,6 +254,7 @@ impl AppState {
 
         Self::register_plugins(&plugin_registry);
 
+        let ssh_session_pool = Arc::new(SshSessionPool::new());
         Ok(Self {
             db,
             connection_manager,
@@ -261,7 +264,8 @@ impl AppState {
             russh_backend: Arc::new(crate::protocol::russh_backend::RusshBackend),
             shell_manager: Arc::new(ShellManager::new()),
             sftp_manager: Arc::new(SftpManager::new()),
-            tunnel_manager: Arc::new(TunnelManager::new()),
+            tunnel_manager: Arc::new(TunnelManager::new(ssh_session_pool.clone())),
+            ssh_session_pool,
             docker_manager: Arc::new(DockerManager::new()),
             mysql_manager: Arc::new(mysql_admin::MysqlManager::new()),
         })
@@ -289,6 +293,62 @@ impl AppState {
     }
 }
 
+fn credential_from_data(data: &CredentialData) -> Result<Credential, String> {
+    let credential_type = match data.auth_type.as_str() {
+        "password" => CredentialType::Password,
+        "key" => CredentialType::PrivateKey,
+        "key_with_passphrase" => CredentialType::PrivateKeyWithPassphrase,
+        "agent" => CredentialType::Agent,
+        _ => return Err("不支持的认证类型".to_string()),
+    };
+    Ok(Credential {
+        credential_type,
+        password: data.password.clone(),
+        private_key: data.private_key.clone(),
+        passphrase: data.passphrase.clone(),
+    })
+}
+
+fn resolve_ssh_options(
+    state: &AppState,
+    connection_id: &str,
+    mut options: crate::protocol::ConnectionOptions,
+    credential_data: &CredentialData,
+) -> Result<crate::protocol::ConnectionOptions, String> {
+    let Some(proxy) = options.proxy.as_mut() else { return Ok(options) };
+    if proxy.proxy_type != "ssh_jump" {
+        proxy.password = credential_data.proxy_password.clone().or(proxy.password.take());
+        return Ok(options);
+    }
+
+    let jump_id = proxy.jump_connection_id.clone().ok_or_else(|| "SSH 跳板机引用缺失".to_string())?;
+    if jump_id == connection_id { return Err("SSH 跳板机不能引用当前连接".to_string()); }
+    let jump_connection = state.db.get_connections().map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|connection| connection.id == jump_id)
+        .ok_or_else(|| "引用的 SSH 跳板机不存在".to_string())?;
+    if jump_connection.protocol != "ssh" { return Err("跳板资产必须是 SSH 连接".to_string()); }
+    let jump_data = state.db.get_credential_structured(&jump_connection.credential_id).map_err(|error| error.to_string())?;
+    let jump_credential = credential_from_data(&jump_data)?;
+    let mut jump_options = parse_connection_options(jump_connection.options.as_deref())?;
+    if jump_options.proxy.as_ref().is_some_and(|nested| nested.proxy_type == "ssh_jump") {
+        return Err("仅支持单级 SSH 跳板，所选跳板不能再引用 SSH 跳板".to_string());
+    }
+    if let Some(nested) = jump_options.proxy.as_mut() {
+        nested.password = jump_data.proxy_password.clone().or(nested.password.take());
+    }
+    proxy.jump = Some(Box::new(crate::protocol::ResolvedJumpConfig {
+        target: ConnectionTarget {
+            host: jump_connection.host,
+            port: jump_connection.port,
+            username: jump_connection.username.unwrap_or_default(),
+        },
+        credential: jump_credential,
+        options: jump_options,
+    }));
+    Ok(options)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfigRequest {
     pub id: String,
@@ -311,6 +371,7 @@ pub struct ConnectionConfigRequest {
     pub proxy_port: Option<u16>,
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
+    pub jump_connection_id: Option<String>,
     pub encoding: Option<String>,
     pub timeout_ms: Option<u64>,
     pub database: Option<String>,
@@ -366,6 +427,11 @@ pub async fn save_connection(
         ),
         None => None,
     };
+    let proxy_password_to_store = if matches!(config.proxy_type.as_deref(), Some("socks5" | "http")) {
+        config.proxy_password.clone().or_else(|| previous_credential.as_ref()?.proxy_password.clone())
+    } else {
+        None
+    };
     let cred_data = match auth_type {
         "password" => CredentialData {
             auth_type: auth_type.to_string(),
@@ -376,6 +442,7 @@ pub async fn save_connection(
             private_key: None,
             passphrase: None,
             key_id: None,
+            proxy_password: proxy_password_to_store.clone(),
         },
         "key" | "key_with_passphrase" => CredentialData {
             auth_type: auth_type.to_string(),
@@ -394,6 +461,7 @@ pub async fn save_connection(
                 .key_id
                 .clone()
                 .or_else(|| previous_credential.as_ref()?.key_id.clone()),
+            proxy_password: proxy_password_to_store.clone(),
         },
         _ => CredentialData {
             auth_type: auth_type.to_string(),
@@ -401,43 +469,38 @@ pub async fn save_connection(
             private_key: None,
             passphrase: None,
             key_id: None,
+            proxy_password: proxy_password_to_store,
         },
     };
 
-    state
-        .db
-        .save_credential_structured(credential_id, &config.name, auth_type, &cred_data)
-        .map_err(|e| e.to_string())?;
-
     // Build options JSON with proxy and encoding settings
     let mut options_map = serde_json::Map::new();
-    if let (Some(proxy_type), Some(proxy_host), Some(proxy_port)) =
-        (&config.proxy_type, &config.proxy_host, &config.proxy_port)
-    {
+    if let Some(proxy_type) = &config.proxy_type {
         let mut proxy_map = serde_json::Map::new();
         proxy_map.insert(
             "type".to_string(),
             serde_json::Value::String(proxy_type.clone()),
         );
-        proxy_map.insert(
-            "host".to_string(),
-            serde_json::Value::String(proxy_host.clone()),
-        );
-        proxy_map.insert(
-            "port".to_string(),
-            serde_json::Value::Number((*proxy_port).into()),
-        );
-        if let Some(username) = &config.proxy_username {
-            proxy_map.insert(
-                "username".to_string(),
-                serde_json::Value::String(username.clone()),
-            );
-        }
-        if let Some(password) = &config.proxy_password {
-            proxy_map.insert(
-                "password".to_string(),
-                serde_json::Value::String(password.clone()),
-            );
+        if proxy_type == "ssh_jump" {
+            let jump_id = config.jump_connection_id.as_ref().ok_or_else(|| "请选择 SSH 跳板机".to_string())?;
+            if jump_id == &id.to_string() { return Err("SSH 跳板机不能引用当前连接".to_string()); }
+            let jump_connection = state.db.get_connections().map_err(|error| error.to_string())?
+                .into_iter().find(|connection| &connection.id == jump_id)
+                .ok_or_else(|| "引用的 SSH 跳板机不存在".to_string())?;
+            if jump_connection.protocol != "ssh" { return Err("跳板资产必须是 SSH 连接".to_string()); }
+            let jump_options = parse_connection_options(jump_connection.options.as_deref())?;
+            if jump_options.proxy.as_ref().is_some_and(|proxy| proxy.proxy_type == "ssh_jump") {
+                return Err("仅支持单级 SSH 跳板，所选跳板不能再引用 SSH 跳板".to_string());
+            }
+            proxy_map.insert("jump_connection_id".to_string(), serde_json::Value::String(jump_id.clone()));
+        } else {
+            let proxy_host = config.proxy_host.as_ref().filter(|value| !value.trim().is_empty()).ok_or_else(|| "请填写代理主机".to_string())?;
+            let proxy_port = config.proxy_port.filter(|port| *port > 0).ok_or_else(|| "请填写有效代理端口".to_string())?;
+            proxy_map.insert("host".to_string(), serde_json::Value::String(proxy_host.clone()));
+            proxy_map.insert("port".to_string(), serde_json::Value::Number(proxy_port.into()));
+            if let Some(username) = &config.proxy_username {
+                proxy_map.insert("username".to_string(), serde_json::Value::String(username.clone()));
+            }
         }
         options_map.insert("proxy".to_string(), serde_json::Value::Object(proxy_map));
     }
@@ -487,6 +550,11 @@ pub async fn save_connection(
     } else {
         Some(serde_json::to_string(&options_map).unwrap_or_default())
     };
+
+    state
+        .db
+        .save_credential_structured(credential_id, &config.name, auth_type, &cred_data)
+        .map_err(|e| e.to_string())?;
 
     state
         .db
@@ -542,6 +610,7 @@ pub async fn get_connection_config(
     let mut proxy_port = None;
     let mut proxy_username = None;
     let mut proxy_password = None;
+    let mut jump_connection_id = None;
     let mut encoding = None;
     let mut timeout_ms = None;
     let mut database = None;
@@ -595,10 +664,12 @@ pub async fn get_connection_config(
                     .get("username")
                     .and_then(|item| item.as_str())
                     .map(str::to_string);
-                proxy_password = proxy
+                let legacy_proxy_password = proxy
                     .get("password")
                     .and_then(|item| item.as_str())
                     .map(str::to_string);
+                proxy_password = credential.proxy_password.clone().or(legacy_proxy_password);
+                jump_connection_id = proxy.get("jump_connection_id").and_then(|item| item.as_str()).map(str::to_string);
             }
         }
     }
@@ -627,6 +698,7 @@ pub async fn get_connection_config(
         proxy_port,
         proxy_username,
         proxy_password,
+        jump_connection_id,
         encoding,
         timeout_ms,
         database,
@@ -840,48 +912,44 @@ pub async fn open_shell(
         .get_credential_structured(&conn.credential_id)
         .map_err(|e| e.to_string())?;
 
-    let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
-        "password" => (CredentialType::Password, cred_data.password, None, None),
-        "key" => (
-            CredentialType::PrivateKey,
-            None,
-            cred_data.private_key,
-            None,
-        ),
-        "key_with_passphrase" => (
-            CredentialType::PrivateKeyWithPassphrase,
-            None,
-            cred_data.private_key,
-            cred_data.passphrase,
-        ),
-        "agent" => (CredentialType::Agent, None, None, None),
-        _ => return Err("不支持的认证类型".to_string()),
-    };
-
-    let credential = Credential {
-        credential_type,
-        password,
-        private_key,
-        passphrase,
-    };
-
-    let options = parse_connection_options(conn.options.as_deref())?;
+    let credential = credential_from_data(&cred_data)?;
+    let options = resolve_ssh_options(
+        state.inner(),
+        &connection_id,
+        parse_connection_options(conn.options.as_deref())?,
+        &cred_data,
+    )?;
 
     let target = ConnectionTarget {
         host: conn.host.clone(),
         port: conn.port,
         username: conn.username.clone().unwrap_or_default(),
     };
+    let lease_key = session_pool_key(&connection_id, &target, &credential, &options);
+    let lease_owner = format!("shell:{}", Uuid::new_v4());
     let session = state
-        .ssh_backend(&options)
-        .connect(&target, &credential, &options)
+        .ssh_session_pool
+        .acquire(
+            lease_key.clone(),
+            lease_owner.clone(),
+            state.ssh_backend(&options),
+            &target,
+            &credential,
+            &options,
+        )
         .await
         .map_err(|e| e.to_string())?;
     tracing::info!("SSH connection established to {}:{}", conn.host, conn.port);
 
     tracing::info!("Opening shell with cols={}, rows={}", cols, rows);
     let size = TerminalSize::new(cols, rows).map_err(|error| error.to_string())?;
-    let shell = session.open_shell(size).await.map_err(|e| e.to_string())?;
+    let shell = match session.open_shell(size).await {
+        Ok(shell) => shell,
+        Err(error) => {
+            state.ssh_session_pool.release(&lease_key, &lease_owner).await;
+            return Err(error.to_string());
+        }
+    };
     tracing::info!("Shell opened successfully: id={}", shell.id());
     let shell_id = shell.id().to_string();
 
@@ -892,6 +960,8 @@ pub async fn open_shell(
         .insert(
             shell_id.clone(),
             connection_id.clone(),
+            Some(lease_key),
+            Some(lease_owner),
             Some(session),
             shell,
             &encoding,
@@ -963,6 +1033,8 @@ async fn spawn_local_shell(
             shell_id.clone(),
             connection_id,
             None,
+            None,
+            None,
             Arc::new(handle),
             &encoding_label,
         )
@@ -1019,7 +1091,16 @@ pub async fn start_tunnel(
     if connection.protocol != "ssh" {
         return Err("隧道仅支持 SSH 连接".to_string());
     }
-    let options = parse_connection_options(connection.options.as_deref())?;
+    let stored = state
+        .db
+        .get_credential_structured(&connection.credential_id)
+        .map_err(|error| error.to_string())?;
+    let options = resolve_ssh_options(
+        state.inner(),
+        &connection_id,
+        parse_connection_options(connection.options.as_deref())?,
+        &stored,
+    )?;
     let value = connection
         .options
         .as_deref()
@@ -1034,23 +1115,7 @@ pub async fn start_tunnel(
         .into_iter()
         .find(|item| item.id == rule_id)
         .ok_or_else(|| "隧道规则不存在".to_string())?;
-    let stored = state
-        .db
-        .get_credential_structured(&connection.credential_id)
-        .map_err(|error| error.to_string())?;
-    let credential_type = match stored.auth_type.as_str() {
-        "password" => CredentialType::Password,
-        "key" => CredentialType::PrivateKey,
-        "key_with_passphrase" => CredentialType::PrivateKeyWithPassphrase,
-        "agent" => CredentialType::Agent,
-        _ => return Err("不支持的认证类型".to_string()),
-    };
-    let credential = Credential {
-        credential_type,
-        password: stored.password,
-        private_key: stored.private_key,
-        passphrase: stored.passphrase,
-    };
+    let credential = credential_from_data(&stored)?;
     let target = ConnectionTarget {
         host: connection.host.clone(),
         port: connection.port,
@@ -1088,6 +1153,17 @@ pub fn list_tunnels(
     connection_id: Option<String>,
 ) -> Vec<TunnelRuntimeInfo> {
     state.tunnel_manager.list(connection_id.as_deref())
+}
+
+#[tauri::command]
+pub async fn probe_tunnel(
+    state: tauri::State<'_, AppState>,
+    tunnel_id: String,
+    dynamic_host: String,
+    dynamic_port: u16,
+) -> Result<String, String> {
+    state.tunnel_manager.probe(&tunnel_id, &dynamic_host, dynamic_port).await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1191,8 +1267,11 @@ pub async fn close_shell(
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
     shell.close().await.map_err(|e| e.to_string())?;
-
+    let lease = state.shell_manager.lease(&shell_id);
     state.shell_manager.remove(&shell_id);
+    if let Some((key, owner)) = lease {
+        state.ssh_session_pool.release(&key, &owner).await;
+    }
 
     Ok(())
 }
@@ -1204,21 +1283,18 @@ pub async fn disconnect_shell(
     shell_id: String,
 ) -> Result<(), String> {
     tracing::info!("disconnect_shell command called for shell_id: {}", shell_id);
-    let (session, shell) = state
+    let (_session, shell) = state
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
     if let Err(error) = shell.close().await {
         tracing::warn!("关闭 shell channel 失败: {:?}", error);
     }
-    if let Some(session) = session {
-        if let Err(error) = session.disconnect().await {
-            tracing::warn!("断开 SSH session 失败: {:?}", error);
-        }
-    }
-
-    // Remove from shell manager
+    let lease = state.shell_manager.lease(&shell_id);
     state.shell_manager.remove(&shell_id);
+    if let Some((key, owner)) = lease {
+        state.ssh_session_pool.release(&key, &owner).await;
+    }
 
     tracing::info!("disconnect_shell completed for shell_id: {}", shell_id);
 
@@ -1454,46 +1530,30 @@ pub async fn open_sftp(
         .get_credential_structured(&conn.credential_id)
         .map_err(|e| e.to_string())?;
 
-    let (credential_type, password, private_key, passphrase) = match cred_data.auth_type.as_str() {
-        "password" => (CredentialType::Password, cred_data.password, None, None),
-        "key" => (
-            CredentialType::PrivateKey,
-            None,
-            cred_data.private_key,
-            None,
-        ),
-        "key_with_passphrase" => (
-            CredentialType::PrivateKeyWithPassphrase,
-            None,
-            cred_data.private_key,
-            cred_data.passphrase,
-        ),
-        _ => return Err("不支持的认证类型".to_string()),
-    };
-
-    let credential = Credential {
-        credential_type,
-        password,
-        private_key,
-        passphrase,
-    };
-
-    let options = parse_connection_options(conn.options.as_deref())?;
+    let credential = credential_from_data(&cred_data)?;
+    let options = resolve_ssh_options(
+        state.inner(),
+        &connection_id,
+        parse_connection_options(conn.options.as_deref())?,
+        &cred_data,
+    )?;
     let target = ConnectionTarget {
         host: conn.host.clone(),
         port: conn.port,
         username: conn.username.clone().unwrap_or_default(),
     };
+    let lease_key = session_pool_key(&connection_id, &target, &credential, &options);
+    let lease_owner = format!("sftp:{}", Uuid::new_v4());
     let session = state
-        .ssh_backend(&options)
-        .connect(&target, &credential, &options)
+        .ssh_session_pool
+        .acquire(lease_key.clone(), lease_owner.clone(), state.ssh_backend(&options), &target, &credential, &options)
         .await
         .map_err(|e| e.to_string())?;
     let sftp_handle = match session.open_sftp().await {
         Ok(handle) => handle,
         Err(error) => {
             // 清理刚建立的 SSH 会话，避免 SFTP 初始化失败后遗留连接
-            let _ = session.disconnect().await;
+            state.ssh_session_pool.release(&lease_key, &lease_owner).await;
             return Err(error.to_string());
         }
     };
@@ -1501,7 +1561,7 @@ pub async fn open_sftp(
 
     state
         .sftp_manager
-        .insert(sftp_id.clone(), connection_id, sftp_handle, session, true);
+        .insert(sftp_id.clone(), connection_id, sftp_handle, lease_key, lease_owner);
 
     Ok(SftpOpenResponse { sftp_id })
 }
@@ -1516,13 +1576,17 @@ pub async fn open_sftp_for_shell(
         .shell_manager
         .get(&shell_id)
         .ok_or_else(|| "Shell 会话未找到".to_string())?;
-    let session = session.ok_or_else(|| "本地终端不支持文件管理".to_string())?;
+    let _session = session.ok_or_else(|| "本地终端不支持文件管理".to_string())?;
+    let (lease_key, _) = state.shell_manager.lease(&shell_id).ok_or_else(|| "SSH 会话租约不存在".to_string())?;
+    let lease_owner = format!("sftp:{}", Uuid::new_v4());
+    let session = state.ssh_session_pool.retain(&lease_key, lease_owner.clone()).await
+        .ok_or_else(|| "SSH 共享会话已经断开".to_string())?;
     let sftp_handle = session.open_sftp().await.map_err(|e| e.to_string())?;
     let sftp_id = sftp_handle.id().to_string();
 
     state
         .sftp_manager
-        .insert(sftp_id.clone(), String::new(), sftp_handle, session, false);
+        .insert(sftp_id.clone(), String::new(), sftp_handle, lease_key, lease_owner);
 
     Ok(SftpOpenResponse { sftp_id })
 }
@@ -1837,12 +1901,9 @@ pub async fn close_sftp(state: tauri::State<'_, AppState>, sftp_id: String) -> R
     if let Some(handle) = state.sftp_manager.get(&sftp_id) {
         handle.close().await.map_err(|error| error.to_string())?;
     }
-    if state.sftp_manager.owns_session(&sftp_id) {
-        if let Some(session) = state.sftp_manager.get_session(&sftp_id) {
-            let _ = session.disconnect().await;
-        }
-    }
+    let lease = state.sftp_manager.lease(&sftp_id);
     state.sftp_manager.remove(&sftp_id);
+    if let Some((key, owner)) = lease { state.ssh_session_pool.release(&key, &owner).await; }
     Ok(())
 }
 
@@ -1855,10 +1916,9 @@ pub async fn close_sftp_independent(
     if let Some(handle) = state.sftp_manager.get(&sftp_id) {
         let _ = handle.close().await;
     }
-    if let Some(session) = state.sftp_manager.get_session(&sftp_id) {
-        let _ = session.disconnect().await;
-    }
+    let lease = state.sftp_manager.lease(&sftp_id);
     state.sftp_manager.remove(&sftp_id);
+    if let Some((key, owner)) = lease { state.ssh_session_pool.release(&key, &owner).await; }
     Ok(())
 }
 
@@ -1974,7 +2034,7 @@ pub async fn export_sessions(
     include_private_keys: bool,
 ) -> Result<String, String> {
     let mut exported = Vec::new();
-    for connection in state.db.get_connections().map_err(|e| e.to_string())? {
+    for mut connection in state.db.get_connections().map_err(|e| e.to_string())? {
         let mut credential = state
             .db
             .get_credential_structured(&connection.credential_id)
@@ -1982,6 +2042,15 @@ pub async fn export_sessions(
         if !include_passwords {
             credential.password = None;
             credential.passphrase = None;
+            credential.proxy_password = None;
+        }
+        if let Some(raw) = connection.options.as_deref() {
+            if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(raw) {
+                if let Some(proxy) = value.get_mut("proxy").and_then(|proxy| proxy.as_object_mut()) {
+                    proxy.remove("password");
+                }
+                connection.options = serde_json::to_string(&value).ok();
+            }
         }
         if !include_private_keys {
             credential.private_key = None;
@@ -2038,11 +2107,28 @@ pub async fn import_sessions(
             .map_err(|e| e.to_string())?;
     }
     let count = bundle.connections.len();
+    let connection_ids: HashMap<String, Uuid> = bundle.connections.iter()
+        .map(|item| (item.connection.id.clone(), Uuid::new_v4()))
+        .collect();
     for item in bundle.connections {
-        let connection_id = Uuid::new_v4();
+        let connection_id = connection_ids[&item.connection.id];
         let credential_id = Uuid::new_v4();
         let mut credential = item.credential;
         credential.key_id = None;
+        let remapped_options = item.connection.options.as_deref().map(|raw| {
+            let mut value = serde_json::from_str::<serde_json::Value>(raw).unwrap_or_default();
+            if let Some(jump_id) = value.get_mut("proxy")
+                .and_then(|proxy| proxy.get_mut("jump_connection_id"))
+                .and_then(|id| id.as_str()).map(str::to_string)
+            {
+                if let Some(new_id) = connection_ids.get(&jump_id) {
+                    if let Some(proxy) = value.get_mut("proxy").and_then(|proxy| proxy.as_object_mut()) {
+                        proxy.insert("jump_connection_id".to_string(), serde_json::Value::String(new_id.to_string()));
+                    }
+                }
+            }
+            serde_json::to_string(&value).unwrap_or_else(|_| raw.to_string())
+        });
         state
             .db
             .save_credential_structured(
@@ -2068,7 +2154,7 @@ pub async fn import_sessions(
                 item.connection.port,
                 item.connection.username.as_deref(),
                 credential_id,
-                item.connection.options.as_deref(),
+                remapped_options.as_deref(),
                 item.connection.tags.as_deref(),
                 item.connection.color.as_deref(),
                 folder_id.as_deref(),
@@ -2137,6 +2223,7 @@ pub async fn test_connection(
     state: tauri::State<'_, AppState>,
     mut config: ConnectionConfigRequest,
 ) -> Result<String, String> {
+    let test_timeout = std::time::Duration::from_millis(config.timeout_ms.unwrap_or(30_000));
     if let Some(key_id) = config.key_id.as_deref() {
         config.private_key = Some(
             state
@@ -2166,16 +2253,16 @@ pub async fn test_connection(
     let auth_type = config.auth_type.as_str();
     let (credential_type, password, private_key, passphrase) = match auth_type {
         "password" => {
-            let pass = config.password.unwrap_or_default();
+            let pass = config.password.clone().unwrap_or_default();
             (CredentialType::Password, Some(pass), None, None)
         }
         "key" => {
-            let key = config.private_key.unwrap_or_default();
+            let key = config.private_key.clone().unwrap_or_default();
             (CredentialType::PrivateKey, None, Some(key), None)
         }
         "key_with_passphrase" => {
-            let key = config.private_key.unwrap_or_default();
-            let pass = config.passphrase.unwrap_or_default();
+            let key = config.private_key.clone().unwrap_or_default();
+            let pass = config.passphrase.clone().unwrap_or_default();
             (
                 CredentialType::PrivateKeyWithPassphrase,
                 None,
@@ -2199,26 +2286,40 @@ pub async fn test_connection(
     if let Some(database) = config.database.as_ref().filter(|value| !value.trim().is_empty()) {
         options.protocol_options.insert("database".to_string(), database.trim().to_string());
     }
-    if let (Some(proxy_type), Some(proxy_host), Some(proxy_port)) =
-        (&config.proxy_type, &config.proxy_host, &config.proxy_port)
-    {
+    if let Some(proxy_type) = &config.proxy_type {
         options.proxy = Some(crate::protocol::ProxyConfig {
             proxy_type: proxy_type.clone(),
-            host: proxy_host.clone(),
-            port: *proxy_port,
+            host: config.proxy_host.clone().unwrap_or_default(),
+            port: config.proxy_port.unwrap_or_default(),
             username: config.proxy_username.clone(),
             password: config.proxy_password.clone(),
+            jump_connection_id: config.jump_connection_id.clone(),
+            jump: None,
         });
     }
 
     if config.protocol == "ssh" {
+        let transient_data = CredentialData {
+            auth_type: config.auth_type.clone(),
+            password: credential.password.clone(),
+            private_key: credential.private_key.clone(),
+            passphrase: credential.passphrase.clone(),
+            key_id: config.key_id.clone(),
+            proxy_password: config.proxy_password.clone(),
+        };
+        options = resolve_ssh_options(
+            state.inner(),
+            config.id.as_str(),
+            options,
+            &transient_data,
+        )?;
         let target = ConnectionTarget {
             host: config.host,
             port: config.port,
             username: config.username,
         };
         match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
+            test_timeout,
             state
                 .ssh_backend(&options)
                 .connect(&target, &credential, &options),
@@ -2234,7 +2335,7 @@ pub async fn test_connection(
         }
     } else {
         match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
+            test_timeout,
             plugin.connect(
                 &config.host,
                 config.port,
@@ -2252,6 +2353,58 @@ pub async fn test_connection(
             },
             Ok(Err(error)) => Err(format!("连接失败: {error}")),
             Err(_) => Err("连接超时".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SshRouteTestResult {
+    pub success: bool,
+    pub route: String,
+    pub stage: String,
+    pub message: String,
+    pub suggestion: Option<String>,
+}
+
+#[tauri::command]
+pub async fn test_ssh_route(
+    state: tauri::State<'_, AppState>,
+    config: ConnectionConfigRequest,
+) -> Result<SshRouteTestResult, String> {
+    let route = match config.proxy_type.as_deref() {
+        Some("socks5") => "SOCKS5 → SSH",
+        Some("http") => "HTTP CONNECT → SSH",
+        Some("ssh_jump") => "SSH 跳板机 → 目标 SSH",
+        _ => "直连 SSH",
+    }.to_string();
+    match test_connection(state, config).await {
+        Ok(message) => Ok(SshRouteTestResult {
+            success: true,
+            route,
+            stage: "authenticated".to_string(),
+            message,
+            suggestion: None,
+        }),
+        Err(message) => {
+            let stage = if message.contains("代理") || message.contains("SOCKS5") || message.contains("HTTP CONNECT") { "proxy" }
+                else if message.contains("跳板") { "jump" }
+                else if message.contains("认证") || message.contains("密码") { "authentication" }
+                else if message.contains("握手") || message.contains("主机密钥") { "ssh_handshake" }
+                else { "connect" };
+            let suggestion = match stage {
+                "proxy" => "检查代理地址、端口、认证方式和网络访问权限",
+                "jump" => "检查跳板资产凭据，并确认跳板服务器允许 TCP 转发",
+                "authentication" => "检查目标 SSH 用户名、密码或私钥",
+                "ssh_handshake" => "检查目标 SSH 服务和主机密钥记录",
+                _ => "检查目标地址、端口、防火墙和连接超时设置",
+            };
+            Ok(SshRouteTestResult {
+                success: false,
+                route,
+                stage: stage.to_string(),
+                message,
+                suggestion: Some(suggestion.to_string()),
+            })
         }
     }
 }

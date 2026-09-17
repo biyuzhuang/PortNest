@@ -98,6 +98,7 @@ pub fn run() {
             commands::start_tunnel,
             commands::stop_tunnel,
             commands::list_tunnels,
+            commands::probe_tunnel,
             commands::stop_all_tunnels,
             commands::resize_shell,
             commands::close_shell,
@@ -154,6 +155,7 @@ pub fn run() {
             commands::write_clipboard_text,
             // Test connection
             commands::test_connection,
+            commands::test_ssh_route,
             // Docker commands
             commands::docker_connect,
             commands::docker_list_containers,
