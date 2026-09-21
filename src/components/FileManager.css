@@ -239,6 +239,11 @@
   font-size: 11px;
   cursor: pointer;
 }
+.file-manager-summary button.active {
+  color: #0b67c2;
+  background: #e8f2ff;
+  border-radius: 4px;
+}
 .file-list { padding: 0; background: #fff; }
 .file-body { min-height: 100px; }
 .file-table { min-width: 500px; }
@@ -360,6 +365,29 @@
 .file-options-menu input { width: 13px; height: 13px; accent-color: #3d4145; }
 .file-options-divider { height: 1px; margin: 3px 0; background: #d7dadd; }
 .file-options-caption { padding: 7px 20px 4px; color: #989da1; font-size: 12px; }
+.file-options-select-label { justify-content: space-between; }
+.file-options-select-label select {
+  max-width: 96px;
+  height: 26px;
+  border: 1px solid #cfd5db;
+  border-radius: 4px;
+  color: #30353a;
+  background: #fff;
+  font: 11px var(--font-ui);
+}
+.file-options-number-label { justify-content: flex-end; }
+.file-options-number-label input {
+  width: 68px;
+  height: 26px;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid #cfd5db;
+  border-radius: 4px;
+  color: #30353a;
+  background: #fff;
+  font: 11px var(--font-numeric);
+}
+.file-options-number-label span { color: var(--text-muted); font-size: 10px; }
 .file-options-overlay { position: fixed; z-index: 1001; inset: 0; }
 .nav-btn.active { background: #e5e8eb; }
 .nav-btn:disabled { opacity: .3; cursor: default; }
@@ -387,6 +415,30 @@
   border-top: 1px solid #e5e8eb;
   background: #fafafa;
 }
+.transfer-strip-header {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #475569;
+  font: 11px var(--font-ui);
+}
+.transfer-strip-header strong { color: #1f2937; font-size: 12px; }
+.transfer-strip-header span { flex: 1; color: #94a3b8; }
+.transfer-strip-header button,
+.transfer-retry-btn {
+  padding: 3px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  color: #2563eb;
+  background: #fff;
+  font: 11px var(--font-ui);
+  cursor: pointer;
+}
+.transfer-strip-header button:hover,
+.transfer-retry-btn:hover { border-color: #3b82f6; background: #eff6ff; }
 .transfer-row {
   display: flex;
   align-items: center;
@@ -434,6 +486,8 @@
 .transfer-row.status-done .transfer-bar-fill { background: #10b981; }
 .transfer-row.status-cancelled .transfer-bar-fill { background: #9ca3af; }
 .transfer-row.status-error .transfer-bar-fill { background: #ef4444; }
+.transfer-row.status-interrupted .transfer-bar-fill { background: #f59e0b; }
+.transfer-row.status-skipped .transfer-bar-fill { background: #94a3b8; }
 .transfer-status {
   margin-top: 2px;
   color: #ef4444;
@@ -456,6 +510,82 @@
   border-color: #ef4444;
   color: #ef4444;
 }
+
+.permission-dialog p {
+  margin: -4px 0 12px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font: 12px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.permission-dialog small { color: var(--text-muted); font-size: 11px; }
+.permission-owner-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.remote-editor-overlay { z-index: 1200; }
+.remote-editor-dialog {
+  display: flex;
+  width: min(900px, calc(100vw - 56px));
+  height: min(680px, calc(100vh - 72px));
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, .24);
+}
+.remote-editor-dialog > header {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--border-light);
+}
+.remote-editor-dialog > header div { min-width: 0; flex: 1; }
+.remote-editor-dialog > header strong,
+.remote-editor-dialog > header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.remote-editor-dialog > header strong { color: var(--text-primary); font-size: 13px; }
+.remote-editor-dialog > header small { margin-top: 3px; color: var(--text-muted); font: 11px var(--font-mono); }
+.remote-editor-dialog > header button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 19px;
+  cursor: pointer;
+}
+.remote-editor-dialog > header button:hover { color: var(--text-primary); background: var(--bg-hover); }
+.remote-editor-dialog textarea {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  resize: none;
+  padding: 16px 18px;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font: 13px/1.65 var(--font-mono);
+  tab-size: 4;
+}
+.remote-editor-loading { display: grid; flex: 1; place-items: center; color: var(--text-muted); }
+.remote-editor-dialog > footer {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border-light);
+}
+.remote-editor-dialog > footer span { flex: 1; color: var(--text-muted); font-size: 11px; }
+.remote-editor-dialog > footer button { min-width: 68px; }
 
 /* 路径联动状态徽标 */
 .path-link-badge {

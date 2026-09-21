@@ -1,9 +1,10 @@
 use portnest_lib::protocol::russh_backend::RusshBackend;
 use portnest_lib::protocol::ssh_backend::{
-    session_pool_key, ConnectionTarget, SshBackend, SshSessionPool, TerminalSize,
+    session_pool_key, CancellationToken, ConnectionTarget, SshBackend, SshSessionPool, TerminalSize,
 };
 use portnest_lib::protocol::{ConnectionOptions, Credential, CredentialType};
 use std::time::Duration;
+use sha2::Digest;
 use tokio::io::AsyncReadExt;
 
 fn test_target() -> Option<(ConnectionTarget, Credential)> {
@@ -106,4 +107,58 @@ async fn shell_and_sftp_share_a_session_and_close_independently() {
     assert!(String::from_utf8_lossy(&output).contains(&marker));
     shell.close().await.expect("close shell channel");
     session.disconnect().await.expect("disconnect transport");
+}
+
+#[tokio::test]
+async fn sftp_transfer_resume_checksum_permissions_and_atomic_edit() {
+    let Some((target, credential)) = test_target() else {
+        eprintln!("skipping: PORTNEST_TEST_SSH_* variables are not configured");
+        return;
+    };
+    let session = RusshBackend
+        .connect(&target, &credential, &ConnectionOptions::default())
+        .await
+        .expect("connect test SSH session");
+    let sftp = session.open_sftp().await.expect("open SFTP channel");
+    let id = uuid::Uuid::new_v4();
+    let remote_dir = std::env::var("PORTNEST_TEST_SSH_TMP").unwrap_or_else(|_| "/tmp".to_string());
+    let remote = format!("{}/portnest-sftp-{id}.txt", remote_dir.trim_end_matches('/'));
+    let local_dir = std::env::temp_dir().join(format!("portnest-sftp-{id}"));
+    std::fs::create_dir_all(&local_dir).expect("create local test dir");
+    let upload = local_dir.join("upload.txt");
+    let download = local_dir.join("download.txt");
+    let content = b"PortNest SFTP integration\n".repeat(4096);
+    std::fs::write(&upload, &content).expect("write upload fixture");
+
+    sftp.upload(
+        &upload.to_string_lossy(),
+        &remote,
+        None,
+        CancellationToken::default(),
+        None,
+    )
+    .await
+    .expect("upload fixture");
+    let remote_checksum = sftp.checksum_sha256(&remote).await.expect("remote checksum");
+    assert_eq!(remote_checksum, format!("{:x}", sha2::Sha256::digest(&content)));
+
+    sftp.download(
+        &remote,
+        &download.to_string_lossy(),
+        None,
+        CancellationToken::default(),
+        None,
+    )
+    .await
+    .expect("download fixture");
+    assert_eq!(std::fs::read(&download).expect("read download"), content);
+
+    sftp.set_permissions(&remote, 0o640).await.expect("set permissions");
+    sftp.write_file_atomic(&remote, b"edited safely\n").await.expect("atomic edit");
+    assert_eq!(sftp.read_file(&remote, 1024).await.expect("read edited file"), b"edited safely\n");
+
+    sftp.delete_file(&remote).await.expect("remove remote fixture");
+    sftp.close().await.expect("close SFTP");
+    session.disconnect().await.expect("disconnect transport");
+    std::fs::remove_dir_all(&local_dir).expect("remove local fixture");
 }

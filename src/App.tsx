@@ -60,7 +60,8 @@ const App: Component = () => {
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
   const [isWindowMaximized, setIsWindowMaximized] = createSignal(false);
   const [appVersion, setAppVersion] = createSignal(packageInfo.version);
-  const [showBroadcast, setShowBroadcast] = createSignal(false);
+  const [showCommandComposer, setShowCommandComposer] = createSignal(false);
+
   const [showTunnels, setShowTunnels] = createSignal(false);
   const [tunnelConnection, setTunnelConnection] = createSignal<ConnectionRecord | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = createSignal(false);
@@ -908,7 +909,7 @@ const App: Component = () => {
                           handleCloseSession(session.id);
                         }}
                       >
-                        ×
+                        <Icon name="close" size={12} />
                       </button>
                     </div>
                   );
@@ -978,13 +979,13 @@ const App: Component = () => {
                 <Show when={session().connection.protocol === "ssh"}>
                   <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
                 </Show>
-                <Show when={session().connection.protocol !== "mysql"}><button disabled={sessions().filter(item => item.status === "connected").length === 0} onClick={() => setShowBroadcast(true)}>⌁ 命令广播</button></Show>
+                <Show when={session().connection.protocol !== "mysql"}><button disabled={sessions().filter(item => item.status === "connected").length === 0} aria-expanded={showCommandComposer()} onClick={() => { setShowCommandComposer(value => !value); }}>⌁ 命令广播</button></Show>
                 <button onClick={() => void handleReconnect(session().id)}>↻ 重连</button>
               </div>
             </div>
           )}</Show>
 
-          <Show when={assetListActive()}>
+           <Show when={assetListActive()}>
             <div class="session-asset-list">
               <AssetList
                 onConnect={handleConnect}
@@ -1057,6 +1058,9 @@ const App: Component = () => {
               }}
             </For>
           </div>
+           <Show when={showCommandComposer() && activeSession()?.connection.protocol !== "mysql"}>
+             <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowCommandComposer(false)} />
+           </Show>
         </main>
         <Show when={showRightPanel()}>
           <div class="panel-splitter" onMouseDown={startResize} hidden={uiStore.filesCollapsed()} />
@@ -1150,9 +1154,6 @@ const App: Component = () => {
             </div>
           </div>
         </div>
-      </Show>
-      <Show when={showBroadcast()}>
-        <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowBroadcast(false)} />
       </Show>
       <Show when={showTunnels() && (tunnelConnection() || activeSession()?.connection)}>
         <TunnelPanel connection={(tunnelConnection() || activeSession()!.connection)!} onClose={() => { setShowTunnels(false); setTunnelConnection(null); }} />

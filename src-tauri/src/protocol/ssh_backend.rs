@@ -136,6 +136,7 @@ pub trait SftpHandle: Send + Sync {
         local_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64>;
     async fn upload(
         &self,
@@ -143,12 +144,19 @@ pub trait SftpHandle: Send + Sync {
         remote_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64>;
     async fn create_file(&self, path: &str) -> Result<()>;
     async fn create_dir(&self, path: &str) -> Result<()>;
     async fn delete_file(&self, path: &str) -> Result<()>;
     async fn delete_dir(&self, path: &str) -> Result<()>;
     async fn rename(&self, old_path: &str, new_path: &str) -> Result<()>;
+    async fn stat_size(&self, path: &str) -> Result<Option<u64>>;
+    async fn checksum_sha256(&self, path: &str) -> Result<String>;
+    async fn set_permissions(&self, path: &str, mode: u32) -> Result<()>;
+    async fn set_owner(&self, path: &str, uid: Option<u32>, gid: Option<u32>) -> Result<()>;
+    async fn read_file(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>>;
+    async fn write_file_atomic(&self, path: &str, data: &[u8]) -> Result<()>;
     async fn close(&self) -> Result<()>;
 }
 
@@ -511,12 +519,13 @@ impl SftpHandle for Ssh2SftpHandle {
         local_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let handle = self.handle.clone();
         let remote_path = remote_path.to_string();
         let local_path = local_path.to_string();
         blocking_sftp(move || {
-            handle.download_file(&remote_path, &local_path, progress, cancel)
+            handle.download_file(&remote_path, &local_path, progress, cancel, rate_limit_bps)
         })
         .await
     }
@@ -527,12 +536,13 @@ impl SftpHandle for Ssh2SftpHandle {
         remote_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let handle = self.handle.clone();
         let local_path = local_path.to_string();
         let remote_path = remote_path.to_string();
         blocking_sftp(move || {
-            handle.upload_file(&local_path, &remote_path, progress, cancel)
+            handle.upload_file(&local_path, &remote_path, progress, cancel, rate_limit_bps)
         })
         .await
     }
@@ -566,6 +576,43 @@ impl SftpHandle for Ssh2SftpHandle {
         let old_path = old_path.to_string();
         let new_path = new_path.to_string();
         blocking_sftp(move || handle.rename(&old_path, &new_path)).await
+    }
+
+    async fn stat_size(&self, path: &str) -> Result<Option<u64>> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.stat_size(&path)).await
+    }
+
+    async fn checksum_sha256(&self, path: &str) -> Result<String> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.checksum_sha256(&path)).await
+    }
+
+    async fn set_permissions(&self, path: &str, mode: u32) -> Result<()> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.set_permissions(&path, mode)).await
+    }
+
+    async fn set_owner(&self, path: &str, uid: Option<u32>, gid: Option<u32>) -> Result<()> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.set_owner(&path, uid, gid)).await
+    }
+
+    async fn read_file(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        blocking_sftp(move || handle.read_file(&path, max_bytes)).await
+    }
+
+    async fn write_file_atomic(&self, path: &str, data: &[u8]) -> Result<()> {
+        let handle = self.handle.clone();
+        let path = path.to_string();
+        let data = data.to_vec();
+        blocking_sftp(move || handle.write_file_atomic(&path, &data)).await
     }
 
     async fn close(&self) -> Result<()> {

@@ -3,7 +3,10 @@
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::ai::{AIAnalyzer, AnalyzeRequest, ConnectionInfo};
@@ -20,7 +23,7 @@ use crate::protocol::terminal_codec::{normalize_encoding, TerminalCodec};
 use crate::protocol::tunnel::{TunnelManager, TunnelRule, TunnelRuntimeInfo};
 use crate::protocol::PluginRegistry;
 use crate::protocol::{ConnectionHandle, Credential, CredentialType};
-use crate::storage::{ConnectionRecord, CredentialData, Database, SshKeyRecord};
+use crate::storage::{CommandSnippetRecord, ConnectionRecord, CredentialData, Database, SftpTransferRecord, SshKeyRecord};
 use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -39,6 +42,7 @@ fn parse_connection_options(
 
 /// Shell 会话信息
 struct ShellSessionInfo {
+    connection_id: String,
     lease_key: Option<String>,
     lease_owner: Option<String>,
     /// 本地终端（local 协议）没有 SSH 会话；SFTP 等能力依赖该字段，为空时拒绝
@@ -62,7 +66,7 @@ impl ShellManager {
     fn insert(
         &self,
         shell_id: String,
-        _connection_id: String,
+        connection_id: String,
         lease_key: Option<String>,
         lease_owner: Option<String>,
         session: Option<Arc<dyn SshSession>>,
@@ -73,6 +77,7 @@ impl ShellManager {
         self.sessions.write().insert(
             shell_id,
             ShellSessionInfo {
+                connection_id,
                 lease_key,
                 lease_owner,
                 session,
@@ -106,11 +111,18 @@ impl ShellManager {
             .get(shell_id)
             .map(|entry| entry.codec.clone())
     }
+
+    fn connection_id(&self, shell_id: &str) -> Option<String> {
+        self.sessions
+            .read()
+            .get(shell_id)
+            .map(|entry| entry.connection_id.clone())
+    }
 }
 
 /// SFTP 会话信息
 struct SftpSessionInfo {
-    _connection_id: String,
+    connection_id: String,
     handle: Arc<dyn SftpHandle>,
     lease_key: String,
     lease_owner: String,
@@ -120,6 +132,23 @@ struct SftpSessionInfo {
 pub(crate) struct SftpManager {
     sessions: RwLock<HashMap<String, SftpSessionInfo>>,
     transfers: parking_lot::Mutex<HashMap<String, CancellationToken>>,
+    active_transfers: parking_lot::Mutex<usize>,
+    max_concurrent: AtomicUsize,
+    rate_limit_bps: AtomicU64,
+    queue_notify: tokio::sync::Notify,
+}
+
+struct SftpTransferPermit {
+    manager: Arc<SftpManager>,
+}
+
+impl Drop for SftpTransferPermit {
+    fn drop(&mut self) {
+        let mut active = self.manager.active_transfers.lock();
+        *active = active.saturating_sub(1);
+        drop(active);
+        self.manager.queue_notify.notify_waiters();
+    }
 }
 
 impl SftpManager {
@@ -127,6 +156,10 @@ impl SftpManager {
         Self {
             sessions: RwLock::new(HashMap::new()),
             transfers: parking_lot::Mutex::new(HashMap::new()),
+            active_transfers: parking_lot::Mutex::new(0),
+            max_concurrent: AtomicUsize::new(2),
+            rate_limit_bps: AtomicU64::new(0),
+            queue_notify: tokio::sync::Notify::new(),
         }
     }
 
@@ -141,7 +174,7 @@ impl SftpManager {
         self.sessions.write().insert(
             sftp_id,
             SftpSessionInfo {
-                _connection_id: connection_id,
+                connection_id,
                 handle,
                 lease_key,
                 lease_owner,
@@ -151,6 +184,13 @@ impl SftpManager {
 
     fn get(&self, sftp_id: &str) -> Option<Arc<dyn SftpHandle>> {
         self.sessions.read().get(sftp_id).map(|s| s.handle.clone())
+    }
+
+    fn connection_id(&self, sftp_id: &str) -> Option<String> {
+        self.sessions
+            .read()
+            .get(sftp_id)
+            .map(|session| session.connection_id.clone())
     }
 
     fn lease(&self, sftp_id: &str) -> Option<(String, String)> {
@@ -178,6 +218,67 @@ impl SftpManager {
     fn remove_transfer(&self, transfer_id: &str) {
         self.transfers.lock().remove(transfer_id);
     }
+
+    fn configure_queue(&self, max_concurrent: usize, rate_limit_bps: u64) {
+        self.max_concurrent.store(max_concurrent.clamp(1, 8), Ordering::Release);
+        self.rate_limit_bps.store(rate_limit_bps, Ordering::Release);
+        self.queue_notify.notify_waiters();
+    }
+
+    fn queue_config(&self) -> SftpQueueConfig {
+        SftpQueueConfig {
+            max_concurrent: self.max_concurrent.load(Ordering::Acquire),
+            rate_limit_bps: self.rate_limit_bps.load(Ordering::Acquire),
+            active: *self.active_transfers.lock(),
+        }
+    }
+
+    async fn acquire_transfer_slot(self: &Arc<Self>) -> SftpTransferPermit {
+        loop {
+            let notified = self.queue_notify.notified();
+            {
+                let mut active = self.active_transfers.lock();
+                if *active < self.max_concurrent.load(Ordering::Acquire) {
+                    *active += 1;
+                    return SftpTransferPermit { manager: self.clone() };
+                }
+            }
+            notified.await;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandVariable {
+    pub name: String,
+    #[serde(default)] pub default_value: Option<String>,
+    #[serde(default)] pub choices: Vec<String>,
+    #[serde(default)] pub sensitive: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandSnippetInput {
+    pub id: Option<String>, pub kind: String, pub name: String,
+    pub description: Option<String>, pub content: String, pub folder: Option<String>,
+    #[serde(default)] pub tags: Vec<String>, #[serde(default)] pub variables: Vec<CommandVariable>,
+    #[serde(default)] pub favorite: bool,
+}
+
+fn render_command(template: &str, definitions: &[CommandVariable], values: &HashMap<String, String>) -> Result<String, String> {
+    let mut result = template.to_string();
+    for variable in definitions {
+        let value = values.get(&variable.name).cloned().or_else(|| variable.default_value.clone())
+            .ok_or_else(|| format!("缺少变量: {}", variable.name))?;
+        if !variable.choices.is_empty() && !variable.choices.iter().any(|choice| choice == &value) {
+            return Err(format!("变量 {} 的值不在允许枚举中", variable.name));
+        }
+        result = result.replace(&format!("{{{{{}}}}}", variable.name), &value);
+    }
+    if definitions.is_empty() {
+        for (name, value) in values { result = result.replace(&format!("{{{{{}}}}}", name), &value); }
+    }
+    if result.contains("{{") || result.contains("}}") { return Err("命令包含未定义变量".to_string()); }
+    Ok(result)
 }
 
 /// Docker 会话信息
@@ -1179,6 +1280,34 @@ pub async fn stop_all_tunnels(
 }
 
 #[tauri::command]
+pub fn save_command_snippet(state: tauri::State<'_, AppState>, input: CommandSnippetInput) -> Result<CommandSnippetRecord, String> {
+    let now = chrono::Utc::now().timestamp();
+    let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let kind = if input.kind == "task" { "task" } else { "snippet" };
+    let record = CommandSnippetRecord { id, kind: kind.to_string(), name: input.name.trim().to_string(), description: input.description,
+        content: input.content, folder: input.folder, tags: serde_json::to_string(&input.tags).map_err(|e| e.to_string())?,
+        variables: serde_json::to_string(&input.variables).map_err(|e| e.to_string())?, favorite: input.favorite, created_at: now, updated_at: now };
+    if record.name.is_empty() || record.content.trim().is_empty() { return Err("名称和命令内容不能为空".to_string()); }
+    state.db.save_command_snippet(&record).map_err(|e| e.to_string())?;
+    Ok(record)
+}
+
+#[tauri::command]
+pub fn list_command_snippets(state: tauri::State<'_, AppState>, kind: Option<String>, query: Option<String>) -> Result<Vec<CommandSnippetRecord>, String> {
+    state.db.list_command_snippets(kind.as_deref(), query.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_command_snippet(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    state.db.delete_command_snippet(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn render_command_snippet(content: String, variables: Vec<CommandVariable>, values: HashMap<String, String>) -> Result<String, String> {
+    render_command(&content, &variables, &values)
+}
+
+#[tauri::command]
 pub async fn write_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
@@ -1572,6 +1701,7 @@ pub async fn open_sftp_for_shell(
     state: tauri::State<'_, AppState>,
     shell_id: String,
 ) -> Result<SftpOpenResponse, String> {
+    let connection_id = state.shell_manager.connection_id(&shell_id).unwrap_or_default();
     let (session, _) = state
         .shell_manager
         .get(&shell_id)
@@ -1586,7 +1716,7 @@ pub async fn open_sftp_for_shell(
 
     state
         .sftp_manager
-        .insert(sftp_id.clone(), String::new(), sftp_handle, lease_key, lease_owner);
+        .insert(sftp_id.clone(), connection_id, sftp_handle, lease_key, lease_owner);
 
     Ok(SftpOpenResponse { sftp_id })
 }
@@ -1603,6 +1733,34 @@ pub struct TransferProgressPayload {
     /// running / done / cancelled / error
     pub status: String,
     pub error: Option<String>,
+    pub actual_destination: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct SftpTransferOptions {
+    /// overwrite / skip / rename / resume
+    pub conflict_policy: Option<String>,
+    #[serde(default)]
+    pub verify_checksum: bool,
+    #[serde(default)]
+    pub rate_limit_bps: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpQueueConfig {
+    pub max_concurrent: usize,
+    pub rate_limit_bps: u64,
+    pub active: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpTransferResult {
+    pub transfer_id: String,
+    pub status: String,
+    pub transferred: u64,
+    pub total: u64,
+    pub actual_destination: String,
+    pub checksum: Option<String>,
 }
 
 fn emit_transfer_event(app: &tauri::AppHandle, payload: &TransferProgressPayload) {
@@ -1612,6 +1770,7 @@ fn emit_transfer_event(app: &tauri::AppHandle, payload: &TransferProgressPayload
 /// 构造节流的进度回调（≥100ms 一次，末次必然发出）
 fn transfer_progress_callback(
     app: tauri::AppHandle,
+    db: Database,
     payload_base: TransferProgressPayload,
 ) -> crate::protocol::ssh_backend::TransferProgress {
     let last_emit = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
@@ -1619,7 +1778,7 @@ fn transfer_progress_callback(
         let mut last = last_emit
             .lock()
             .expect("transfer throttle mutex poisoned");
-        let due = last.elapsed().as_millis() >= 100 || transferred == total;
+        let due = last.elapsed().as_millis() >= 250 || transferred == total;
         if !due {
             return;
         }
@@ -1629,18 +1788,244 @@ fn transfer_progress_callback(
             total,
             status: "running".to_string(),
             error: None,
+            actual_destination: payload_base.actual_destination.clone(),
             ..payload_base.clone()
         };
+        let destination = payload.actual_destination.as_deref().unwrap_or_default();
+        if let Err(error) = db.update_sftp_transfer(
+            &payload.transfer_id,
+            "running",
+            transferred,
+            total,
+            destination,
+            None,
+            None,
+        ) {
+            tracing::warn!("持久化 SFTP 传输进度失败: {error}");
+        }
         let _ = app.emit("sftp-transfer-progress", &payload);
     })
 }
 
 fn transfer_file_name(path: &str) -> String {
-    path.rsplit('/')
+    path.rsplit(['/', '\\'])
         .next()
         .filter(|name| !name.is_empty())
         .unwrap_or(path)
         .to_string()
+}
+
+fn remote_join(parent: &str, name: &str) -> String {
+    if parent == "/" {
+        format!("/{name}")
+    } else {
+        format!("{}/{name}", parent.trim_end_matches('/'))
+    }
+}
+
+fn safe_entry_name(name: &str) -> Result<&str, String> {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        Err(format!("远端返回了不安全的文件名: {name}"))
+    } else {
+        Ok(name)
+    }
+}
+
+async fn collect_remote_directory(
+    handle: &Arc<dyn SftpHandle>,
+    root: &str,
+) -> Result<(Vec<PathBuf>, Vec<(String, PathBuf, u64)>), String> {
+    let mut directories = vec![PathBuf::new()];
+    let mut files = Vec::new();
+    let mut stack = vec![(root.to_string(), PathBuf::new())];
+    while let Some((remote_directory, relative_directory)) = stack.pop() {
+        let entries = handle.list_dir(&remote_directory).await.map_err(|e| e.to_string())?;
+        for entry in entries {
+            let name = safe_entry_name(&entry.name)?;
+            let relative = relative_directory.join(name);
+            if entry.is_dir && !entry.is_link {
+                directories.push(relative.clone());
+                stack.push((entry.path, relative));
+            } else if !entry.is_dir {
+                files.push((entry.path, relative, entry.size));
+            }
+        }
+    }
+    Ok((directories, files))
+}
+
+async fn collect_local_directory(root: &Path) -> Result<(Vec<PathBuf>, Vec<(PathBuf, PathBuf, u64)>), String> {
+    let mut directories = vec![PathBuf::new()];
+    let mut files = Vec::new();
+    let mut stack = vec![(root.to_path_buf(), PathBuf::new())];
+    while let Some((local_directory, relative_directory)) = stack.pop() {
+        let mut entries = tokio::fs::read_dir(&local_directory)
+            .await
+            .map_err(|e| format!("读取本地目录失败 {}: {e}", local_directory.display()))?;
+        while let Some(entry) = entries.next_entry().await.map_err(|e| format!("读取本地目录项失败: {e}"))? {
+            let file_type = entry.file_type().await.map_err(|e| format!("读取文件类型失败: {e}"))?;
+            let name = entry.file_name();
+            let relative = relative_directory.join(&name);
+            if file_type.is_dir() {
+                directories.push(relative.clone());
+                stack.push((entry.path(), relative));
+            } else if file_type.is_file() {
+                let size = entry.metadata().await.map_err(|e| format!("读取文件信息失败: {e}"))?.len();
+                files.push((entry.path(), relative, size));
+            }
+        }
+    }
+    Ok((directories, files))
+}
+
+fn directory_progress_callback(
+    app: tauri::AppHandle,
+    db: Database,
+    payload_base: TransferProgressPayload,
+    completed: u64,
+    grand_total: u64,
+) -> crate::protocol::ssh_backend::TransferProgress {
+    let last_emit = Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+    Arc::new(move |transferred, _| {
+        let aggregate = completed.saturating_add(transferred).min(grand_total);
+        let mut last = last_emit.lock().expect("directory transfer throttle mutex poisoned");
+        if last.elapsed().as_millis() < 250 && aggregate != grand_total { return; }
+        *last = std::time::Instant::now();
+        let payload = TransferProgressPayload {
+            transferred: aggregate,
+            total: grand_total,
+            status: "running".to_string(),
+            error: None,
+            ..payload_base.clone()
+        };
+        let destination = payload.actual_destination.as_deref().unwrap_or_default();
+        let _ = db.update_sftp_transfer(&payload.transfer_id, "running", aggregate, grand_total, destination, None, None);
+        let _ = app.emit("sftp-transfer-progress", payload);
+    })
+}
+
+fn emit_directory_checkpoint(
+    app: &tauri::AppHandle,
+    db: &Database,
+    base: &TransferProgressPayload,
+    transferred: u64,
+    total: u64,
+) {
+    let destination = base.actual_destination.as_deref().unwrap_or_default();
+    let _ = db.update_sftp_transfer(&base.transfer_id, "running", transferred, total, destination, None, None);
+    emit_transfer_event(app, &TransferProgressPayload {
+        transferred,
+        total,
+        status: "queued".to_string(),
+        error: None,
+        ..base.clone()
+    });
+}
+
+fn effective_rate_limit(options: &SftpTransferOptions, manager: &SftpManager) -> Option<u64> {
+    options
+        .rate_limit_bps
+        .or_else(|| {
+            let configured = manager.rate_limit_bps.load(Ordering::Acquire);
+            (configured > 0).then_some(configured)
+        })
+        .filter(|limit| *limit > 0)
+}
+
+fn normalize_conflict_policy(value: Option<&str>) -> Result<&'static str, String> {
+    match value.unwrap_or("resume") {
+        "overwrite" => Ok("overwrite"),
+        "skip" => Ok("skip"),
+        "rename" => Ok("rename"),
+        "resume" => Ok("resume"),
+        _ => Err("无效的冲突策略，应为 overwrite、skip、rename 或 resume".to_string()),
+    }
+}
+
+fn numbered_local_path(path: &str, index: usize) -> String {
+    let path = Path::new(path);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("file");
+    let extension = path.extension().and_then(|value| value.to_str());
+    let name = match extension {
+        Some(extension) => format!("{stem} ({index}).{extension}"),
+        None => format!("{stem} ({index})"),
+    };
+    parent.join(name).to_string_lossy().to_string()
+}
+
+fn numbered_remote_path(path: &str, index: usize) -> String {
+    let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
+    let (stem, extension) = name.rsplit_once('.').map_or((name, None), |(stem, extension)| (stem, Some(extension)));
+    let candidate = match extension {
+        Some(extension) => format!("{stem} ({index}).{extension}"),
+        None => format!("{stem} ({index})"),
+    };
+    if directory.is_empty() && path.starts_with('/') { format!("/{candidate}") } else if directory.is_empty() { candidate } else if directory == "/" { format!("/{candidate}") } else { format!("{directory}/{candidate}") }
+}
+
+async fn unique_local_path(path: &str) -> String {
+    if !tokio::fs::try_exists(path).await.unwrap_or(false) { return path.to_string(); }
+    for index in 1..10_000 {
+        let candidate = numbered_local_path(path, index);
+        if !tokio::fs::try_exists(&candidate).await.unwrap_or(false) { return candidate; }
+    }
+    format!("{}.{}", path, Uuid::new_v4())
+}
+
+async fn unique_remote_path(handle: &Arc<dyn SftpHandle>, path: &str) -> Result<String, String> {
+    if handle.stat_size(path).await.map_err(|e| e.to_string())?.is_none() { return Ok(path.to_string()); }
+    for index in 1..10_000 {
+        let candidate = numbered_remote_path(path, index);
+        if handle.stat_size(&candidate).await.map_err(|e| e.to_string())?.is_none() { return Ok(candidate); }
+    }
+    Ok(format!("{}.{}", path, Uuid::new_v4()))
+}
+
+async fn local_sha256(path: &str) -> Result<String, String> {
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(path).await.map_err(|e| format!("打开本地文件以校验失败: {e}"))?;
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; 128 * 1024];
+    loop {
+        let count = file.read(&mut buffer).await.map_err(|e| format!("读取本地文件以校验失败: {e}"))?;
+        if count == 0 { break; }
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn new_transfer_record(
+    id: &str,
+    connection_id: &str,
+    direction: &str,
+    source_path: &str,
+    destination_path: &str,
+    actual_destination: &str,
+    policy: &str,
+    verify_checksum: bool,
+    total: u64,
+) -> SftpTransferRecord {
+    let now = chrono::Utc::now().timestamp();
+    SftpTransferRecord {
+        id: id.to_string(),
+        connection_id: connection_id.to_string(),
+        direction: direction.to_string(),
+        source_path: source_path.to_string(),
+        destination_path: destination_path.to_string(),
+        actual_destination: actual_destination.to_string(),
+        file_name: transfer_file_name(if direction == "upload" { source_path } else { destination_path }),
+        conflict_policy: policy.to_string(),
+        verify_checksum,
+        status: "running".to_string(),
+        transferred: 0,
+        total,
+        checksum: None,
+        error: None,
+        created_at: now,
+        updated_at: now,
+        completed_at: None,
+    }
 }
 
 /// 列出 SFTP 目录
@@ -1666,12 +2051,56 @@ pub async fn sftp_download(
     sftp_id: String,
     remote_path: String,
     local_path: String,
-) -> Result<u64, String> {
+    options: Option<SftpTransferOptions>,
+) -> Result<SftpTransferResult, String> {
     let handle = state
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let connection_id = state.sftp_manager.connection_id(&sftp_id).unwrap_or_default();
+    let options = options.unwrap_or_default();
+    let policy = normalize_conflict_policy(options.conflict_policy.as_deref())?;
+    let total = handle
+        .stat_size(&remote_path)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "远程文件不存在或无法读取".to_string())?;
+    let destination_exists = tokio::fs::try_exists(&local_path).await.unwrap_or(false);
+    let actual_destination = match policy {
+        "rename" if destination_exists => unique_local_path(&local_path).await,
+        _ => local_path.clone(),
+    };
     let transfer_id = Uuid::new_v4().to_string();
+    let mut record = new_transfer_record(
+        &transfer_id,
+        &connection_id,
+        "download",
+        &remote_path,
+        &local_path,
+        &actual_destination,
+        policy,
+        options.verify_checksum,
+        total,
+    );
+    state.db.save_sftp_transfer(&record).map_err(|e| e.to_string())?;
+    if policy == "skip" && destination_exists {
+        record.status = "skipped".to_string();
+        state.db.update_sftp_transfer(&transfer_id, "skipped", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+        return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: 0, total, actual_destination, checksum: None });
+    }
+    if policy == "resume" && destination_exists {
+        let local_size = tokio::fs::metadata(&local_path).await.map(|metadata| metadata.len()).unwrap_or(0);
+        if local_size == total {
+            state.db.update_sftp_transfer(&transfer_id, "skipped", total, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+            return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: total, total, actual_destination, checksum: None });
+        }
+    }
+    if policy == "overwrite" {
+        let _ = tokio::fs::remove_file(format!("{actual_destination}.portnest.part")).await;
+    }
+    let rate_limit_bps = effective_rate_limit(&options, &state.sftp_manager);
+    let _permit = state.sftp_manager.acquire_transfer_slot().await;
+    state.db.update_sftp_transfer(&transfer_id, "running", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
     let cancel = CancellationToken::default();
     state
         .sftp_manager
@@ -1685,14 +2114,28 @@ pub async fn sftp_download(
         total: 0,
         status: "running".to_string(),
         error: None,
+        actual_destination: Some(actual_destination.clone()),
     };
     emit_transfer_event(&app, &base);
-    let progress = transfer_progress_callback(app.clone(), base.clone());
+    let progress = transfer_progress_callback(app.clone(), state.db.clone(), base.clone());
     let result = handle
-        .download(&remote_path, &local_path, Some(progress), cancel.clone())
+        .download(&remote_path, &actual_destination, Some(progress), cancel.clone(), rate_limit_bps)
         .await;
     let outcome = match result {
         Ok(bytes) => {
+            let checksum = if options.verify_checksum {
+                let local = local_sha256(&actual_destination).await?;
+                let remote = handle.checksum_sha256(&remote_path).await.map_err(|e| e.to_string())?;
+                if local != remote {
+                    let message = format!("SHA-256 校验失败：本地 {local}，远端 {remote}");
+                    state.db.update_sftp_transfer(&transfer_id, "error", bytes, total, &actual_destination, None, Some(&message)).map_err(|e| e.to_string())?;
+                    emit_transfer_event(&app, &TransferProgressPayload { transferred: bytes, total, status: "error".to_string(), error: Some(message.clone()), ..base.clone() });
+                    state.sftp_manager.remove_transfer(&transfer_id);
+                    return Err(message);
+                }
+                Some(local)
+            } else { None };
+            state.db.update_sftp_transfer(&transfer_id, "done", bytes, total, &actual_destination, checksum.as_deref(), None).map_err(|e| e.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1702,9 +2145,11 @@ pub async fn sftp_download(
                     ..base
                 },
             );
-            Ok(bytes)
+            Ok(SftpTransferResult { transfer_id: transfer_id.clone(), status: "done".to_string(), transferred: bytes, total, actual_destination: actual_destination.clone(), checksum })
         }
         Err(_) if cancel.is_cancelled() => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|record| record.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "cancelled", checkpoint, total, &actual_destination, None, Some("传输已取消，可稍后续传")).map_err(|e| e.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1716,6 +2161,8 @@ pub async fn sftp_download(
             Err("传输已取消".to_string())
         }
         Err(e) => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|record| record.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "error", checkpoint, total, &actual_destination, None, Some(&e.to_string())).map_err(|db_error| db_error.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1739,12 +2186,49 @@ pub async fn sftp_upload(
     sftp_id: String,
     local_path: String,
     remote_path: String,
-) -> Result<u64, String> {
+    options: Option<SftpTransferOptions>,
+) -> Result<SftpTransferResult, String> {
     let handle = state
         .sftp_manager
         .get(&sftp_id)
         .ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let connection_id = state.sftp_manager.connection_id(&sftp_id).unwrap_or_default();
+    let options = options.unwrap_or_default();
+    let policy = normalize_conflict_policy(options.conflict_policy.as_deref())?;
+    let total = tokio::fs::metadata(&local_path).await.map_err(|e| format!("读取本地文件失败: {e}"))?.len();
+    let remote_size = handle.stat_size(&remote_path).await.map_err(|e| e.to_string())?;
+    let actual_destination = if policy == "rename" && remote_size.is_some() {
+        unique_remote_path(&handle, &remote_path).await?
+    } else {
+        remote_path.clone()
+    };
     let transfer_id = Uuid::new_v4().to_string();
+    let record = new_transfer_record(
+        &transfer_id,
+        &connection_id,
+        "upload",
+        &local_path,
+        &remote_path,
+        &actual_destination,
+        policy,
+        options.verify_checksum,
+        total,
+    );
+    state.db.save_sftp_transfer(&record).map_err(|e| e.to_string())?;
+    if policy == "skip" && remote_size.is_some() {
+        state.db.update_sftp_transfer(&transfer_id, "skipped", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+        return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: 0, total, actual_destination, checksum: None });
+    }
+    if policy == "resume" && remote_size == Some(total) {
+        state.db.update_sftp_transfer(&transfer_id, "skipped", total, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+        return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: total, total, actual_destination, checksum: None });
+    }
+    if policy == "overwrite" {
+        let _ = handle.delete_file(&format!("{actual_destination}.portnest.part")).await;
+    }
+    let rate_limit_bps = effective_rate_limit(&options, &state.sftp_manager);
+    let _permit = state.sftp_manager.acquire_transfer_slot().await;
+    state.db.update_sftp_transfer(&transfer_id, "running", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
     let cancel = CancellationToken::default();
     state
         .sftp_manager
@@ -1758,14 +2242,28 @@ pub async fn sftp_upload(
         total: 0,
         status: "running".to_string(),
         error: None,
+        actual_destination: Some(actual_destination.clone()),
     };
     emit_transfer_event(&app, &base);
-    let progress = transfer_progress_callback(app.clone(), base.clone());
+    let progress = transfer_progress_callback(app.clone(), state.db.clone(), base.clone());
     let result = handle
-        .upload(&local_path, &remote_path, Some(progress), cancel.clone())
+        .upload(&local_path, &actual_destination, Some(progress), cancel.clone(), rate_limit_bps)
         .await;
     let outcome = match result {
         Ok(bytes) => {
+            let checksum = if options.verify_checksum {
+                let local = local_sha256(&local_path).await?;
+                let remote = handle.checksum_sha256(&actual_destination).await.map_err(|e| e.to_string())?;
+                if local != remote {
+                    let message = format!("SHA-256 校验失败：本地 {local}，远端 {remote}");
+                    state.db.update_sftp_transfer(&transfer_id, "error", bytes, total, &actual_destination, None, Some(&message)).map_err(|e| e.to_string())?;
+                    emit_transfer_event(&app, &TransferProgressPayload { transferred: bytes, total, status: "error".to_string(), error: Some(message.clone()), ..base.clone() });
+                    state.sftp_manager.remove_transfer(&transfer_id);
+                    return Err(message);
+                }
+                Some(local)
+            } else { None };
+            state.db.update_sftp_transfer(&transfer_id, "done", bytes, total, &actual_destination, checksum.as_deref(), None).map_err(|e| e.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1775,9 +2273,11 @@ pub async fn sftp_upload(
                     ..base
                 },
             );
-            Ok(bytes)
+            Ok(SftpTransferResult { transfer_id: transfer_id.clone(), status: "done".to_string(), transferred: bytes, total, actual_destination: actual_destination.clone(), checksum })
         }
         Err(_) if cancel.is_cancelled() => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|record| record.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "cancelled", checkpoint, total, &actual_destination, None, Some("传输已取消，可稍后续传")).map_err(|e| e.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1789,6 +2289,8 @@ pub async fn sftp_upload(
             Err("传输已取消".to_string())
         }
         Err(e) => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|record| record.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "error", checkpoint, total, &actual_destination, None, Some(&e.to_string())).map_err(|db_error| db_error.to_string())?;
             emit_transfer_event(
                 &app,
                 &TransferProgressPayload {
@@ -1798,6 +2300,218 @@ pub async fn sftp_upload(
                 },
             );
             Err(e.to_string())
+        }
+    };
+    state.sftp_manager.remove_transfer(&transfer_id);
+    outcome
+}
+
+/// 递归下载目录。一个目录作为一个持久任务，内部文件共享取消令牌并累计进度。
+#[tauri::command]
+pub async fn sftp_download_directory(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    remote_path: String,
+    local_path: String,
+    options: Option<SftpTransferOptions>,
+) -> Result<SftpTransferResult, String> {
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let connection_id = state.sftp_manager.connection_id(&sftp_id).unwrap_or_default();
+    let options = options.unwrap_or_default();
+    let policy = normalize_conflict_policy(options.conflict_policy.as_deref())?;
+    let (directories, files) = collect_remote_directory(&handle, &remote_path).await?;
+    let total = files.iter().map(|(_, _, size)| *size).sum::<u64>();
+    let destination_exists = tokio::fs::try_exists(&local_path).await.unwrap_or(false);
+    let actual_destination = if policy == "rename" && destination_exists {
+        unique_local_path(&local_path).await
+    } else {
+        local_path.clone()
+    };
+    let transfer_id = Uuid::new_v4().to_string();
+    let record = new_transfer_record(&transfer_id, &connection_id, "download_dir", &remote_path, &local_path, &actual_destination, policy, options.verify_checksum, total);
+    state.db.save_sftp_transfer(&record).map_err(|e| e.to_string())?;
+    if policy == "skip" && destination_exists {
+        state.db.update_sftp_transfer(&transfer_id, "skipped", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+        return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: 0, total, actual_destination, checksum: None });
+    }
+
+    let rate_limit_bps = effective_rate_limit(&options, &state.sftp_manager);
+    let _permit = state.sftp_manager.acquire_transfer_slot().await;
+    state.db.update_sftp_transfer(&transfer_id, "running", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+    let cancel = CancellationToken::default();
+    state.sftp_manager.register_transfer(transfer_id.clone(), cancel.clone());
+    let base = TransferProgressPayload {
+        sftp_id: sftp_id.clone(),
+        transfer_id: transfer_id.clone(),
+        direction: "download".to_string(),
+        file_name: transfer_file_name(&remote_path),
+        transferred: 0,
+        total,
+        status: "running".to_string(),
+        error: None,
+        actual_destination: Some(actual_destination.clone()),
+    };
+    emit_transfer_event(&app, &base);
+    let result = async {
+        tokio::fs::create_dir_all(&actual_destination).await.map_err(|e| format!("创建本地目录失败: {e}"))?;
+        for relative in directories.iter().filter(|path| !path.as_os_str().is_empty()) {
+            tokio::fs::create_dir_all(Path::new(&actual_destination).join(relative)).await.map_err(|e| format!("创建本地子目录失败: {e}"))?;
+        }
+        let mut completed = 0_u64;
+        let mut manifest = Sha256::new();
+        for (remote_file, relative, size) in &files {
+            if cancel.is_cancelled() { return Err("传输已取消".to_string()); }
+            let destination = Path::new(&actual_destination).join(relative).to_string_lossy().to_string();
+            let exists = tokio::fs::try_exists(&destination).await.unwrap_or(false);
+            if policy == "skip" && exists {
+                completed = completed.saturating_add(*size);
+                emit_directory_checkpoint(&app, &state.db, &base, completed, total);
+                continue;
+            }
+            if policy == "resume" && exists && tokio::fs::metadata(&destination).await.map(|item| item.len()).unwrap_or(0) == *size {
+                completed = completed.saturating_add(*size);
+                emit_directory_checkpoint(&app, &state.db, &base, completed, total);
+                continue;
+            }
+            if policy == "overwrite" { let _ = tokio::fs::remove_file(format!("{destination}.portnest.part")).await; }
+            let progress = directory_progress_callback(app.clone(), state.db.clone(), base.clone(), completed, total);
+            let bytes = handle.download(remote_file, &destination, Some(progress), cancel.clone(), rate_limit_bps).await.map_err(|e| e.to_string())?;
+            if options.verify_checksum {
+                let local = local_sha256(&destination).await?;
+                let remote = handle.checksum_sha256(remote_file).await.map_err(|e| e.to_string())?;
+                if local != remote { return Err(format!("SHA-256 校验失败: {}", relative.display())); }
+                manifest.update(relative.to_string_lossy().as_bytes());
+                manifest.update(local.as_bytes());
+            }
+            completed = completed.saturating_add(bytes);
+            emit_directory_checkpoint(&app, &state.db, &base, completed, total);
+        }
+        let checksum = options.verify_checksum.then(|| format!("{:x}", manifest.finalize()));
+        Ok::<(u64, Option<String>), String>((completed, checksum))
+    }.await;
+
+    let outcome = match result {
+        Ok((bytes, checksum)) => {
+            state.db.update_sftp_transfer(&transfer_id, "done", bytes, total, &actual_destination, checksum.as_deref(), None).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: bytes, total, status: "done".to_string(), ..base });
+            Ok(SftpTransferResult { transfer_id: transfer_id.clone(), status: "done".to_string(), transferred: bytes, total, actual_destination: actual_destination.clone(), checksum })
+        }
+        Err(message) if cancel.is_cancelled() || message.contains("取消") => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|item| item.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "cancelled", checkpoint, total, &actual_destination, None, Some("传输已取消，可稍后续传")).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: checkpoint, total, status: "cancelled".to_string(), error: Some("传输已取消".to_string()), ..base });
+            Err("传输已取消".to_string())
+        }
+        Err(message) => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|item| item.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "error", checkpoint, total, &actual_destination, None, Some(&message)).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: checkpoint, total, status: "error".to_string(), error: Some(message.clone()), ..base });
+            Err(message)
+        }
+    };
+    state.sftp_manager.remove_transfer(&transfer_id);
+    outcome
+}
+
+/// 递归上传目录，跳过符号链接，避免循环及意外越过所选目录。
+#[tauri::command]
+pub async fn sftp_upload_directory(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    local_path: String,
+    remote_path: String,
+    options: Option<SftpTransferOptions>,
+) -> Result<SftpTransferResult, String> {
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let connection_id = state.sftp_manager.connection_id(&sftp_id).unwrap_or_default();
+    let options = options.unwrap_or_default();
+    let policy = normalize_conflict_policy(options.conflict_policy.as_deref())?;
+    let (mut directories, files) = collect_local_directory(Path::new(&local_path)).await?;
+    directories.sort_by_key(|path| path.components().count());
+    let total = files.iter().map(|(_, _, size)| *size).sum::<u64>();
+    let destination_exists = handle.stat_size(&remote_path).await.map_err(|e| e.to_string())?.is_some() || handle.list_dir(&remote_path).await.is_ok();
+    let actual_destination = if policy == "rename" && destination_exists {
+        let mut selected = None;
+        for index in 1..10_000 {
+            let candidate = numbered_remote_path(&remote_path, index);
+            let exists = handle.stat_size(&candidate).await.map_err(|e| e.to_string())?.is_some() || handle.list_dir(&candidate).await.is_ok();
+            if !exists { selected = Some(candidate); break; }
+        }
+        selected.unwrap_or_else(|| format!("{}.{}", remote_path, Uuid::new_v4()))
+    } else { remote_path.clone() };
+    let transfer_id = Uuid::new_v4().to_string();
+    let record = new_transfer_record(&transfer_id, &connection_id, "upload_dir", &local_path, &remote_path, &actual_destination, policy, options.verify_checksum, total);
+    state.db.save_sftp_transfer(&record).map_err(|e| e.to_string())?;
+    if policy == "skip" && destination_exists {
+        state.db.update_sftp_transfer(&transfer_id, "skipped", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+        return Ok(SftpTransferResult { transfer_id, status: "skipped".to_string(), transferred: 0, total, actual_destination, checksum: None });
+    }
+
+    let rate_limit_bps = effective_rate_limit(&options, &state.sftp_manager);
+    let _permit = state.sftp_manager.acquire_transfer_slot().await;
+    state.db.update_sftp_transfer(&transfer_id, "running", 0, total, &actual_destination, None, None).map_err(|e| e.to_string())?;
+    let cancel = CancellationToken::default();
+    state.sftp_manager.register_transfer(transfer_id.clone(), cancel.clone());
+    let base = TransferProgressPayload {
+        sftp_id: sftp_id.clone(), transfer_id: transfer_id.clone(), direction: "upload".to_string(),
+        file_name: transfer_file_name(&local_path), transferred: 0, total, status: "running".to_string(), error: None,
+        actual_destination: Some(actual_destination.clone()),
+    };
+    emit_transfer_event(&app, &base);
+    let result = async {
+        if !destination_exists || actual_destination != remote_path { handle.create_dir(&actual_destination).await.map_err(|e| e.to_string())?; }
+        for relative in directories.iter().filter(|path| !path.as_os_str().is_empty()) {
+            let nested = remote_join(&actual_destination, &relative.to_string_lossy().replace('\\', "/"));
+            if handle.stat_size(&nested).await.map_err(|e| e.to_string())?.is_none() && handle.list_dir(&nested).await.is_err() {
+                handle.create_dir(&nested).await.map_err(|e| e.to_string())?;
+            }
+        }
+        let mut completed = 0_u64;
+        let mut manifest = Sha256::new();
+        for (local_file, relative, size) in &files {
+            if cancel.is_cancelled() { return Err("传输已取消".to_string()); }
+            let destination = remote_join(&actual_destination, &relative.to_string_lossy().replace('\\', "/"));
+            let remote_size = handle.stat_size(&destination).await.map_err(|e| e.to_string())?;
+            if policy == "skip" && remote_size.is_some() || policy == "resume" && remote_size == Some(*size) {
+                completed = completed.saturating_add(*size);
+                emit_directory_checkpoint(&app, &state.db, &base, completed, total);
+                continue;
+            }
+            if policy == "overwrite" { let _ = handle.delete_file(&format!("{destination}.portnest.part")).await; }
+            let progress = directory_progress_callback(app.clone(), state.db.clone(), base.clone(), completed, total);
+            let bytes = handle.upload(&local_file.to_string_lossy(), &destination, Some(progress), cancel.clone(), rate_limit_bps).await.map_err(|e| e.to_string())?;
+            if options.verify_checksum {
+                let local = local_sha256(&local_file.to_string_lossy()).await?;
+                let remote = handle.checksum_sha256(&destination).await.map_err(|e| e.to_string())?;
+                if local != remote { return Err(format!("SHA-256 校验失败: {}", relative.display())); }
+                manifest.update(relative.to_string_lossy().as_bytes());
+                manifest.update(local.as_bytes());
+            }
+            completed = completed.saturating_add(bytes);
+            emit_directory_checkpoint(&app, &state.db, &base, completed, total);
+        }
+        let checksum = options.verify_checksum.then(|| format!("{:x}", manifest.finalize()));
+        Ok::<(u64, Option<String>), String>((completed, checksum))
+    }.await;
+    let outcome = match result {
+        Ok((bytes, checksum)) => {
+            state.db.update_sftp_transfer(&transfer_id, "done", bytes, total, &actual_destination, checksum.as_deref(), None).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: bytes, total, status: "done".to_string(), ..base });
+            Ok(SftpTransferResult { transfer_id: transfer_id.clone(), status: "done".to_string(), transferred: bytes, total, actual_destination: actual_destination.clone(), checksum })
+        }
+        Err(message) if cancel.is_cancelled() || message.contains("取消") => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|item| item.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "cancelled", checkpoint, total, &actual_destination, None, Some("传输已取消，可稍后续传")).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: checkpoint, total, status: "cancelled".to_string(), error: Some("传输已取消".to_string()), ..base });
+            Err("传输已取消".to_string())
+        }
+        Err(message) => {
+            let checkpoint = state.db.get_sftp_transfer(&transfer_id).map(|item| item.transferred).unwrap_or(0);
+            state.db.update_sftp_transfer(&transfer_id, "error", checkpoint, total, &actual_destination, None, Some(&message)).map_err(|e| e.to_string())?;
+            emit_transfer_event(&app, &TransferProgressPayload { transferred: checkpoint, total, status: "error".to_string(), error: Some(message.clone()), ..base });
+            Err(message)
         }
     };
     state.sftp_manager.remove_transfer(&transfer_id);
@@ -1817,6 +2531,147 @@ pub async fn sftp_cancel_transfer(
     // 幂等：传输进行中则取消；已完成/不存在也视为成功，避免误导性报错
     let _ = state.sftp_manager.cancel_transfer(&transfer_id);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn list_sftp_transfers(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<Vec<SftpTransferRecord>, String> {
+    state.db.list_sftp_transfers(&connection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_sftp_transfer_history(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<usize, String> {
+    state.db.clear_sftp_transfer_history(&connection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn configure_sftp_transfer_queue(
+    state: tauri::State<'_, AppState>,
+    max_concurrent: usize,
+    rate_limit_bps: u64,
+) -> Result<SftpQueueConfig, String> {
+    if !(1..=8).contains(&max_concurrent) {
+        return Err("并发传输数必须在 1 到 8 之间".to_string());
+    }
+    state.sftp_manager.configure_queue(max_concurrent, rate_limit_bps);
+    Ok(state.sftp_manager.queue_config())
+}
+
+#[tauri::command]
+pub async fn get_sftp_transfer_queue(
+    state: tauri::State<'_, AppState>,
+) -> Result<SftpQueueConfig, String> {
+    Ok(state.sftp_manager.queue_config())
+}
+
+#[tauri::command]
+pub async fn sftp_retry_transfer(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    transfer_id: String,
+) -> Result<SftpTransferResult, String> {
+    let previous = state.db.get_sftp_transfer(&transfer_id).map_err(|e| e.to_string())?;
+    let connection_id = state.sftp_manager.connection_id(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    if !previous.connection_id.is_empty() && previous.connection_id != connection_id {
+        return Err("该传输记录不属于当前连接".to_string());
+    }
+    let options = Some(SftpTransferOptions {
+        conflict_policy: Some("resume".to_string()),
+        verify_checksum: previous.verify_checksum,
+        rate_limit_bps: None,
+    });
+    if previous.direction == "download" {
+        sftp_download(app, state, sftp_id, previous.source_path, previous.actual_destination, options).await
+    } else if previous.direction == "upload" {
+        sftp_upload(app, state, sftp_id, previous.source_path, previous.actual_destination, options).await
+    } else if previous.direction == "download_dir" {
+        sftp_download_directory(app, state, sftp_id, previous.source_path, previous.actual_destination, options).await
+    } else if previous.direction == "upload_dir" {
+        sftp_upload_directory(app, state, sftp_id, previous.source_path, previous.actual_destination, options).await
+    } else {
+        Err("无法重试未知类型的传输".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn sftp_set_permissions(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    path: String,
+    mode: u32,
+) -> Result<(), String> {
+    if mode > 0o7777 {
+        return Err("权限值必须在 0000 到 7777 之间".to_string());
+    }
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    handle.set_permissions(&path, mode).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn sftp_set_owner(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    path: String,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> Result<(), String> {
+    if uid.is_none() && gid.is_none() {
+        return Err("UID 和 GID 至少填写一项".to_string());
+    }
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    handle.set_owner(&path, uid, gid).await.map_err(|e| e.to_string())
+}
+
+const REMOTE_EDITOR_MAX_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpTextFile {
+    pub content: String,
+    pub size: usize,
+    pub checksum: String,
+}
+
+#[tauri::command]
+pub async fn sftp_read_text_file(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    path: String,
+) -> Result<SftpTextFile, String> {
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let data = handle.read_file(&path, REMOTE_EDITOR_MAX_BYTES).await.map_err(|e| e.to_string())?;
+    if data.contains(&0) {
+        return Err("该文件包含二进制数据，不能使用文本编辑器打开".to_string());
+    }
+    let size = data.len();
+    let checksum = format!("{:x}", Sha256::digest(&data));
+    let content = String::from_utf8(data).map_err(|_| "该文件不是有效的 UTF-8 文本，不能直接编辑".to_string())?;
+    Ok(SftpTextFile { content, size, checksum })
+}
+
+#[tauri::command]
+pub async fn sftp_write_text_file(
+    state: tauri::State<'_, AppState>,
+    sftp_id: String,
+    path: String,
+    content: String,
+    expected_checksum: String,
+) -> Result<String, String> {
+    if content.len() > REMOTE_EDITOR_MAX_BYTES {
+        return Err(format!("编辑内容超过 {} MiB 上限", REMOTE_EDITOR_MAX_BYTES / 1024 / 1024));
+    }
+    let handle = state.sftp_manager.get(&sftp_id).ok_or_else(|| "SFTP 会话未找到".to_string())?;
+    let current = handle.checksum_sha256(&path).await.map_err(|e| e.to_string())?;
+    if current != expected_checksum {
+        return Err("远程文件在编辑期间已被其他程序修改，请重新加载后再保存".to_string());
+    }
+    handle.write_file_atomic(&path, content.as_bytes()).await.map_err(|e| e.to_string())?;
+    Ok(format!("{:x}", Sha256::digest(content.as_bytes())))
 }
 
 /// 创建空文件
@@ -2786,4 +3641,49 @@ pub async fn docker_disconnect(
 ) -> Result<(), String> {
     state.docker_manager.remove(&connection_id);
     Ok(())
+}
+
+#[cfg(test)]
+mod sftp_command_tests {
+    use super::{normalize_conflict_policy, numbered_local_path, numbered_remote_path, remote_join, safe_entry_name, SftpManager};
+    use std::sync::Arc;
+
+    #[test]
+    fn validates_transfer_conflict_policy() {
+        assert_eq!(normalize_conflict_policy(None).unwrap(), "resume");
+        assert_eq!(normalize_conflict_policy(Some("overwrite")).unwrap(), "overwrite");
+        assert!(normalize_conflict_policy(Some("ask")).is_err());
+    }
+
+    #[test]
+    fn creates_numbered_paths_without_losing_extensions() {
+        assert_eq!(numbered_local_path("C:\\tmp\\archive.tar.gz", 2), "C:\\tmp\\archive.tar (2).gz");
+        assert_eq!(numbered_remote_path("/var/log/app.log", 3), "/var/log/app (3).log");
+        assert_eq!(numbered_remote_path("/README", 1), "/README (1)");
+    }
+
+    #[test]
+    fn joins_remote_paths_and_rejects_traversal_entries() {
+        assert_eq!(remote_join("/", "logs"), "/logs");
+        assert_eq!(remote_join("/var/", "logs"), "/var/logs");
+        assert!(safe_entry_name("..").is_err());
+        assert!(safe_entry_name("nested/file").is_err());
+        assert_eq!(safe_entry_name("应用.log").unwrap(), "应用.log");
+    }
+
+    #[tokio::test]
+    async fn transfer_queue_respects_dynamic_concurrency_limit() {
+        let manager = Arc::new(SftpManager::new());
+        manager.configure_queue(1, 128 * 1024);
+        let first = manager.acquire_transfer_slot().await;
+        let waiting_manager = manager.clone();
+        let mut waiting = tokio::spawn(async move { waiting_manager.acquire_transfer_slot().await });
+        assert!(tokio::time::timeout(std::time::Duration::from_millis(40), &mut waiting).await.is_err());
+        drop(first);
+        let second = tokio::time::timeout(std::time::Duration::from_secs(1), waiting).await.unwrap().unwrap();
+        assert_eq!(manager.queue_config().active, 1);
+        drop(second);
+        assert_eq!(manager.queue_config().active, 0);
+        assert_eq!(manager.queue_config().rate_limit_bps, 128 * 1024);
+    }
 }

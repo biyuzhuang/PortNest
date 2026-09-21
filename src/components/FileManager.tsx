@@ -1,6 +1,6 @@
 import { Component, createSignal, createMemo, For, Show, onMount, onCleanup, createEffect, on } from "solid-js";
 import { listen } from "@tauri-apps/api/event";
-import { api, FileInfo, ConnectionRecord } from "../utils/api";
+import { api, FileInfo, ConnectionRecord, SftpConflictPolicy } from "../utils/api";
 import { uiStore } from "../stores/uiStore";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { feedback } from "../stores/feedbackStore";
@@ -26,6 +26,7 @@ interface TransferProgressPayload {
   total: number;
   status: string;
   error?: string | null;
+  actual_destination?: string | null;
 }
 
 interface TransferProgress {
@@ -34,8 +35,9 @@ interface TransferProgress {
   fileName: string;
   transferred: number;
   total: number;
-  status: "running" | "done" | "cancelled" | "error";
+  status: "queued" | "running" | "cancelling" | "done" | "skipped" | "cancelled" | "error" | "interrupted";
   error?: string;
+  persistent?: boolean;
 }
 
 const fileIconKind = (file: FileInfo) => {
@@ -90,11 +92,26 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const [newEntryName, setNewEntryName] = createSignal("");
   const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; file: FileInfo | null } | null>(null);
   const [showOptions, setShowOptions] = createSignal(false);
+  const [showTransferCenter, setShowTransferCenter] = createSignal(true);
   const [showHidden, setShowHidden] = createSignal(storedOptions.showHidden === true);
   const [favoritePath, setFavoritePath] = createSignal(storedOptions.favoritePath === true);
   const [transfers, setTransfers] = createSignal<Record<string, TransferProgress>>({});
   const [pendingTransfers, setPendingTransfers] = createSignal<Array<{ localId: string; direction: "upload" | "download"; fileName: string }>>([]);
   const [probePending, setProbePending] = createSignal(false);
+  const [conflictPolicy, setConflictPolicy] = createSignal<SftpConflictPolicy>(storedOptions.conflictPolicy || "resume");
+  const [verifyChecksum, setVerifyChecksum] = createSignal(storedOptions.verifyChecksum === true);
+  const [maxConcurrent, setMaxConcurrent] = createSignal<number>(Math.min(8, Math.max(1, Number(storedOptions.maxConcurrent) || 2)));
+  const [rateLimitKbps, setRateLimitKbps] = createSignal<number>(Math.max(0, Number(storedOptions.rateLimitKbps) || 0));
+  const [showPermissionDialog, setShowPermissionDialog] = createSignal(false);
+  const [permissionMode, setPermissionMode] = createSignal("0644");
+  const [ownerUid, setOwnerUid] = createSignal("");
+  const [ownerGid, setOwnerGid] = createSignal("");
+  const [editorFile, setEditorFile] = createSignal<FileInfo | null>(null);
+  const [editorContent, setEditorContent] = createSignal("");
+  const [editorOriginal, setEditorOriginal] = createSignal("");
+  const [editorChecksum, setEditorChecksum] = createSignal("");
+  const [editorLoading, setEditorLoading] = createSignal(false);
+  const [editorSaving, setEditorSaving] = createSignal(false);
   const contextFile = createMemo(() => contextMenu()?.file ?? null);
   const linkedCwd = createMemo(() => props.sessionKey ? pathLinkStore.getCwd(props.sessionKey) : undefined);
   const [columns, setColumns] = createSignal({
@@ -108,7 +125,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const directoryCache = new Map<string, FileInfo[]>();
   let directoryRequestId = 0;
   let unlistenProgress: (() => void) | undefined;
-  const removeTimers = new Map<string, number>();
   let rootRef: HTMLDivElement | undefined;
   let contextMenuRef: HTMLDivElement | undefined;
   let lastFollowedCwd = "";
@@ -122,8 +138,21 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     showHidden: showHidden(),
     pathLinked: uiStore.pathLinked(),
     favoritePath: favoritePath(),
+    conflictPolicy: conflictPolicy(),
+    verifyChecksum: verifyChecksum(),
+    maxConcurrent: maxConcurrent(),
+    rateLimitKbps: rateLimitKbps(),
     columns: columns(),
   }));
+
+  const applyQueueConfig = async () => {
+    persistOptions();
+    try {
+      await api.configureSftpTransferQueue(maxConcurrent(), Math.round(rateLimitKbps() * 1024));
+    } catch (cause) {
+      console.warn("[FileManager] 更新传输队列设置失败:", cause);
+    }
+  };
 
   const toggleColumn = (key: keyof ReturnType<typeof columns>) => {
     setColumns(previous => ({ ...previous, [key]: !previous[key] }));
@@ -153,6 +182,28 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       if (favorite) return favorite;
     }
     return homePath();
+  };
+
+  const loadTransferHistory = async () => {
+    try {
+      const records = await api.listSftpTransfers(props.connection.id);
+      const mapped: Record<string, TransferProgress> = {};
+      for (const record of records) {
+        mapped[record.id] = {
+          transferId: record.id,
+          direction: record.direction.startsWith("upload") ? "upload" : "download",
+          fileName: record.file_name,
+          transferred: record.transferred,
+          total: record.total,
+          status: record.status,
+          error: record.error ?? undefined,
+          persistent: true,
+        };
+      }
+      setTransfers(previous => ({ ...mapped, ...Object.fromEntries(Object.entries(previous).filter(([, item]) => item.status === "running")) }));
+    } catch (cause) {
+      console.warn("[FileManager] 读取传输历史失败:", cause);
+    }
   };
 
   const loadDirectory = async (path: string, recordHistory = true) => {
@@ -212,6 +263,8 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     setFileFilter("");
     setSelectedFile(null);
     setError(null);
+    void applyQueueConfig();
+    void loadTransferHistory();
     void loadDirectory(start);
   }));
 
@@ -263,23 +316,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             fileName: payload.file_name,
             transferred: payload.transferred,
             total: payload.total,
-            status: (["running", "done", "cancelled", "error"].includes(payload.status) ? payload.status : "running") as TransferProgress["status"],
+            status: (["running", "done", "skipped", "cancelled", "error", "interrupted"].includes(payload.status) ? payload.status : "running") as TransferProgress["status"],
             error: payload.error ?? undefined,
+            persistent: true,
           },
         }));
         if (payload.status !== "running") {
-          const key = payload.transfer_id;
-          const delay = payload.status === "done" ? 2500 : 6000;
-          const existing = removeTimers.get(key);
-          if (existing !== undefined) window.clearTimeout(existing);
-          removeTimers.set(key, window.setTimeout(() => {
-            removeTimers.delete(key);
-            setTransfers(previous => {
-              const next = { ...previous };
-              delete next[key];
-              return next;
-            });
-          }, delay));
+          void loadTransferHistory();
         }
       });
     })();
@@ -287,8 +330,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
 
   onCleanup(() => {
     unlistenProgress?.();
-    for (const [, timer] of removeTimers) window.clearTimeout(timer);
-    removeTimers.clear();
     if (probeTimer !== undefined) window.clearTimeout(probeTimer);
   });
 
@@ -329,6 +370,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const openContextMenu = (e: MouseEvent, file: FileInfo | null) => {
     e.preventDefault();
     e.stopPropagation();
+    if (file) setSelectedFile(file);
     setContextMenu({ x: e.clientX, y: e.clientY, file });
   };
 
@@ -368,13 +410,12 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       setContextMenu(null);
       return;
     }
-    if (file.is_dir) {
-      feedback.info("暂不支持下载文件夹");
-      setContextMenu(null);
-      return;
-    }
-
-    const localPath = await save({ defaultPath: file.name, title: `下载 ${file.name}` });
+    const selectedPath = file.is_dir
+      ? await open({ multiple: false, directory: true, title: `选择“${file.name}”的保存位置` })
+      : await save({ defaultPath: file.name, title: `下载 ${file.name}` });
+    const localPath = typeof selectedPath === "string"
+      ? (file.is_dir ? `${selectedPath}${selectedPath.includes("\\") ? "\\" : "/"}${file.name}` : selectedPath)
+      : null;
     if (!localPath) {
       setContextMenu(null);
       return;
@@ -383,9 +424,16 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     setPendingTransfers(prev => [...prev, { localId, direction: "download", fileName: file.name }]);
     setTransfers(prev => ({ ...prev, [localId]: { transferId: localId, direction: "download", fileName: file.name, transferred: 0, total: 0, status: "running" } }));
     try {
-      await api.sftpDownload(id, file.path, localPath);
-      feedback.success("下载完成: " + file.name);
+      const transferOptions = {
+        conflict_policy: conflictPolicy(),
+        verify_checksum: verifyChecksum(),
+      };
+      const result = file.is_dir
+        ? await api.sftpDownloadDirectory(id, file.path, localPath, transferOptions)
+        : await api.sftpDownload(id, file.path, localPath, transferOptions);
+      feedback.success(result.status === "skipped" ? `已跳过同名文件: ${file.name}` : `下载完成: ${result.actual_destination}`);
       setError(null);
+      await loadTransferHistory();
     } catch (e) {
       const message = String(e);
       if (!message.includes("取消")) setError("下载失败: " + message);
@@ -399,23 +447,64 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     const id = getSftpId();
     if (!id) return;
 
-    const localPath = await open({ multiple: false, directory: false, title: "选择要上传的文件" });
-    if (!localPath) {
+    const selected = await open({ multiple: true, directory: false, title: "选择要上传的文件（可多选）" });
+    const localPaths = typeof selected === "string" ? [selected] : selected || [];
+    if (localPaths.length === 0) {
       setContextMenu(null);
       return;
     }
-    const name = localPath.split(/[/\\]/).pop()!;
-    const remotePath = currentPath() === "/" ? "/" + name : currentPath() + "/" + name;
+    let completed = 0;
+    let skipped = 0;
+    let failed = 0;
+    await Promise.all(localPaths.map(async (localPath, index) => {
+      const name = localPath.split(/[/\\]/).pop()!;
+      const remotePath = currentPath() === "/" ? "/" + name : currentPath() + "/" + name;
+      const localId = `local-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`;
+      setPendingTransfers(previous => [...previous, { localId, direction: "upload", fileName: name }]);
+      setTransfers(previous => ({ ...previous, [localId]: { transferId: localId, direction: "upload", fileName: name, transferred: 0, total: 0, status: "running" } }));
+      try {
+        const result = await api.sftpUpload(id, localPath, remotePath, {
+          conflict_policy: conflictPolicy(),
+          verify_checksum: verifyChecksum(),
+        });
+        if (result.status === "skipped") skipped += 1;
+        else completed += 1;
+      } catch (cause) {
+        failed += 1;
+        const message = String(cause);
+        if (!message.includes("取消")) setError(`上传 ${name} 失败: ${message}`);
+      } finally {
+        cleanupOptimisticRow(localId);
+      }
+    }));
+    await loadTransferHistory();
+    loadDirectory(currentPath());
+    feedback.info(`批量上传完成：成功 ${completed}，跳过 ${skipped}，失败 ${failed}`);
+    setContextMenu(null);
+  };
+
+  const handleUploadDirectory = async () => {
+    const id = getSftpId();
+    if (!id) return;
+    const selected = await open({ multiple: false, directory: true, title: "选择要上传的目录" });
+    const localPath = typeof selected === "string" ? selected : null;
+    if (!localPath) { setContextMenu(null); return; }
+    const name = localPath.split(/[/\\]/).filter(Boolean).pop() || "upload";
+    const remotePath = currentPath() === "/" ? `/${name}` : `${currentPath()}/${name}`;
     const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setPendingTransfers(prev => [...prev, { localId, direction: "upload", fileName: name }]);
-    setTransfers(prev => ({ ...prev, [localId]: { transferId: localId, direction: "upload", fileName: name, transferred: 0, total: 0, status: "running" } }));
+    setPendingTransfers(previous => [...previous, { localId, direction: "upload", fileName: name }]);
+    setTransfers(previous => ({ ...previous, [localId]: { transferId: localId, direction: "upload", fileName: name, transferred: 0, total: 0, status: "running" } }));
     try {
-      await api.sftpUpload(id, localPath, remotePath);
-      feedback.success("上传完成: " + name);
-      loadDirectory(currentPath());
-    } catch (e) {
-      const message = String(e);
-      if (!message.includes("取消")) setError("上传失败: " + message);
+      const result = await api.sftpUploadDirectory(id, localPath, remotePath, {
+        conflict_policy: conflictPolicy(),
+        verify_checksum: verifyChecksum(),
+      });
+      feedback.success(result.status === "skipped" ? `已跳过同名目录: ${name}` : `目录上传完成: ${result.actual_destination}`);
+      await loadTransferHistory();
+      refreshDirectory();
+    } catch (cause) {
+      const message = String(cause);
+      if (!message.includes("取消")) setError("目录上传失败: " + message);
     } finally {
       cleanupOptimisticRow(localId);
     }
@@ -516,6 +605,113 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     }
   };
 
+  const handleRetryTransfer = async (transferId: string) => {
+    const id = getSftpId();
+    if (!id) return;
+    try {
+      await api.retrySftpTransfer(id, transferId);
+      feedback.success("传输已完成");
+      await loadTransferHistory();
+      refreshDirectory();
+    } catch (cause) {
+      feedback.error("重试失败: " + cause);
+      await loadTransferHistory();
+    }
+  };
+
+  const handleClearTransferHistory = async () => {
+    try {
+      await api.clearSftpTransferHistory(props.connection.id);
+      await loadTransferHistory();
+    } catch (cause) {
+      feedback.error("清理传输记录失败: " + cause);
+    }
+  };
+
+  const openPermissionEditor = () => {
+    const file = contextFile();
+    if (!file) return;
+    const symbolic = file.permissions || "";
+    let mode = 0;
+    if (symbolic.length >= 10) {
+      const triplets = [symbolic.slice(1, 4), symbolic.slice(4, 7), symbolic.slice(7, 10)];
+      mode = Number(triplets.map(value => (value[0] === "r" ? 4 : 0) + (value[1] === "w" ? 2 : 0) + (value[2] === "x" ? 1 : 0)).join(""));
+    }
+    setPermissionMode(String(mode || (file.is_dir ? 755 : 644)).padStart(4, "0"));
+    setOwnerUid(file.uid === null || file.uid === undefined ? "" : String(file.uid));
+    setOwnerGid(file.gid === null || file.gid === undefined ? "" : String(file.gid));
+    setShowPermissionDialog(true);
+    setContextMenu(null);
+  };
+
+  const handleSetPermissions = async () => {
+    const id = getSftpId();
+    const file = selectedFile();
+    if (!id || !file || !/^[0-7]{3,4}$/.test(permissionMode())) {
+      feedback.error("请输入 3 或 4 位八进制权限，例如 0644 或 0755");
+      return;
+    }
+    try {
+      await api.sftpSetPermissions(id, file.path, Number.parseInt(permissionMode(), 8));
+      const uid = ownerUid() === "" ? undefined : Number.parseInt(ownerUid(), 10);
+      const gid = ownerGid() === "" ? undefined : Number.parseInt(ownerGid(), 10);
+      if (uid !== file.uid || gid !== file.gid) {
+        await api.sftpSetOwner(id, file.path, uid, gid);
+      }
+      setShowPermissionDialog(false);
+      feedback.success(`已更新 ${file.name} 的属性`);
+      refreshDirectory();
+    } catch (cause) {
+      feedback.error("修改权限失败: " + cause);
+    }
+  };
+
+  const openRemoteEditor = async () => {
+    const id = getSftpId();
+    const file = contextFile();
+    setContextMenu(null);
+    if (!id || !file || file.is_dir) return;
+    setEditorFile(file);
+    setEditorContent("");
+    setEditorOriginal("");
+    setEditorChecksum("");
+    setEditorLoading(true);
+    try {
+      const result = await api.sftpReadTextFile(id, file.path);
+      setEditorContent(result.content);
+      setEditorOriginal(result.content);
+      setEditorChecksum(result.checksum);
+    } catch (cause) {
+      setEditorFile(null);
+      feedback.error("打开远程文件失败: " + cause);
+    } finally {
+      setEditorLoading(false);
+    }
+  };
+
+  const closeRemoteEditor = async () => {
+    if (editorContent() !== editorOriginal() && !await feedback.confirm("远程文件尚未保存，确定放弃修改吗？", "关闭编辑器")) return;
+    setEditorFile(null);
+  };
+
+  const saveRemoteEditor = async () => {
+    const id = getSftpId();
+    const file = editorFile();
+    if (!id || !file || editorSaving()) return;
+    setEditorSaving(true);
+    try {
+      const checksum = await api.sftpWriteTextFile(id, file.path, editorContent(), editorChecksum());
+      setEditorChecksum(checksum);
+      setEditorOriginal(editorContent());
+      feedback.success(`已保存 ${file.name}`);
+      refreshDirectory();
+    } catch (cause) {
+      feedback.error("保存远程文件失败: " + cause);
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
   const formatSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
@@ -570,6 +766,10 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
           <button onClick={() => openNewEntryDialog("folder")} title="新建文件夹">＋文件夹</button>
           <button onClick={handleUpload} title="上传文件">上传</button>
+          <button onClick={handleUploadDirectory} title="递归上传目录">上传目录</button>
+          <button class={showTransferCenter() ? "active" : ""} onClick={() => setShowTransferCenter(value => !value)} title="显示传输中心">
+            传输 {Object.values(transfers()).filter(item => item.status === "running").length || ""}
+          </button>
         </div>
         <div class="file-manager-summary-count">
           共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
@@ -638,8 +838,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         </Show>
       </div>
 
-      <Show when={Object.keys(transfers()).length > 0}>
+      <Show when={showTransferCenter() && Object.keys(transfers()).length > 0}>
         <div class="transfer-strip">
+          <div class="transfer-strip-header">
+            <strong>传输中心</strong>
+            <span>{Object.keys(transfers()).length} 条记录</span>
+            <button onClick={handleClearTransferHistory}>清理已完成</button>
+          </div>
           <For each={Object.values(transfers())}>
             {(transfer) => {
               const percent = transfer.total > 0 ? Math.min(100, Math.round((transfer.transferred / transfer.total) * 100)) : null;
@@ -653,19 +858,24 @@ export const FileManager: Component<FileManagerProps> = (props) => {
                         {transfer.status === "running"
                           ? `${formatSize(transfer.transferred)} / ${transfer.total > 0 ? formatSize(transfer.total) : "?"}${percent !== null ? ` · ${percent}%` : ""}`
                           : transfer.status === "done" ? "完成"
+                          : transfer.status === "skipped" ? "已跳过"
                           : transfer.status === "cancelled" ? "已取消"
+                          : transfer.status === "interrupted" ? "已中断"
                           : "失败"}
                       </span>
                     </div>
                     <div class="transfer-bar">
                       <div class="transfer-bar-fill" style={{ width: (percent ?? 0) + "%" }} />
                     </div>
-                    <Show when={transfer.status === "error" && transfer.error}>
+                    <Show when={(["error", "cancelled", "interrupted"].includes(transfer.status)) && transfer.error}>
                       <div class="transfer-status">{transfer.error}</div>
                     </Show>
                   </div>
                   <Show when={transfer.status === "running"}>
                     <button class="transfer-cancel-btn" onClick={() => handleCancelTransfer(transfer.transferId)}>取消</button>
+                  </Show>
+                  <Show when={["error", "cancelled", "interrupted"].includes(transfer.status)}>
+                    <button class="transfer-retry-btn" onClick={() => handleRetryTransfer(transfer.transferId)}>续传</button>
                   </Show>
                 </div>
               );
@@ -688,6 +898,27 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             persistOptions();
           }} />收藏路径</label>
           <div class="file-options-divider" />
+          <div class="file-options-caption">传输策略</div>
+          <label class="file-options-select-label">同名文件
+            <select value={conflictPolicy()} onChange={event => { setConflictPolicy(event.currentTarget.value as SftpConflictPolicy); persistOptions(); }}>
+              <option value="resume">断点续传</option>
+              <option value="rename">自动重命名</option>
+              <option value="overwrite">覆盖</option>
+              <option value="skip">跳过</option>
+            </select>
+          </label>
+          <label><input type="checkbox" checked={verifyChecksum()} onChange={event => { setVerifyChecksum(event.currentTarget.checked); persistOptions(); }} />SHA-256 校验</label>
+          <label class="file-options-select-label">并发任务
+            <select value={maxConcurrent()} onChange={event => { setMaxConcurrent(Number(event.currentTarget.value)); void applyQueueConfig(); }}>
+              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+              <option value="6">6</option><option value="8">8</option>
+            </select>
+          </label>
+          <label class="file-options-number-label">单任务限速
+            <input type="number" min="0" step="128" value={rateLimitKbps()} onChange={event => { setRateLimitKbps(Math.max(0, Number(event.currentTarget.value) || 0)); void applyQueueConfig(); }} />
+            <span>KB/s</span>
+          </label>
+          <div class="file-options-divider" />
           <div class="file-options-caption">远程显示列</div>
           <label><input type="checkbox" checked={columns().name} onChange={() => toggleColumn("name")} />名称</label>
           <label><input type="checkbox" checked={columns().modified} onChange={() => toggleColumn("modified")} />修改时间</label>
@@ -708,11 +939,8 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
           <div class="context-menu-item" onClick={handleUpload}>上传到当前目录</div>
-          <div
-            class={`context-menu-item ${contextFile()?.is_dir ? "disabled" : ""}`}
-            onClick={handleDownload}
-            title={contextFile()?.is_dir ? "暂不支持下载文件夹" : undefined}
-          >下载</div>
+          <div class="context-menu-item" onClick={handleUploadDirectory}>上传目录到当前位置</div>
+          <div class="context-menu-item" onClick={handleDownload}>{contextFile()?.is_dir ? "下载目录" : "下载"}</div>
           <div class="context-menu-divider" />
           <div class="context-menu-item" onClick={() => openNewEntryDialog("folder")}>新建文件夹</div>
           <div class="context-menu-item" onClick={() => openNewEntryDialog("file")}>新建文件</div>
@@ -720,6 +948,8 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <div class="context-menu-item" onClick={() => { setContextMenu(null); refreshDirectory(); }}>刷新</div>
           <Show when={contextFile()}>
             <div class="context-menu-divider" />
+            <Show when={!contextFile()?.is_dir}><div class="context-menu-item" onClick={openRemoteEditor}>编辑文本…</div></Show>
+            <div class="context-menu-item" onClick={openPermissionEditor}>文件属性…</div>
             <div class="context-menu-item danger" onClick={handleDelete}>删除</div>
           </Show>
         </div>
@@ -742,6 +972,73 @@ export const FileManager: Component<FileManagerProps> = (props) => {
               <button class="btn-cancel" onClick={() => setShowNewEntryDialog(false)}>取消</button>
               <button class="btn-save" onClick={handleNewEntry}>创建</button>
             </div>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={showPermissionDialog()}>
+        <div class="modal-overlay">
+          <div class="modal-content permission-dialog">
+            <h3>文件属性</h3>
+            <p>{selectedFile()?.name}</p>
+            <div class="form-group">
+              <label>八进制权限</label>
+              <input
+                type="text"
+                inputmode="numeric"
+                maxlength="4"
+                placeholder="0644"
+                value={permissionMode()}
+                onInput={event => setPermissionMode(event.currentTarget.value.replace(/[^0-7]/g, ""))}
+                onKeyDown={event => event.key === "Enter" && void handleSetPermissions()}
+              />
+              <small>常用：0644 普通文件，0755 可执行文件或目录</small>
+            </div>
+            <div class="permission-owner-grid">
+              <div class="form-group">
+                <label>所有者 UID</label>
+                <input type="text" inputmode="numeric" placeholder="保持未知" value={ownerUid()} onInput={event => setOwnerUid(event.currentTarget.value.replace(/\D/g, ""))} />
+              </div>
+              <div class="form-group">
+                <label>所属组 GID</label>
+                <input type="text" inputmode="numeric" placeholder="保持未知" value={ownerGid()} onInput={event => setOwnerGid(event.currentTarget.value.replace(/\D/g, ""))} />
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn-cancel" onClick={() => setShowPermissionDialog(false)}>取消</button>
+              <button class="btn-save" onClick={handleSetPermissions}>应用</button>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={editorFile()}>
+        <div class="modal-overlay remote-editor-overlay">
+          <div class="remote-editor-dialog">
+            <header>
+              <div><strong>{editorFile()?.name}</strong><small>{editorFile()?.path}</small></div>
+              <button onClick={() => void closeRemoteEditor()} aria-label="关闭编辑器">×</button>
+            </header>
+            <Show when={editorLoading()} fallback={
+              <textarea
+                value={editorContent()}
+                spellcheck={false}
+                onInput={event => setEditorContent(event.currentTarget.value)}
+                onKeyDown={event => {
+                  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+                    event.preventDefault();
+                    void saveRemoteEditor();
+                  }
+                }}
+              />
+            }><div class="remote-editor-loading">正在读取远程文件…</div></Show>
+            <footer>
+              <span>{new TextEncoder().encode(editorContent()).length} 字节 · UTF-8 · Ctrl+S 保存</span>
+              <button class="btn-cancel" onClick={() => void closeRemoteEditor()}>关闭</button>
+              <button class="btn-save" disabled={editorSaving() || editorLoading() || editorContent() === editorOriginal()} onClick={saveRemoteEditor}>
+                {editorSaving() ? "保存中…" : "保存"}
+              </button>
+            </footer>
           </div>
         </div>
       </Show>

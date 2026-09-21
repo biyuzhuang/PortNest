@@ -7,13 +7,14 @@ use russh::client;
 use russh::keys::{decode_secret_key, HashAlg, PrivateKeyWithHashAlg};
 use russh::{Channel, ChannelMsg, Disconnect};
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use sha2::Digest;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
@@ -705,6 +706,7 @@ impl SftpHandle for RusshSftpHandle {
         local_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let total = self
             .session
@@ -717,10 +719,26 @@ impl SftpHandle for RusshSftpHandle {
             .open(remote_path)
             .await
             .map_err(|error| protocol_error("打开远程文件失败", error))?;
+        let partial_path = format!("{local_path}.portnest.part");
+        let mut offset = tokio::fs::metadata(&partial_path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if offset > total {
+            let _ = tokio::fs::remove_file(&partial_path).await;
+            offset = 0;
+        }
         let result = async {
-            let mut local = tokio::fs::File::create(local_path).await?;
+            remote.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
+            let mut local = tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&partial_path)
+                .await?;
             let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
-            let mut transferred = 0_u64;
+            let mut transferred = offset;
+            let started = tokio::time::Instant::now();
+            if let Some(callback) = &progress { callback(transferred, total); }
             loop {
                 let count = tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -734,18 +752,35 @@ impl SftpHandle for RusshSftpHandle {
                     result = local.write_all(&buffer[..count]) => result.map_err(Error::IoError)?,
                 }
                 transferred += count as u64;
+                if let Some(limit) = rate_limit_bps.filter(|limit| *limit > 0) {
+                    let expected = Duration::from_secs_f64(transferred.saturating_sub(offset) as f64 / limit as f64);
+                    if expected > started.elapsed() {
+                        tokio::select! {
+                            _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                            _ = tokio::time::sleep(expected - started.elapsed()) => {}
+                        }
+                    }
+                }
                 if let Some(callback) = &progress {
                     callback(transferred, total);
                 }
             }
             local.flush().await.map_err(Error::IoError)?;
+            drop(local);
+            let backup = format!("{local_path}.portnest.backup");
+            let had_destination = tokio::fs::try_exists(local_path).await.unwrap_or(false);
+            if had_destination {
+                let _ = tokio::fs::remove_file(&backup).await;
+                tokio::fs::rename(local_path, &backup).await.map_err(Error::IoError)?;
+            }
+            if let Err(error) = tokio::fs::rename(&partial_path, local_path).await {
+                if had_destination { let _ = tokio::fs::rename(&backup, local_path).await; }
+                return Err(Error::IoError(error));
+            }
+            if had_destination { let _ = tokio::fs::remove_file(&backup).await; }
             Ok::<u64, Error>(transferred)
         }
         .await;
-
-        if result.is_err() {
-            let _ = tokio::fs::remove_file(local_path).await;
-        }
 
         result
     }
@@ -756,20 +791,37 @@ impl SftpHandle for RusshSftpHandle {
         remote_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let total = tokio::fs::metadata(local_path)
             .await
             .map(|metadata| metadata.len())
             .unwrap_or(0);
         let mut local = tokio::fs::File::open(local_path).await?;
+        let partial_path = format!("{remote_path}.portnest.part");
+        let mut offset = self
+            .session
+            .metadata(&partial_path)
+            .await
+            .ok()
+            .and_then(|metadata| metadata.size)
+            .unwrap_or(0);
+        if offset > total {
+            let _ = self.session.remove_file(&partial_path).await;
+            offset = 0;
+        }
         let mut remote = self
             .session
-            .create(remote_path)
+            .open_with_flags(&partial_path, OpenFlags::CREATE | OpenFlags::WRITE)
             .await
             .map_err(|error| protocol_error("创建远程文件失败", error))?;
         let result = async {
+            local.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
+            remote.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
             let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
-            let mut transferred = 0_u64;
+            let mut transferred = offset;
+            let started = tokio::time::Instant::now();
+            if let Some(callback) = &progress { callback(transferred, total); }
             loop {
                 let count = tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -783,18 +835,36 @@ impl SftpHandle for RusshSftpHandle {
                     result = remote.write_all(&buffer[..count]) => result.map_err(Error::IoError)?,
                 }
                 transferred += count as u64;
+                if let Some(limit) = rate_limit_bps.filter(|limit| *limit > 0) {
+                    let expected = Duration::from_secs_f64(transferred.saturating_sub(offset) as f64 / limit as f64);
+                    if expected > started.elapsed() {
+                        tokio::select! {
+                            _ = cancel.cancelled() => return Err(Error::TransferCancelled),
+                            _ = tokio::time::sleep(expected - started.elapsed()) => {}
+                        }
+                    }
+                }
                 if let Some(callback) = &progress {
                     callback(transferred, total);
                 }
             }
             remote.flush().await.map_err(Error::IoError)?;
+            remote.shutdown().await.map_err(Error::IoError)?;
+            let backup = format!("{remote_path}.portnest.backup");
+            let had_destination = self.session.metadata(remote_path).await.is_ok();
+            if had_destination {
+                let _ = self.session.remove_file(&backup).await;
+                self.session.rename(remote_path, &backup).await
+                    .map_err(|error| protocol_error("备份远程目标失败", error))?;
+            }
+            if let Err(error) = self.session.rename(&partial_path, remote_path).await {
+                if had_destination { let _ = self.session.rename(&backup, remote_path).await; }
+                return Err(protocol_error("提交上传文件失败", error));
+            }
+            if had_destination { let _ = self.session.remove_file(&backup).await; }
             Ok::<u64, Error>(transferred)
         }
         .await;
-
-        if result.is_err() {
-            let _ = self.session.remove_file(remote_path).await;
-        }
 
         result
     }
@@ -835,6 +905,88 @@ impl SftpHandle for RusshSftpHandle {
             .rename(old_path, new_path)
             .await
             .map_err(|error| protocol_error("重命名失败", error))
+    }
+
+    async fn stat_size(&self, path: &str) -> Result<Option<u64>> {
+        match self.session.metadata(path).await {
+            Ok(metadata) => Ok(metadata.size),
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn checksum_sha256(&self, path: &str) -> Result<String> {
+        let mut remote = self
+            .session
+            .open(path)
+            .await
+            .map_err(|error| protocol_error("打开远程文件以校验失败", error))?;
+        let mut digest = sha2::Sha256::new();
+        let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
+        loop {
+            let count = remote.read(&mut buffer).await.map_err(Error::IoError)?;
+            if count == 0 { break; }
+            digest.update(&buffer[..count]);
+        }
+        Ok(format!("{:x}", digest.finalize()))
+    }
+
+    async fn set_permissions(&self, path: &str, mode: u32) -> Result<()> {
+        self.session
+            .set_metadata(
+                path,
+                FileAttributes {
+                    permissions: Some(mode & 0o7777),
+                    ..FileAttributes::empty()
+                },
+            )
+            .await
+            .map_err(|error| protocol_error("修改权限失败", error))
+    }
+
+    async fn set_owner(&self, path: &str, uid: Option<u32>, gid: Option<u32>) -> Result<()> {
+        self.session
+            .set_metadata(
+                path,
+                FileAttributes {
+                    uid,
+                    gid,
+                    ..FileAttributes::empty()
+                },
+            )
+            .await
+            .map_err(|error| protocol_error("修改所有者失败", error))
+    }
+
+    async fn read_file(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>> {
+        let remote = self.session.open(path).await.map_err(|error| protocol_error("打开远程文件失败", error))?;
+        let mut limited = remote.take(max_bytes as u64 + 1);
+        let mut data = Vec::new();
+        limited.read_to_end(&mut data).await.map_err(Error::IoError)?;
+        if data.len() > max_bytes {
+            return Err(Error::ProtocolError(format!("文件超过编辑上限 {} 字节", max_bytes)));
+        }
+        Ok(data)
+    }
+
+    async fn write_file_atomic(&self, path: &str, data: &[u8]) -> Result<()> {
+        let original = self.session.metadata(path).await.ok();
+        let partial = format!("{path}.portnest.edit");
+        let backup = format!("{path}.portnest.backup");
+        let mut remote = self.session.create(&partial).await.map_err(|error| protocol_error("创建远程编辑临时文件失败", error))?;
+        remote.write_all(data).await.map_err(Error::IoError)?;
+        remote.flush().await.map_err(Error::IoError)?;
+        remote.shutdown().await.map_err(Error::IoError)?;
+        if let Some(metadata) = &original {
+            let _ = self.session.set_metadata(&partial, FileAttributes { permissions: metadata.permissions, ..FileAttributes::empty() }).await;
+            let _ = self.session.remove_file(&backup).await;
+            self.session.rename(path, &backup).await.map_err(|error| protocol_error("备份远程文件失败", error))?;
+        }
+        if let Err(error) = self.session.rename(&partial, path).await {
+            if original.is_some() { let _ = self.session.rename(&backup, path).await; }
+            return Err(protocol_error("保存远程文件失败", error));
+        }
+        if original.is_some() { let _ = self.session.remove_file(&backup).await; }
+        Ok(())
     }
 
     async fn close(&self) -> Result<()> {

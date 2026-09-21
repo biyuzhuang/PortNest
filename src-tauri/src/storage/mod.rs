@@ -29,8 +29,9 @@ pub struct CredentialData {
 }
 
 /// 数据库管理器
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
     vault: Arc<CredentialVault>,
 }
 
@@ -59,7 +60,7 @@ impl Database {
         let vault = Arc::new(CredentialVault::new(&db_path)?);
 
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             vault,
         };
 
@@ -157,6 +158,16 @@ impl Database {
         let conn = self.conn.lock();
 
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 schema_migrations 表失败: {}", e)))?;
+
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS folders (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -226,7 +237,7 @@ impl Database {
                 started_at INTEGER NOT NULL,
                 ended_at INTEGER,
                 commands_executed INTEGER DEFAULT 0,
-                FOREIGN KEY (connection_id) REFERENCES connections(id)
+                FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
             )",
             [],
         )
@@ -255,6 +266,66 @@ impl Database {
         .map_err(|e| Error::StorageError(format!("创建 connection_tags 表失败: {}", e)))?;
 
         conn.execute(
+            "CREATE TABLE IF NOT EXISTS sftp_transfers (
+                id TEXT PRIMARY KEY,
+                connection_id TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                destination_path TEXT NOT NULL,
+                actual_destination TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                conflict_policy TEXT NOT NULL,
+                verify_checksum INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                transferred INTEGER NOT NULL DEFAULT 0,
+                total INTEGER NOT NULL DEFAULT 0,
+                checksum TEXT,
+                error TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                completed_at INTEGER,
+                FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+            )",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 sftp_transfers 表失败: {}", e)))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS command_snippets (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL CHECK(kind IN ('snippet', 'task')),
+                name TEXT NOT NULL,
+                description TEXT,
+                content TEXT NOT NULL,
+                folder TEXT,
+                tags TEXT NOT NULL DEFAULT '[]',
+                variables TEXT NOT NULL DEFAULT '[]',
+                favorite INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        ).map_err(|e| Error::StorageError(format!("创建命令片段表失败: {}", e)))?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_command_snippets_kind ON command_snippets(kind, updated_at DESC)", [])
+            .map_err(|e| Error::StorageError(format!("创建命令片段索引失败: {}", e)))?;
+
+        // 上次进程退出时仍在运行的任务不能继续持有内存中的 SFTP 句柄，启动后明确标记为中断。
+        conn.execute(
+            "UPDATE sftp_transfers
+             SET status = 'interrupted', error = COALESCE(error, '应用退出或连接中断'), updated_at = ?1
+             WHERE status IN ('queued', 'running', 'cancelling')",
+            params![chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| Error::StorageError(format!("恢复 SFTP 传输状态失败: {}", e)))?;
+
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+             VALUES (1, 'sftp_transfer_queue', ?1)",
+            params![chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| Error::StorageError(format!("记录数据库迁移失败: {}", e)))?;
+
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_connections_protocol ON connections(protocol)",
             [],
         )
@@ -278,6 +349,47 @@ impl Database {
         )
         .map_err(|e| Error::StorageError(format!("创建索引失败: {}", e)))?;
 
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sftp_transfers_connection_updated
+             ON sftp_transfers(connection_id, updated_at DESC)",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 SFTP 传输索引失败: {}", e)))?;
+
+        Ok(())
+    }
+
+    pub fn save_command_snippet(&self, item: &CommandSnippetRecord) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO command_snippets (id, kind, name, description, content, folder, tags, variables, favorite, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, name=excluded.name, description=excluded.description,
+             content=excluded.content, folder=excluded.folder, tags=excluded.tags, variables=excluded.variables,
+             favorite=excluded.favorite, updated_at=excluded.updated_at",
+            params![item.id, item.kind, item.name, item.description, item.content, item.folder, item.tags, item.variables, item.favorite as i32, item.created_at, item.updated_at],
+        ).map_err(|e| Error::StorageError(format!("保存命令片段失败: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn list_command_snippets(&self, kind: Option<&str>, query: Option<&str>) -> Result<Vec<CommandSnippetRecord>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, name, description, content, folder, tags, variables, favorite, created_at, updated_at
+             FROM command_snippets WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR name LIKE '%' || ?2 || '%' OR content LIKE '%' || ?2 || '%')
+             ORDER BY favorite DESC, updated_at DESC"
+        ).map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))?;
+        let rows = stmt.query_map(params![kind, query], |row| Ok(CommandSnippetRecord {
+            id: row.get(0)?, kind: row.get(1)?, name: row.get(2)?, description: row.get(3)?, content: row.get(4)?,
+            folder: row.get(5)?, tags: row.get(6)?, variables: row.get(7)?, favorite: row.get::<_, i32>(8)? != 0,
+            created_at: row.get(9)?, updated_at: row.get(10)?,
+        })).map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))
+    }
+
+    pub fn delete_command_snippet(&self, id: &str) -> Result<()> {
+        self.conn.lock().execute("DELETE FROM command_snippets WHERE id = ?1", params![id])
+            .map_err(|e| Error::StorageError(format!("删除命令片段失败: {}", e)))?;
         Ok(())
     }
 
@@ -301,9 +413,21 @@ impl Database {
 
         conn.execute(
             r#"
-            INSERT OR REPLACE INTO connections
+            INSERT INTO connections
             (id, name, protocol, host, port, username, credential_id, options, tags, color, folder_id, created_at, updated_at)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                protocol = excluded.protocol,
+                host = excluded.host,
+                port = excluded.port,
+                username = excluded.username,
+                credential_id = excluded.credential_id,
+                options = excluded.options,
+                tags = excluded.tags,
+                color = excluded.color,
+                folder_id = excluded.folder_id,
+                updated_at = excluded.updated_at
             "#,
             params![
                 id.to_string(),
@@ -743,6 +867,155 @@ impl Database {
         .map_err(|e| Error::StorageError(format!("更新会话失败: {}", e)))?;
         Ok(())
     }
+
+    pub fn save_sftp_transfer(&self, transfer: &SftpTransferRecord) -> Result<()> {
+        self.conn
+            .lock()
+            .execute(
+                "INSERT OR REPLACE INTO sftp_transfers
+                 (id, connection_id, direction, source_path, destination_path, actual_destination,
+                  file_name, conflict_policy, verify_checksum, status, transferred, total, checksum,
+                  error, created_at, updated_at, completed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                params![
+                    transfer.id,
+                    transfer.connection_id,
+                    transfer.direction,
+                    transfer.source_path,
+                    transfer.destination_path,
+                    transfer.actual_destination,
+                    transfer.file_name,
+                    transfer.conflict_policy,
+                    transfer.verify_checksum as i32,
+                    transfer.status,
+                    transfer.transferred as i64,
+                    transfer.total as i64,
+                    transfer.checksum,
+                    transfer.error,
+                    transfer.created_at,
+                    transfer.updated_at,
+                    transfer.completed_at,
+                ],
+            )
+            .map_err(|e| Error::StorageError(format!("保存 SFTP 传输失败: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn update_sftp_transfer(
+        &self,
+        id: &str,
+        status: &str,
+        transferred: u64,
+        total: u64,
+        actual_destination: &str,
+        checksum: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        let completed_at = matches!(status, "done" | "skipped" | "cancelled" | "error")
+            .then_some(now);
+        self.conn
+            .lock()
+            .execute(
+                "UPDATE sftp_transfers
+                 SET status = ?1, transferred = ?2, total = ?3, actual_destination = ?4,
+                     checksum = ?5, error = ?6, updated_at = ?7, completed_at = ?8
+                 WHERE id = ?9",
+                params![
+                    status,
+                    transferred as i64,
+                    total as i64,
+                    actual_destination,
+                    checksum,
+                    error,
+                    now,
+                    completed_at,
+                    id,
+                ],
+            )
+            .map_err(|e| Error::StorageError(format!("更新 SFTP 传输失败: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn get_sftp_transfer(&self, id: &str) -> Result<SftpTransferRecord> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT id, connection_id, direction, source_path, destination_path, actual_destination,
+                    file_name, conflict_policy, verify_checksum, status, transferred, total, checksum,
+                    error, created_at, updated_at, completed_at
+             FROM sftp_transfers WHERE id = ?1",
+            params![id],
+            map_sftp_transfer,
+        )
+        .map_err(|e| Error::StorageError(format!("读取 SFTP 传输失败: {}", e)))
+    }
+
+    pub fn list_sftp_transfers(&self, connection_id: &str) -> Result<Vec<SftpTransferRecord>> {
+        let conn = self.conn.lock();
+        let mut statement = conn
+            .prepare(
+                "SELECT id, connection_id, direction, source_path, destination_path, actual_destination,
+                        file_name, conflict_policy, verify_checksum, status, transferred, total, checksum,
+                        error, created_at, updated_at, completed_at
+                 FROM sftp_transfers WHERE connection_id = ?1
+                 ORDER BY created_at DESC LIMIT 200",
+            )
+            .map_err(|e| Error::StorageError(format!("读取 SFTP 传输列表失败: {}", e)))?;
+        let records = statement
+            .query_map(params![connection_id], map_sftp_transfer)
+            .map_err(|e| Error::StorageError(format!("读取 SFTP 传输列表失败: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::StorageError(format!("解析 SFTP 传输列表失败: {}", e)))?;
+        Ok(records)
+    }
+
+    pub fn clear_sftp_transfer_history(&self, connection_id: &str) -> Result<usize> {
+        self.conn
+            .lock()
+            .execute(
+                "DELETE FROM sftp_transfers
+                 WHERE connection_id = ?1 AND status NOT IN ('queued', 'running', 'cancelling')",
+                params![connection_id],
+            )
+            .map_err(|e| Error::StorageError(format!("清理 SFTP 传输记录失败: {}", e)))
+    }
+}
+
+fn map_sftp_transfer(row: &rusqlite::Row<'_>) -> rusqlite::Result<SftpTransferRecord> {
+    Ok(SftpTransferRecord {
+        id: row.get(0)?,
+        connection_id: row.get(1)?,
+        direction: row.get(2)?,
+        source_path: row.get(3)?,
+        destination_path: row.get(4)?,
+        actual_destination: row.get(5)?,
+        file_name: row.get(6)?,
+        conflict_policy: row.get(7)?,
+        verify_checksum: row.get::<_, i32>(8)? != 0,
+        status: row.get(9)?,
+        transferred: row.get::<_, i64>(10)? as u64,
+        total: row.get::<_, i64>(11)? as u64,
+        checksum: row.get(12)?,
+        error: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
+        completed_at: row.get(16)?,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CommandSnippetRecord {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub content: String,
+    pub folder: Option<String>,
+    pub tags: String,
+    pub variables: String,
+    pub favorite: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 /// 连接记录
@@ -792,4 +1065,77 @@ pub struct SshKeyRecord {
     pub key_type: String,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SftpTransferRecord {
+    pub id: String,
+    pub connection_id: String,
+    pub direction: String,
+    pub source_path: String,
+    pub destination_path: String,
+    pub actual_destination: String,
+    pub file_name: String,
+    pub conflict_policy: String,
+    pub verify_checksum: bool,
+    pub status: String,
+    pub transferred: u64,
+    pub total: u64,
+    pub checksum: Option<String>,
+    pub error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub completed_at: Option<i64>,
+}
+
+#[cfg(test)]
+mod sftp_transfer_tests {
+    use super::{Database, SftpTransferRecord};
+
+    fn record(status: &str) -> SftpTransferRecord {
+        SftpTransferRecord {
+            id: "transfer-1".to_string(),
+            connection_id: "connection-1".to_string(),
+            direction: "download".to_string(),
+            source_path: "/remote/file.bin".to_string(),
+            destination_path: "C:\\tmp\\file.bin".to_string(),
+            actual_destination: "C:\\tmp\\file.bin".to_string(),
+            file_name: "file.bin".to_string(),
+            conflict_policy: "resume".to_string(),
+            verify_checksum: true,
+            status: status.to_string(),
+            transferred: 128,
+            total: 1024,
+            checksum: None,
+            error: None,
+            created_at: 1,
+            updated_at: 1,
+            completed_at: None,
+        }
+    }
+
+    #[test]
+    fn persists_progress_and_marks_running_tasks_interrupted_after_restart() {
+        let directory = std::env::temp_dir().join(format!("portnest-sftp-test-{}", uuid::Uuid::new_v4()));
+        {
+            let database = Database::new(directory.clone()).unwrap();
+            database.conn.lock().execute(
+                "INSERT INTO connections
+                 (id, name, protocol, host, port, credential_id, created_at, updated_at)
+                 VALUES ('connection-1', 'test', 'sftp', 'localhost', 22, 'credential-1', 1, 1)",
+                [],
+            ).unwrap();
+            database.save_sftp_transfer(&record("running")).unwrap();
+            database.update_sftp_transfer("transfer-1", "running", 512, 1024, "C:\\tmp\\file.bin", None, None).unwrap();
+            assert_eq!(database.get_sftp_transfer("transfer-1").unwrap().transferred, 512);
+        }
+        {
+            let database = Database::new(directory.clone()).unwrap();
+            let recovered = database.get_sftp_transfer("transfer-1").unwrap();
+            assert_eq!(recovered.status, "interrupted");
+            assert_eq!(recovered.transferred, 512);
+            assert_eq!(database.list_sftp_transfers("connection-1").unwrap().len(), 1);
+        }
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }

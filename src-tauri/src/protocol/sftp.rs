@@ -6,7 +6,8 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use ssh2::{Session, Sftp};
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use sha2::{Digest, Sha256};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -36,9 +37,11 @@ fn copy_with_progress<R: Read, W: Write>(
     total: u64,
     progress: Option<&TransferProgress>,
     cancel: &CancellationToken,
+    rate_limit_bps: Option<u64>,
 ) -> Result<u64> {
     let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
     let mut transferred = 0_u64;
+    let started = std::time::Instant::now();
     loop {
         if cancel.is_cancelled() {
             return Err(Error::TransferCancelled);
@@ -67,12 +70,38 @@ fn copy_with_progress<R: Read, W: Write>(
             }
         }
         transferred += count as u64;
+        if let Some(limit) = rate_limit_bps.filter(|limit| *limit > 0) {
+            let expected = std::time::Duration::from_secs_f64(transferred as f64 / limit as f64);
+            while expected > started.elapsed() {
+                if cancel.is_cancelled() { return Err(Error::TransferCancelled); }
+                std::thread::sleep((expected - started.elapsed()).min(std::time::Duration::from_millis(100)));
+            }
+        }
         if let Some(callback) = progress {
             callback(transferred, total);
         }
     }
     writer.flush().map_err(Error::IoError)?;
     Ok(transferred)
+}
+
+fn commit_local_partial(partial_path: &str, destination: &str) -> Result<()> {
+    let backup = format!("{destination}.portnest.backup");
+    let had_destination = Path::new(destination).exists();
+    if had_destination {
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(destination, &backup).map_err(Error::IoError)?;
+    }
+    match std::fs::rename(partial_path, destination) {
+        Ok(()) => {
+            if had_destination { let _ = std::fs::remove_file(&backup); }
+            Ok(())
+        }
+        Err(error) => {
+            if had_destination { let _ = std::fs::rename(&backup, destination); }
+            Err(Error::IoError(error))
+        }
+    }
 }
 
 struct BlockingModeGuard<'a>(&'a Session);
@@ -101,9 +130,7 @@ pub struct FileInfo {
     pub modified: Option<i64>,
     pub permissions: String,
     pub owner_group: String,
-    #[serde(skip)]
     pub(crate) uid: Option<u32>,
-    #[serde(skip)]
     pub(crate) gid: Option<u32>,
 }
 
@@ -300,6 +327,7 @@ impl SftpConnectionHandle {
         local_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let _blocking = BlockingModeGuard::new(&self.session);
 
@@ -318,16 +346,40 @@ impl SftpConnectionHandle {
 
         // 阻塞读设置 200ms 超时，让挂起的读能周期性返回并响应取消；结束后恢复无超时
         self.session.set_timeout(200);
+        let partial_path = format!("{local_path}.portnest.part");
+        let mut offset = std::fs::metadata(&partial_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if offset > total {
+            let _ = std::fs::remove_file(&partial_path);
+            offset = 0;
+        }
         let result = (|| -> Result<u64> {
-            let mut local_file =
-                std::fs::File::create(local_path).map_err(Error::IoError)?;
-            copy_with_progress(&mut remote_file, &mut local_file, total, progress.as_ref(), &cancel)
+            remote_file.seek(SeekFrom::Start(offset)).map_err(Error::IoError)?;
+            let mut local_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&partial_path)
+                .map_err(Error::IoError)?;
+            if let Some(callback) = &progress {
+                callback(offset, total);
+            }
+            let copied = copy_with_progress(
+                &mut remote_file,
+                &mut local_file,
+                total.saturating_sub(offset),
+                progress.as_ref().map(|callback| {
+                    let callback = callback.clone();
+                    Arc::new(move |done, _| callback(offset + done, total)) as TransferProgress
+                }).as_ref(),
+                &cancel,
+                rate_limit_bps,
+            )?;
+            drop(local_file);
+            commit_local_partial(&partial_path, local_path)?;
+            Ok(offset + copied)
         })();
         self.session.set_timeout(0);
-
-        if result.is_err() {
-            let _ = std::fs::remove_file(local_path);
-        }
 
         result
     }
@@ -339,6 +391,7 @@ impl SftpConnectionHandle {
         remote_path: &str,
         progress: Option<TransferProgress>,
         cancel: CancellationToken,
+        rate_limit_bps: Option<u64>,
     ) -> Result<u64> {
         let _blocking = BlockingModeGuard::new(&self.session);
 
@@ -347,8 +400,18 @@ impl SftpConnectionHandle {
             .map(|metadata| metadata.len())
             .unwrap_or(0);
         let mut local_file = std::fs::File::open(local_path).map_err(Error::IoError)?;
-
-        let mut remote_file = sftp.create(Path::new(remote_path)).map_err(|e| {
+        let partial_path = format!("{remote_path}.portnest.part");
+        let mut offset = sftp
+            .stat(Path::new(&partial_path))
+            .ok()
+            .and_then(|metadata| metadata.size)
+            .unwrap_or(0);
+        if offset > total {
+            let _ = sftp.unlink(Path::new(&partial_path));
+            offset = 0;
+        }
+        let flags = ssh2::OpenFlags::WRITE | ssh2::OpenFlags::CREATE;
+        let mut remote_file = sftp.open_mode(Path::new(&partial_path), flags, 0o644, ssh2::OpenType::File).map_err(|e| {
             Error::IoError(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("上传失败: {}", e),
@@ -358,13 +421,38 @@ impl SftpConnectionHandle {
         // 阻塞写设置 200ms 超时，让挂起的写能周期性返回并响应取消；结束后恢复无超时
         self.session.set_timeout(200);
         let result = (|| -> Result<u64> {
-            copy_with_progress(&mut local_file, &mut remote_file, total, progress.as_ref(), &cancel)
+            local_file.seek(SeekFrom::Start(offset)).map_err(Error::IoError)?;
+            remote_file.seek(SeekFrom::Start(offset)).map_err(Error::IoError)?;
+            if let Some(callback) = &progress {
+                callback(offset, total);
+            }
+            let copied = copy_with_progress(
+                &mut local_file,
+                &mut remote_file,
+                total.saturating_sub(offset),
+                progress.as_ref().map(|callback| {
+                    let callback = callback.clone();
+                    Arc::new(move |done, _| callback(offset + done, total)) as TransferProgress
+                }).as_ref(),
+                &cancel,
+                rate_limit_bps,
+            )?;
+            drop(remote_file);
+            let backup = format!("{remote_path}.portnest.backup");
+            let had_destination = sftp.stat(Path::new(remote_path)).is_ok();
+            if had_destination {
+                let _ = sftp.unlink(Path::new(&backup));
+                sftp.rename(Path::new(remote_path), Path::new(&backup), None)
+                    .map_err(|error| Error::ProtocolError(format!("备份远程目标失败: {error}")))?;
+            }
+            if let Err(error) = sftp.rename(Path::new(&partial_path), Path::new(remote_path), None) {
+                if had_destination { let _ = sftp.rename(Path::new(&backup), Path::new(remote_path), None); }
+                return Err(Error::ProtocolError(format!("提交上传文件失败: {error}")));
+            }
+            if had_destination { let _ = sftp.unlink(Path::new(&backup)); }
+            Ok(offset + copied)
         })();
         self.session.set_timeout(0);
-
-        if result.is_err() {
-            let _ = sftp.unlink(Path::new(remote_path));
-        }
 
         result
     }
@@ -442,6 +530,102 @@ impl SftpConnectionHandle {
                 ))
             })?;
 
+        Ok(())
+    }
+
+    pub fn stat_size(&self, path: &str) -> Result<Option<u64>> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        let sftp = self.sftp.lock();
+        match sftp.stat(Path::new(path)) {
+            Ok(metadata) => Ok(metadata.size),
+            Err(_) => Ok(None),
+        }
+    }
+
+    pub fn checksum_sha256(&self, path: &str) -> Result<String> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        let sftp = self.sftp.lock();
+        let mut file = sftp.open(Path::new(path)).map_err(|error| {
+            Error::ProtocolError(format!("打开远程文件以校验失败: {error}"))
+        })?;
+        let mut digest = Sha256::new();
+        let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
+        loop {
+            let count = file.read(&mut buffer).map_err(Error::IoError)?;
+            if count == 0 { break; }
+            digest.update(&buffer[..count]);
+        }
+        Ok(format!("{:x}", digest.finalize()))
+    }
+
+    pub fn set_permissions(&self, path: &str, mode: u32) -> Result<()> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        self.sftp
+            .lock()
+            .setstat(
+                Path::new(path),
+                ssh2::FileStat {
+                    size: None,
+                    uid: None,
+                    gid: None,
+                    perm: Some(mode & 0o7777),
+                    atime: None,
+                    mtime: None,
+                },
+            )
+            .map_err(|error| Error::ProtocolError(format!("修改权限失败: {error}")))
+    }
+
+    pub fn set_owner(&self, path: &str, uid: Option<u32>, gid: Option<u32>) -> Result<()> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        self.sftp
+            .lock()
+            .setstat(
+                Path::new(path),
+                ssh2::FileStat {
+                    size: None,
+                    uid,
+                    gid,
+                    perm: None,
+                    atime: None,
+                    mtime: None,
+                },
+            )
+            .map_err(|error| Error::ProtocolError(format!("修改所有者失败: {error}")))
+    }
+
+    pub fn read_file(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        let sftp = self.sftp.lock();
+        let mut file = sftp.open(Path::new(path)).map_err(|error| Error::ProtocolError(format!("打开远程文件失败: {error}")))?;
+        let mut data = Vec::new();
+        std::io::Read::by_ref(&mut file).take(max_bytes as u64 + 1).read_to_end(&mut data).map_err(Error::IoError)?;
+        if data.len() > max_bytes {
+            return Err(Error::ProtocolError(format!("文件超过编辑上限 {} 字节", max_bytes)));
+        }
+        Ok(data)
+    }
+
+    pub fn write_file_atomic(&self, path: &str, data: &[u8]) -> Result<()> {
+        let _blocking = BlockingModeGuard::new(&self.session);
+        let sftp = self.sftp.lock();
+        let original = sftp.stat(Path::new(path)).ok();
+        let partial = format!("{path}.portnest.edit");
+        let backup = format!("{path}.portnest.backup");
+        let mut file = sftp.create(Path::new(&partial)).map_err(|error| Error::ProtocolError(format!("创建远程编辑临时文件失败: {error}")))?;
+        file.write_all(data).map_err(Error::IoError)?;
+        file.flush().map_err(Error::IoError)?;
+        drop(file);
+        if let Some(metadata) = &original {
+            let _ = sftp.setstat(Path::new(&partial), ssh2::FileStat { size: None, uid: None, gid: None, perm: metadata.perm, atime: None, mtime: None });
+            let _ = sftp.unlink(Path::new(&backup));
+            sftp.rename(Path::new(path), Path::new(&backup), None).map_err(|error| Error::ProtocolError(format!("备份远程文件失败: {error}")))?;
+        }
+        if let Err(error) = sftp.rename(Path::new(&partial), Path::new(path), None) {
+            if original.is_some() { let _ = sftp.rename(Path::new(&backup), Path::new(path), None); }
+            return Err(Error::ProtocolError(format!("保存远程文件失败: {error}")));
+        }
+        if original.is_some() { let _ = sftp.unlink(Path::new(&backup)); }
         Ok(())
     }
 }
@@ -546,6 +730,7 @@ mod tests {
             data.len() as u64,
             Some(&progress),
             &cancel,
+            None,
         )
         .expect("copy should succeed");
 
@@ -569,7 +754,7 @@ mod tests {
         let cancel = CancellationToken::default();
         cancel.cancel();
 
-        let result = copy_with_progress(Cursor::new(data), &mut sink, 1_000_000, None, &cancel);
+        let result = copy_with_progress(Cursor::new(data), &mut sink, 1_000_000, None, &cancel, None);
         assert!(matches!(result, Err(Error::TransferCancelled)));
     }
 
@@ -601,10 +786,29 @@ mod tests {
         let mut sink = Vec::new();
         let cancel = CancellationToken::default();
 
-        let copied = copy_with_progress(reader, &mut sink, data.len() as u64, None, &cancel)
+        let copied = copy_with_progress(reader, &mut sink, data.len() as u64, None, &cancel, None)
             .expect("transient read error should be retried");
 
         assert_eq!(copied, data.len() as u64);
+        assert_eq!(sink, data);
+    }
+
+    #[test]
+    fn copy_honors_rate_limit() {
+        let data = vec![5_u8; 16 * 1024];
+        let mut sink = Vec::new();
+        let cancel = CancellationToken::default();
+        let started = std::time::Instant::now();
+        copy_with_progress(
+            Cursor::new(data.clone()),
+            &mut sink,
+            data.len() as u64,
+            None,
+            &cancel,
+            Some(64 * 1024),
+        )
+        .expect("rate-limited copy should succeed");
+        assert!(started.elapsed() >= std::time::Duration::from_millis(200));
         assert_eq!(sink, data);
     }
 }

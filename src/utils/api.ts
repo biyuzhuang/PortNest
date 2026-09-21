@@ -152,6 +152,55 @@ export interface ShellOpenResponse {
   encoding: string;
 }
 
+export type SftpConflictPolicy = "overwrite" | "skip" | "rename" | "resume";
+
+export interface SftpTransferOptions {
+  conflict_policy?: SftpConflictPolicy;
+  verify_checksum?: boolean;
+  rate_limit_bps?: number;
+}
+
+export interface SftpQueueConfig {
+  max_concurrent: number;
+  rate_limit_bps: number;
+  active: number;
+}
+
+export interface SftpTextFile {
+  content: string;
+  size: number;
+  checksum: string;
+}
+
+export interface SftpTransferResult {
+  transfer_id: string;
+  status: string;
+  transferred: number;
+  total: number;
+  actual_destination: string;
+  checksum?: string | null;
+}
+
+export interface SftpTransferRecord {
+  id: string;
+  connection_id: string;
+  direction: "upload" | "download" | "upload_dir" | "download_dir";
+  source_path: string;
+  destination_path: string;
+  actual_destination: string;
+  file_name: string;
+  conflict_policy: SftpConflictPolicy;
+  verify_checksum: boolean;
+  status: "queued" | "running" | "cancelling" | "done" | "skipped" | "cancelled" | "error" | "interrupted";
+  transferred: number;
+  total: number;
+  checksum?: string | null;
+  error?: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at?: number | null;
+}
+
 export interface SshRouteTestResult {
   success: boolean;
   route: string;
@@ -243,6 +292,9 @@ export interface ChatResponse {
   message: ChatMessage;
   analysis?: AIAnalyzeResult;
 }
+
+export interface CommandVariable { name: string; default_value?: string; choices?: string[]; sensitive?: boolean }
+export interface CommandSnippet { id: string; kind: "snippet" | "task"; name: string; description?: string; content: string; folder?: string; tags: string; variables: string; favorite: boolean; created_at: number; updated_at: number }
 
 // Tauri API wrapper
 export const api = {
@@ -362,12 +414,20 @@ export const api = {
     return sshInvoke("list_sftp_dir", { sftpId, path });
   },
 
-  async sftpDownload(sftpId: string, remotePath: string, localPath: string): Promise<number> {
-    return sshInvoke("sftp_download", { sftpId, remotePath, localPath });
+  async sftpDownload(sftpId: string, remotePath: string, localPath: string, options?: SftpTransferOptions): Promise<SftpTransferResult> {
+    return sshInvoke("sftp_download", { sftpId, remotePath, localPath, options: options ?? null });
   },
 
-  async sftpUpload(sftpId: string, localPath: string, remotePath: string): Promise<number> {
-    return sshInvoke("sftp_upload", { sftpId, localPath, remotePath });
+  async sftpUpload(sftpId: string, localPath: string, remotePath: string, options?: SftpTransferOptions): Promise<SftpTransferResult> {
+    return sshInvoke("sftp_upload", { sftpId, localPath, remotePath, options: options ?? null });
+  },
+
+  async sftpDownloadDirectory(sftpId: string, remotePath: string, localPath: string, options?: SftpTransferOptions): Promise<SftpTransferResult> {
+    return sshInvoke("sftp_download_directory", { sftpId, remotePath, localPath, options: options ?? null });
+  },
+
+  async sftpUploadDirectory(sftpId: string, localPath: string, remotePath: string, options?: SftpTransferOptions): Promise<SftpTransferResult> {
+    return sshInvoke("sftp_upload_directory", { sftpId, localPath, remotePath, options: options ?? null });
   },
 
   async sftpCreateDir(sftpId: string, path: string): Promise<void> {
@@ -400,6 +460,42 @@ export const api = {
 
   async cancelSftpTransfer(sftpId: string, transferId: string): Promise<void> {
     return sshInvoke("sftp_cancel_transfer", { sftpId, transferId });
+  },
+
+  async listSftpTransfers(connectionId: string): Promise<SftpTransferRecord[]> {
+    return sshInvoke("list_sftp_transfers", { connectionId });
+  },
+
+  async retrySftpTransfer(sftpId: string, transferId: string): Promise<SftpTransferResult> {
+    return sshInvoke("sftp_retry_transfer", { sftpId, transferId });
+  },
+
+  async clearSftpTransferHistory(connectionId: string): Promise<number> {
+    return sshInvoke("clear_sftp_transfer_history", { connectionId });
+  },
+
+  async configureSftpTransferQueue(maxConcurrent: number, rateLimitBps: number): Promise<SftpQueueConfig> {
+    return sshInvoke("configure_sftp_transfer_queue", { maxConcurrent, rateLimitBps });
+  },
+
+  async getSftpTransferQueue(): Promise<SftpQueueConfig> {
+    return sshInvoke("get_sftp_transfer_queue");
+  },
+
+  async sftpSetPermissions(sftpId: string, path: string, mode: number): Promise<void> {
+    return sshInvoke("sftp_set_permissions", { sftpId, path, mode });
+  },
+
+  async sftpSetOwner(sftpId: string, path: string, uid?: number, gid?: number): Promise<void> {
+    return sshInvoke("sftp_set_owner", { sftpId, path, uid: uid ?? null, gid: gid ?? null });
+  },
+
+  async sftpReadTextFile(sftpId: string, path: string): Promise<SftpTextFile> {
+    return sshInvoke("sftp_read_text_file", { sftpId, path });
+  },
+
+  async sftpWriteTextFile(sftpId: string, path: string, content: string, expectedChecksum: string): Promise<string> {
+    return sshInvoke("sftp_write_text_file", { sftpId, path, content, expectedChecksum });
   },
 
   async sftpDeleteFile(sftpId: string, path: string): Promise<void> {
@@ -482,6 +578,18 @@ export const api = {
   async testSshRoute(config: ConnectionConfig): Promise<SshRouteTestResult> {
     return invoke("test_ssh_route", { config });
   },
+
+  async saveCommandSnippet(input: { id?: string; kind: "snippet" | "task"; name: string; description?: string; content: string; folder?: string; tags?: string[]; variables?: CommandVariable[]; favorite?: boolean }): Promise<CommandSnippet> {
+    return invoke("save_command_snippet", { input });
+  },
+  async listCommandSnippets(kind?: "snippet" | "task", query?: string): Promise<CommandSnippet[]> {
+    return invoke("list_command_snippets", { kind, query });
+  },
+  async deleteCommandSnippet(id: string): Promise<void> { return invoke("delete_command_snippet", { id }); },
+  async renderCommandSnippet(content: string, variables: CommandVariable[], values: Record<string, string>): Promise<string> {
+    return invoke("render_command_snippet", { content, variables, values });
+  },
+
 };
 
 // File info type
@@ -494,6 +602,8 @@ export interface FileInfo {
   modified: number | null;
   permissions?: string;
   owner_group?: string;
+  uid?: number | null;
+  gid?: number | null;
 }
 
 // Docker types

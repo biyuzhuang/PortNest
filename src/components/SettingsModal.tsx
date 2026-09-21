@@ -13,10 +13,11 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../../package.json";
+import { templateStore } from "../stores/templateStore";
 import "./SettingsModal.css";
 
 interface SettingsModalProps { onClose: () => void; standalone?: boolean; }
-type Page = "appearance" | "ssh" | "version";
+type Page = "appearance" | "ssh" | "templates" | "version";
 
 const BACKGROUNDS: Array<[TerminalBackgroundStyle, string]> = [
   ["theme", "跟随主题"], ["solid", "自定义纯色"], ["midnight", "午夜渐变"], ["aurora", "极光渐变"], ["image", "背景图片"],
@@ -31,6 +32,73 @@ const Toggle: Component<{ checked: boolean; onChange: (value: boolean) => void }
     onClick={() => props.onChange(!props.checked)}
   ><span /></button>
 );
+
+export const CommandTemplatesSettings: Component = () => {
+  void templateStore.refresh();
+  const [templateQuery, setTemplateQuery] = createSignal("");
+  const [editingId, setEditingId] = createSignal<string | null>(null);
+  const [editName, setEditName] = createSignal("");
+  const [editContent, setEditContent] = createSignal("");
+
+  const filtered = () => {
+    const query = templateQuery().trim().toLowerCase();
+    const list = templateStore.templates().filter(item => (item.id.startsWith("draft-") ? true : true));
+    if (!query) return list;
+    return list.filter(item => `${item.name} ${item.content}`.toLowerCase().includes(query));
+  };
+  const beginEdit = (item: { id: string; name: string; content: string }) => { setEditingId(item.id); setEditName(item.name); setEditContent(item.content); };
+  const createTemplate = () => {
+    const draft = templateStore.addDraft();
+    setEditingId(draft.id); setEditName(draft.name); setEditContent("");
+  };
+  const saveEditing = async () => {
+    const id = editingId();
+    if (!id || !editName().trim() || !editContent().trim()) return;
+    const saved = await templateStore.save({ id: id.startsWith("draft-") ? undefined : id, name: editName().trim(), content: editContent() });
+    if (id.startsWith("draft-")) setEditingId(saved.id);
+  };
+  const cancelEditing = () => {
+    const id = editingId();
+    if (id?.startsWith("draft-")) templateStore.discardDraft(id);
+    setEditingId(null); setEditName(""); setEditContent("");
+  };
+  const deleteTemplate = async (id: string) => {
+    if (id.startsWith("draft-")) { templateStore.discardDraft(id); if (editingId() === id) { setEditingId(null); setEditName(""); setEditContent(""); } return; }
+    await templateStore.remove(id);
+    if (editingId() === id) { setEditingId(null); setEditName(""); setEditContent(""); }
+  };
+
+  return <div class="settings-page">
+    <div class="settings-page-heading"><h2>命令模板</h2><p>管理命令广播撰写窗格共用的命令模板列表，修改即时同步。</p></div>
+    <h3>模板列表</h3>
+    <div class="settings-grid settings-grid-single"><div class="settings-card templates-card">
+      <div class="templates-toolbar">
+        <input class="templates-search" placeholder="搜索模板名称或命令" value={templateQuery()} onInput={event => setTemplateQuery(event.currentTarget.value)} />
+        <button class="settings-inline-button" onClick={createTemplate}>＋ 新增模板</button>
+      </div>
+      <Show when={!filtered().length}><p class="templates-empty">暂无模板，点击“新增模板”创建第一条命令。</p></Show>
+      <div class="templates-list">
+        <For each={filtered()}>{item => (
+          <div class={`templates-row ${editingId() === item.id ? "editing" : ""}`}>
+            <Show when={editingId() === item.id} fallback={
+              <><div class="templates-row-main"><strong>{item.name}</strong><code>{item.content.split("\n")[0] || "（空）"}</code></div>
+                <span class="settings-image-actions"><button class="settings-inline-button" onClick={() => beginEdit(item)}>编辑</button><button class="settings-inline-button danger" onClick={() => void deleteTemplate(item.id)}>删除</button></span></>
+            }>
+              <div class="templates-editor">
+                <label><span>模板名称</span><input value={editName()} onInput={event => setEditName(event.currentTarget.value)} /></label>
+                <label><span>命令内容</span><textarea value={editContent()} rows={3} onInput={event => setEditContent(event.currentTarget.value)} /></label>
+                <span class="settings-image-actions">
+                  <button class="settings-inline-button" onClick={() => void saveEditing()}>保存</button>
+                  <button class="settings-inline-button" onClick={cancelEditing}>取消</button>
+                </span>
+              </div>
+            </Show>
+          </div>
+        )}</For>
+      </div>
+    </div></div>
+  </div>;
+};
 
 export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [page, setPage] = createSignal<Page>("appearance");
@@ -129,6 +197,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
           <h4>设置</h4>
           {navItem("appearance", "外观")}
           {navItem("ssh", "SSH / 终端")}
+          {navItem("templates", "命令模板")}
           {navItem("version", "版本")}
         </aside>
 
@@ -280,6 +349,10 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               </div>
               <p class="settings-note settings-session-note">会话标签、顺序、固定状态和活动标签会自动保存；应用启动后以离线标签恢复，不会自动批量连接。</p>
             </div>
+          </Show>
+
+          <Show when={page() === "templates"}>
+            <CommandTemplatesSettings />
           </Show>
 
           <Show when={page() === "version"}>
