@@ -377,3 +377,15 @@
 .templates-list { overflow: hidden; border: 1px solid var(--border-light, #edf0f3); border-radius: var(--radius-md, 9px); }
 .templates-row { border-radius: 0; border-bottom: 1px solid var(--border-light, #edf0f3); }
 .templates-row:last-child { border-bottom: 0; }
+
+/* 修正：搜索框与模板列表之间留出可辨识的呼吸间距（卡片为 block 布局，gap 不生效，用 margin 控距） */
+.templates-card { display: flex; flex-direction: column; }
+.templates-toolbar { margin-bottom: 8px; }
+
+/* 修正：设置窗口极窄时模板卡片的文字溢出与收缩问题 */
+.templates-toolbar { margin-bottom: 0; }
+.templates-search { min-width: 0; }
+.templates-row { min-width: 0; }
+.templates-row-main { flex: 1 1 auto; min-width: 0; }
+.templates-row-main strong { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.templates-row-main code { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }

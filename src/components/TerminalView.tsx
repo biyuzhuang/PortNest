@@ -89,10 +89,27 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   const isLocal = () => props.connection.protocol === "local";
   const effectiveBackgroundStyle = () => getEffectiveTerminalBackgroundStyle(terminalBackgroundConfig());
 
+  // 终端自适应缩放：字体、行高和间距随终端容器宽高按比例变化，
+  // 让文字排版贴合窗口大小（含右面板展开/收起、窗口缩放）。基准 1280x720。
+  const ADAPTIVE_BASE_WIDTH = 1280;
+  const ADAPTIVE_BASE_HEIGHT = 720;
+  const applyAdaptiveFont = (state: TerminalState, width: number, height: number) => {
+    if (width <= 0 || height <= 0) return;
+    const settings = getTerminalSettings();
+    const scale = Math.max(0.75, Math.min(1.35,
+      Math.min(width / ADAPTIVE_BASE_WIDTH, height / ADAPTIVE_BASE_HEIGHT)));
+    const fontSize = Math.max(9, Math.round(settings.fontSize * scale));
+    if (Math.abs((state.terminal.options.fontSize ?? settings.fontSize) - fontSize) < 1) return;
+    state.terminal.options.fontSize = fontSize;
+    state.terminal.options.lineHeight = Math.round(settings.lineHeight * scale * 100) / 100;
+    state.terminal.options.letterSpacing = Math.round(settings.letterSpacing * scale * 100) / 100;
+  };
+
   const doFit = (state: TerminalState) => {
     try {
       const container = containerRef;
       if (state.terminal.element?.isConnected && container && container.offsetWidth > 0 && container.offsetHeight > 0) {
+        applyAdaptiveFont(state, container.offsetWidth, container.offsetHeight);
         const prevCols = state.terminal.cols;
         const prevRows = state.terminal.rows;
         state.fitAddon.fit();
