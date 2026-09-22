@@ -1,11 +1,11 @@
 {
-  "version": "0.0.9",
-  "notes": "PortNest v0.0.9 完善 SSH 会话共享、本地与远程转发、动态 SOCKS5、HTTP CONNECT 和单级 SSH 跳板代理，并优化隧道诊断、界面字体及设置体验。",
-  "pub_date": "2026-09-17T06:24:06Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWTlKZS9WL0tVTjZyYWRmVFQ5V1ZXYkc4a3NDRmYxRG1TYVFRVFhuT3J6L3ZqOTF1cG5YZmg3RHBnTmZnQ3BqMm9SM05IVS9mTUE5TnkvQjgwaVNERjZscVFoU2JGcEFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NjI2MjM1CWZpbGU6UG9ydE5lc3RfMC4wLjlfeDY0LXNldHVwLmV4ZQprNHRWWml4bDF6MVpmSis5d0hZMmttSjN3am12cjBsMXcxaDFEaEdsNkNxS3dPdXJPNFFKTTdiV2tYcXFINEhNRUdlTE5qeENKeVdxTEpHdDgzLy9DUT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.0.9/PortNest_0.0.9_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURHhBc3I1WGpBUWJKNzd6QStmSUwrQVpNbXlNWEZ3TEVIMllWcUM5NjdwWnM4MFFKa2JJZXNTUTlmdENnb011NU1qcCswUVh5VEFhNEZvWXdHbEhPemkwSngvMVlLaVFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDQyODc2CWZpbGU6UG9ydE5lc3RfMC4yLjBfeDY0LXNldHVwLmV4ZQozbTFoM2JoVDg2OTZSbGQxeCtuQXI0SUZKV1RlU0hQamdlUTBMcE9KRUc4TTBrM0VvZFRvaWJzS3ZKRnFhekhPL3FkQlU4eFVTK2FET3lqTzIySHBDQT09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.2.0/PortNest_0.2.0_x64-setup.exe"
     }
-  }
+  },
+  "notes": "PortNest v0.2.0 完成阶段二：命令模板与命令广播统一撰写窗格（会话下方文档流布局、目标会话下拉多选、模板列表与设置页管理共用数据源），移除独立任务模板，升级版本并同步 Tauri updater 签名密钥。",
+  "version": "0.2.0",
+  "pub_date": "2026-09-22T02:08:49Z"
 }
