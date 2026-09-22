@@ -15,6 +15,15 @@ const readFileViewOptions = (): Record<string, unknown> => {
 };
 const [pathLinked, setPathLinkedSignal] = createSignal(readFileViewOptions().pathLinked === true);
 
+// 服务器概览：收起为右缘精简导轨，展开为详细面板；默认收起。
+const readOverviewCollapsed = () => localStorage.getItem("portnest-overview-collapsed") !== "false";
+const [overviewCollapsed, setOverviewCollapsedSignal] = createSignal(readOverviewCollapsed());
+
+const setOverviewCollapsed = (value: boolean) => {
+  localStorage.setItem("portnest-overview-collapsed", String(value));
+  setOverviewCollapsedSignal(value);
+};
+
 const setPathLinked = (value: boolean) => {
   setPathLinkedSignal(value);
   const options = readFileViewOptions();
@@ -46,4 +55,7 @@ export const uiStore = {
   setSelectedAssetFolderId,
   pathLinked,
   setPathLinked,
+  overviewCollapsed,
+  setOverviewCollapsed,
+  toggleOverview: () => setOverviewCollapsed(!overviewCollapsed()),
 };

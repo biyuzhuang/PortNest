@@ -152,6 +152,111 @@ export interface ShellOpenResponse {
   encoding: string;
 }
 
+// ---------------------------------------------------------------------------
+// 服务器概览（阶段三：SSH 主机状态仪表盘）
+// ---------------------------------------------------------------------------
+
+export interface DashboardSectionIssue {
+  section: string;
+  reason: string;
+  stale: boolean;
+}
+
+export interface DashboardSystemInfo {
+  hostname: string;
+  os: string;
+  kernel: string;
+  arch: string;
+  uptime_secs: number;
+  load: [number, number, number];
+  users: number;
+  cores: number;
+}
+
+export interface DashboardCoreUsage {
+  index: number;
+  percent: number;
+  user: number;
+  system: number;
+  iowait: number;
+}
+
+export interface DashboardCpuInfo {
+  total: number;
+  user: number;
+  system: number;
+  iowait: number;
+  steal: number;
+  cores: DashboardCoreUsage[];
+}
+
+export interface DashboardMemoryInfo {
+  total_b: number;
+  used_b: number;
+  available_b: number;
+  percent: number;
+  swap_total_b: number;
+  swap_used_b: number;
+  swap_percent: number;
+}
+
+export interface DashboardMountInfo {
+  fs: string;
+  mount: string;
+  total_b: number;
+  used_b: number;
+  avail_b: number;
+  percent: number;
+}
+
+export interface DashboardDiskInfo {
+  root_percent: number | null;
+  root_total_b: number;
+  root_used_b: number;
+  mounts: DashboardMountInfo[];
+}
+
+export interface DashboardNetworkInfo {
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_rate: number | null;
+  tx_rate: number | null;
+  interfaces: Array<{ name: string; rx_bytes: number; tx_bytes: number }>;
+}
+
+export interface DashboardProcessInfo {
+  pid: number;
+  cpu: number;
+  mem_percent: number;
+  rss_b: number;
+  name: string;
+}
+
+export interface DashboardGpuInfo {
+  name: string;
+  utilization: number;
+  temperature: number;
+  mem_used_b: number;
+  mem_total_b: number;
+  power_watts: number | null;
+}
+
+export interface DashboardSnapshot {
+  connection_id: string;
+  collected_at: number;
+  duration_ms: number;
+  backend_supported: boolean;
+  message?: string | null;
+  issues: DashboardSectionIssue[];
+  system?: DashboardSystemInfo | null;
+  cpu?: DashboardCpuInfo | null;
+  memory?: DashboardMemoryInfo | null;
+  disk?: DashboardDiskInfo | null;
+  network?: DashboardNetworkInfo | null;
+  processes?: DashboardProcessInfo[] | null;
+  gpu?: DashboardGpuInfo[] | null;
+}
+
 export type SftpConflictPolicy = "overwrite" | "skip" | "rename" | "resume";
 
 export interface SftpTransferOptions {
@@ -325,6 +430,15 @@ export const api = {
 
   async pingHost(host: string, port: number): Promise<PingResult> {
     return invoke("ping_host", { host, port });
+  },
+
+  // Dashboard operations
+  async dashboardCollect(connectionId: string): Promise<DashboardSnapshot> {
+    return invoke("dashboard_collect", { connectionId });
+  },
+
+  async dashboardCancel(connectionId: string): Promise<void> {
+    return invoke("dashboard_cancel", { connectionId });
   },
 
   async updateSshHostKey(connectionId: string, fingerprint: string): Promise<void> {

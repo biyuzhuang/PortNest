@@ -3,7 +3,7 @@ import { templateStore } from "../stores/templateStore";
 import { sessionStore, type SessionTab } from "../stores/sessionStore";
 import "./CommandBroadcast.css";
 
-interface Props { sessions: SessionTab[]; activeSessionId: string | null; onClose: () => void; }
+interface Props { sessions: SessionTab[]; activeSessionId: string | null; onClose: () => void; height?: number; }
 
 export const CommandBroadcast: Component<Props> = (props) => {
   const [section, setSection] = createSignal<"broadcast" | "template">("broadcast");
@@ -11,7 +11,6 @@ export const CommandBroadcast: Component<Props> = (props) => {
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set());
   const [command, setCommand] = createSignal("");
   const [sending, setSending] = createSignal(false);
-  const [summary, setSummary] = createSignal<{ sent: number; failed: Array<{ name: string; error: string }>; skipped: number } | null>(null);
 
   const [templateQuery, setTemplateQuery] = createSignal("");
   const [selectedTemplateId, setSelectedTemplateId] = createSignal<string | null>(null);
@@ -37,12 +36,11 @@ export const CommandBroadcast: Component<Props> = (props) => {
     if (!command().trim() || sending()) return;
     const normalized = command().replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     const payload = `${normalized.replace(/\n/g, "\r")}${normalized.endsWith("\n") ? "" : "\r"}`;
-    setSending(true); setSummary(null);
+    setSending(true);
     const selected = props.sessions.filter(session => selectedIds().has(session.id));
     const writable = selected.filter(session => session.status === "connected" && session.shellId);
     const results = await Promise.allSettled(writable.map(session => sessionStore.sendText(session.id, payload)));
     const failed = results.flatMap((result, index) => result.status === "rejected" ? [{ name: writable[index].displayName || writable[index].connection.name, error: String(result.reason) }] : []);
-    setSummary({ sent: writable.length - failed.length, failed, skipped: selected.length - writable.length });
     if (!failed.length) setCommand("");
     setSending(false);
   };
@@ -103,8 +101,7 @@ export const CommandBroadcast: Component<Props> = (props) => {
   const selectAllTargets = () => setSelectedIds(new Set<string>(connected().map(session => session.id)));
   const clearTargets = () => setSelectedIds(new Set<string>());
 
-  return <div class="command-composer" role="dialog" aria-label="命令广播撰写窗格">
-    <button class="command-composer-close" onClick={props.onClose} aria-label="关闭命令广播">×</button>
+  return <div class="command-composer" role="dialog" aria-label="命令广播撰写窗格" style={{ height: `${props.height ?? 320}px` }}>
     <div class="command-composer-layout">
       <nav class="command-composer-rail" aria-label="撰写功能">
         <button class={section() === "broadcast" ? "active" : ""} onClick={() => setSection("broadcast")}>
@@ -115,27 +112,32 @@ export const CommandBroadcast: Component<Props> = (props) => {
           <span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M9.5 11h6M9.5 14.5h6M9.5 8h3" /></svg></span>
           <span>命令模板</span>
         </button>
+        <button class="command-composer-close" onClick={props.onClose} aria-label="关闭命令广播">×</button>
       </nav>
       <main class="command-composer-main">
         <Show when={section() === "broadcast"}>
           <section class="composer-section">
-            <div class="composer-targets">
-              <button class="target-picker" onClick={() => setTargetsOpen(value => !value)} aria-expanded={targetsOpen()}>
-                <span>{targetLabel()}</span><span class="target-picker-arrow">⌄</span>
-              </button>
-              <Show when={targetsOpen()}>
-                <div class="composer-session-menu">
-                  <div class="composer-session-list">
-                    <For each={props.sessions}>{session => <label class={session.status !== "connected" || !session.shellId ? "disabled" : ""}><input type="checkbox" checked={selectedIds().has(session.id)} disabled={session.status !== "connected" || !session.shellId} onChange={() => toggleTarget(session.id)} /><span class={`session-status-dot status-${session.status}`} /><span><strong>{session.displayName || session.connection.name}</strong><small>{session.connection.username}@{session.connection.host}:{session.connection.port}</small></span></label>}</For>
-                    <Show when={!props.sessions.length}><p class="composer-session-empty">暂无已打开的终端会话</p></Show>
+            <div class="composer-targets-row">
+              <div class="composer-targets">
+                <button class="target-picker" onClick={() => setTargetsOpen(value => !value)} aria-expanded={targetsOpen()}>
+                  <span>{targetLabel()}</span><span class="target-picker-arrow">⌄</span>
+                </button>
+                <Show when={targetsOpen()}>
+                  <div class="composer-session-menu">
+                    <div class="composer-session-list">
+                      <For each={props.sessions}>{session => <label class={session.status !== "connected" || !session.shellId ? "disabled" : ""}><input type="checkbox" checked={selectedIds().has(session.id)} disabled={session.status !== "connected" || !session.shellId} onChange={() => toggleTarget(session.id)} /><span class={`session-status-dot status-${session.status}`} /><span><strong>{session.displayName || session.connection.name}</strong><small>{session.connection.username}@{session.connection.host}:{session.connection.port}</small></span></label>}</For>
+                      <Show when={!props.sessions.length}><p class="composer-session-empty">暂无已打开的终端会话</p></Show>
+                    </div>
+                    <div class="composer-session-actions"><button onClick={selectAllTargets}>全选</button><button onClick={clearTargets}>清空</button></div>
                   </div>
-                  <div class="composer-session-actions"><button onClick={selectAllTargets}>全选</button><button onClick={clearTargets}>清空</button></div>
-                </div>
-              </Show>
+                </Show>
+              </div>
+              <button class="primary composer-send" disabled={sending() || !selectedIds().size || !command().trim()} onClick={() => void sendBroadcast()}>{sending() ? "发送中…" : `发送到 ${selectedIds().size} 个会话`}</button>
             </div>
-            <label class="composer-field"><span>命令内容</span><textarea value={command()} autofocus rows={5} placeholder="输入要发送到一个或多个终端的命令" onInput={event => { setCommand(event.currentTarget.value); setSummary(null); }} onKeyDown={event => { if (event.key === "Enter" && event.ctrlKey) void sendBroadcast(); }} /></label>
-            <div class="composer-actions"><button class="primary" disabled={sending() || !selectedIds().size || !command().trim()} onClick={() => void sendBroadcast()}>{sending() ? "发送中…" : `发送到 ${selectedIds().size} 个会话`}</button></div>
-            <Show when={summary()}>{result => <div class={`broadcast-summary ${result().failed.length ? "has-error" : ""}`}>已发送 {result().sent}，失败 {result().failed.length}，跳过 {result().skipped}<For each={result().failed}>{failure => <p>{failure.name}：{failure.error}</p>}</For></div>}</Show>
+            <div class="composer-field">
+              <div class="composer-field-header"><span>命令内容</span></div>
+              <textarea value={command()} autofocus rows={5} placeholder="输入要发送到一个或多个终端的命令" onInput={event => { setCommand(event.currentTarget.value); }} onKeyDown={event => { if (event.key === "Enter" && event.ctrlKey) void sendBroadcast(); }} />
+            </div>
           </section>
         </Show>
         <Show when={section() === "template"}>

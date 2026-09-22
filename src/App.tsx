@@ -4,6 +4,9 @@ import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../package.json";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
+import { ServerOverview } from "./components/ServerOverview";
+import { refitTerminal } from "./components/TerminalView";
+import { getOverviewSettings } from "./stores/dashboardStore";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { TerminalView } from "./components/TerminalView";
 import { AssetList } from "./components/AssetList";
@@ -61,6 +64,26 @@ const App: Component = () => {
   const [isWindowMaximized, setIsWindowMaximized] = createSignal(false);
   const [appVersion, setAppVersion] = createSignal(packageInfo.version);
   const [showCommandComposer, setShowCommandComposer] = createSignal(false);
+  const [composerHeight, setComposerHeight] = createSignal(Number(localStorage.getItem("portnest-composer-height")) || 320);
+
+  // 拖动撰写窗格上缘分界条调整窗格高度；外窗口尺寸不变，终端区自动让出空间（内部滚动）。
+  const startComposerResize = (event: MouseEvent) => {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = composerHeight();
+    document.body.style.userSelect = "none";
+    const onMove = (move: MouseEvent) => {
+      setComposerHeight(Math.max(140, Math.min(600, startHeight - (move.clientY - startY))));
+    };
+    const stop = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stop);
+      document.body.style.userSelect = "";
+      localStorage.setItem("portnest-composer-height", String(composerHeight()));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", stop);
+  };
 
   const [showTunnels, setShowTunnels] = createSignal(false);
   const [tunnelConnection, setTunnelConnection] = createSignal<ConnectionRecord | null>(null);
@@ -116,6 +139,20 @@ const App: Component = () => {
   });
 
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
+
+  // 服务器概览开合会改变终端区宽度。ResizeObserver 的防抖偶发漏掉最终一次
+  // 布局，导致 xterm 画布与容器不一致（终端显示异常）。这里在布局稳定后
+  // 对活动会话终端强制再执行一次 fit + resizeShell。
+  createEffect(() => {
+    const collapsed = uiStore.overviewCollapsed();
+    const sessionId = activeSessionId();
+    if (!sessionId) return;
+    const handle = window.setTimeout(() => {
+      refitTerminal(sessionId);
+    }, 160);
+    onCleanup(() => window.clearTimeout(handle));
+    void collapsed;
+  });
   const quickConnections = createMemo(() => {
     const query = quickQuery().trim().toLowerCase();
     return [...connectionStore.state.connections]
@@ -1059,7 +1096,8 @@ const App: Component = () => {
             </For>
           </div>
            <Show when={showCommandComposer() && activeSession()?.connection.protocol !== "mysql"}>
-             <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowCommandComposer(false)} />
+             <div class="command-composer-resizer" aria-hidden="true" onMouseDown={startComposerResize} />
+             <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowCommandComposer(false)} height={composerHeight()} />
            </Show>
         </main>
         <Show when={showRightPanel()}>
@@ -1076,6 +1114,12 @@ const App: Component = () => {
               <span class="right-panel-expand-tab-arrow">‹</span>
             </button>
           </Show>
+        </Show>
+        {/* 服务器概览：SSH 会话激活或面板展开时显示；收起时为右缘精简导轨。
+            仅在会话健康（connected）时采集；总开关关闭时整个面板不渲染，
+            卸载时取消采集并释放会话租约。 */}
+        <Show when={(showRightPanel() || (activeSession()?.connection.protocol === "ssh" && !uiStore.overviewCollapsed())) && getOverviewSettings().enabled}>
+          <ServerOverview connection={activeSession()?.connection} sessionConnected={activeSession()?.status === "connected"} />
         </Show>
       </Show>
 

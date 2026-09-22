@@ -194,6 +194,9 @@ pub fn run() {
             commands::docker_ping,
             commands::docker_info,
             commands::docker_disconnect,
+            // Dashboard commands
+            commands::dashboard::dashboard_collect,
+            commands::dashboard::dashboard_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

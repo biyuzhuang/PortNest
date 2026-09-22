@@ -6,6 +6,7 @@ import {
   type TerminalSettings,
 } from "../stores/themeStore";
 import { uiStore } from "../stores/uiStore";
+import { REFRESH_OPTIONS, getOverviewSettings, setOverviewSettings } from "../stores/dashboardStore";
 import { clearTerminalBackgroundImage, loadTerminalBackgroundImage, saveTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stores/terminalBackgroundStore";
 import { Icon } from "./Icon";
 import { check } from "@tauri-apps/plugin-updater";
@@ -345,6 +346,24 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                     </select>
                   </label>
                   <label><span><b>连接后打开文件管理</b><small>SSH 会话建立后自动显示 SFTP 面板</small></span><Toggle checked={terminalSettings().openFileManagerOnConnect} onChange={value => updateSetting("openFileManagerOnConnect", value)} /></label>
+                </div>
+              </div>
+
+              <h3>服务器概览</h3>
+              <div class="settings-grid">
+                <div class="settings-card">
+                  <div class="settings-card-title"><strong>状态采集</strong><span>通过独立的 SSH Exec 通道采集只读指标</span></div>
+                  <label><span><b>主机状态仪表盘</b><small>关闭后停用 SSH 主机状态的自动采集</small></span><Toggle checked={getOverviewSettings().enabled} onChange={value => setOverviewSettings({ enabled: value })} /></label>
+                  <Show when={getOverviewSettings().enabled}>
+                    <label><span>刷新频率</span>
+                      <select value={String(getOverviewSettings().refreshIntervalSec)} onChange={event => setOverviewSettings({ refreshIntervalSec: Number(event.currentTarget.value) })}>
+                        <For each={REFRESH_OPTIONS}>{option => (
+                          <option value={String(option.value)}>{option.label}</option>
+                        )}</For>
+                      </select>
+                    </label>
+                  </Show>
+                  <p class="settings-note">采集使用只读命令完成，不会写入终端会话；命令缺失的指标会自动跳过。关闭仪表盘后仍可在概览面板手动刷新。</p>
                 </div>
               </div>
               <p class="settings-note settings-session-note">会话标签、顺序、固定状态和活动标签会自动保存；应用启动后以离线标签恢复，不会自动批量连接。</p>

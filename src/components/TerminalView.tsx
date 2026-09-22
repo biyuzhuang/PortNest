@@ -34,6 +34,8 @@ interface TerminalState {
   connection: ConnectionRecord;
   cwdState: CwdState;
   lineBuffer: LineBuffer;
+  /** 立即执行一次 fit + resizeShell（绕过 ResizeObserver 防抖）。 */
+  refit: () => void;
 }
 
 const terminalStates = new Map<string, TerminalState>();
@@ -52,6 +54,12 @@ export function getTerminalState(sessionKey: string): TerminalState | undefined 
 export function hasTerminalState(sessionKey: string): boolean {
   const state = terminalStates.get(sessionKey);
   return !!state && state.terminal.element?.isConnected === true;
+}
+
+/** 面板布局变化（如服务器概览开合）后立即重适配终端，不依赖 ResizeObserver 防抖。 */
+export function refitTerminal(sessionKey: string) {
+  const state = terminalStates.get(sessionKey);
+  if (state) state.refit();
 }
 
 export function disposeAllTerminals() {
@@ -89,27 +97,12 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   const isLocal = () => props.connection.protocol === "local";
   const effectiveBackgroundStyle = () => getEffectiveTerminalBackgroundStyle(terminalBackgroundConfig());
 
-  // 终端自适应缩放：字体、行高和间距随终端容器宽高按比例变化，
-  // 让文字排版贴合窗口大小（含右面板展开/收起、窗口缩放）。基准 1280x720。
-  const ADAPTIVE_BASE_WIDTH = 1280;
-  const ADAPTIVE_BASE_HEIGHT = 720;
-  const applyAdaptiveFont = (state: TerminalState, width: number, height: number) => {
-    if (width <= 0 || height <= 0) return;
-    const settings = getTerminalSettings();
-    const scale = Math.max(0.75, Math.min(1.35,
-      Math.min(width / ADAPTIVE_BASE_WIDTH, height / ADAPTIVE_BASE_HEIGHT)));
-    const fontSize = Math.max(9, Math.round(settings.fontSize * scale));
-    if (Math.abs((state.terminal.options.fontSize ?? settings.fontSize) - fontSize) < 1) return;
-    state.terminal.options.fontSize = fontSize;
-    state.terminal.options.lineHeight = Math.round(settings.lineHeight * scale * 100) / 100;
-    state.terminal.options.letterSpacing = Math.round(settings.letterSpacing * scale * 100) / 100;
-  };
-
+  // 终端 fit：窗口/面板尺寸变化时只调整列数与行数（并同步远端 PTY 的
+  // TIOCGWINSZ），字号保持用户设置不变，最大化/还原窗口不改变字体大小。
   const doFit = (state: TerminalState) => {
     try {
       const container = containerRef;
       if (state.terminal.element?.isConnected && container && container.offsetWidth > 0 && container.offsetHeight > 0) {
-        applyAdaptiveFont(state, container.offsetWidth, container.offsetHeight);
         const prevCols = state.terminal.cols;
         const prevRows = state.terminal.rows;
         state.fitAddon.fit();
@@ -534,6 +527,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       connection: props.connection,
       cwdState,
       lineBuffer,
+      refit: () => doFit(state),
     };
 
     terminalStates.set(sessionKey, state);

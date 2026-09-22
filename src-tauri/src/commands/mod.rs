@@ -27,9 +27,10 @@ use crate::storage::{CommandSnippetRecord, ConnectionRecord, CredentialData, Dat
 use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+pub mod dashboard;
 pub mod mysql_admin;
 
-fn parse_connection_options(
+pub(crate) fn parse_connection_options(
     raw: Option<&str>,
 ) -> Result<crate::protocol::ConnectionOptions, String> {
     match raw {
@@ -117,6 +118,14 @@ impl ShellManager {
             .read()
             .get(shell_id)
             .map(|entry| entry.connection_id.clone())
+    }
+
+    /// 指定连接是否存在存活的 Shell 会话（供仪表盘等依赖终端会话的功能门控）。
+    pub(crate) fn has_live_shell(&self, connection_id: &str) -> bool {
+        self.sessions.read().values().any(|entry| {
+            entry.connection_id == connection_id
+                && entry.session.as_ref().map(|session| session.status()) == Some(crate::protocol::SessionStatus::Connected)
+        })
     }
 }
 
@@ -342,6 +351,7 @@ pub struct AppState {
     pub(crate) ssh_session_pool: Arc<SshSessionPool>,
     pub(crate) docker_manager: Arc<DockerManager>,
     pub(crate) mysql_manager: Arc<mysql_admin::MysqlManager>,
+    pub(crate) dashboard_manager: Arc<dashboard::DashboardManager>,
 }
 
 unsafe impl Send for AppState {}
@@ -369,6 +379,7 @@ impl AppState {
             ssh_session_pool,
             docker_manager: Arc::new(DockerManager::new()),
             mysql_manager: Arc::new(mysql_admin::MysqlManager::new()),
+            dashboard_manager: Arc::new(dashboard::DashboardManager::new()),
         })
     }
 
@@ -394,7 +405,7 @@ impl AppState {
     }
 }
 
-fn credential_from_data(data: &CredentialData) -> Result<Credential, String> {
+pub(crate) fn credential_from_data(data: &CredentialData) -> Result<Credential, String> {
     let credential_type = match data.auth_type.as_str() {
         "password" => CredentialType::Password,
         "key" => CredentialType::PrivateKey,
@@ -410,7 +421,7 @@ fn credential_from_data(data: &CredentialData) -> Result<Credential, String> {
     })
 }
 
-fn resolve_ssh_options(
+pub(crate) fn resolve_ssh_options(
     state: &AppState,
     connection_id: &str,
     mut options: crate::protocol::ConnectionOptions,
