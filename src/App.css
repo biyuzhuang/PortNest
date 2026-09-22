@@ -2526,11 +2526,15 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, sele
 .terminal-search-bar input:focus { border-color: var(--accent); }
 .terminal-search-bar button { width: 28px; height: 28px; color: var(--text-secondary); background: var(--bg-tertiary); border: 0; border-radius: 5px; }
 
-.session-action-bar { display: flex; align-items: center; justify-content: space-between; min-height: 34px; padding: 0 10px; color: var(--text-secondary); background: var(--bg-secondary); border-bottom: 1px solid var(--border); font-size: 12px; }
+.session-action-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding: 0 10px; color: var(--text-secondary); background: var(--bg-secondary); border-bottom: 1px solid var(--border); font-size: 12px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.session-action-bar::-webkit-scrollbar { height: 6px; }
+.session-action-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
 .session-action-identity, .session-action-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.session-action-identity strong { color: var(--text-primary); }
-.session-action-controls button, .session-action-controls select { height: 26px; padding: 0 8px; color: var(--text-secondary); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 5px; }
-.session-action-controls label { display: flex; align-items: center; gap: 5px; }
+.session-action-identity strong { color: var(--text-primary); flex: 0 0 auto; white-space: nowrap; }
+.session-action-identity > span:last-child { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+.session-action-controls { flex: 0 0 auto; }
+.session-action-controls button, .session-action-controls select { height: 26px; padding: 0 8px; color: var(--text-secondary); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 5px; white-space: nowrap; flex-shrink: 0; }
+.session-action-controls label { display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; }
 .session-action-controls button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); }
 .session-tab-status, .session-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--text-muted); }
 .status-connected { background-color: var(--success) !important; }
