@@ -106,7 +106,16 @@ export const CommandBroadcast: Component<Props> = (props) => {
   return <div class="command-composer" role="dialog" aria-label="命令广播撰写窗格">
     <button class="command-composer-close" onClick={props.onClose} aria-label="关闭命令广播">×</button>
     <div class="command-composer-layout">
-      <nav class="command-composer-rail" aria-label="撰写功能"><button class={section() === "broadcast" ? "active" : ""} onClick={() => setSection("broadcast")}><strong>⌁</strong><span>命令广播</span></button><button class={section() === "template" ? "active" : ""} onClick={() => setSection("template")}><strong>▣</strong><span>命令模板</span></button></nav>
+      <nav class="command-composer-rail" aria-label="撰写功能">
+        <button class={section() === "broadcast" ? "active" : ""} onClick={() => setSection("broadcast")}>
+          <span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4h4l5 4V6l-5 4H3z" fill="currentColor" stroke="none" /><path d="M15.5 9.2a4 4 0 0 1 0 5.6" /><path d="M18 7a7.2 7.2 0 0 1 0 10" /></svg></span>
+          <span>命令广播</span>
+        </button>
+        <button class={section() === "template" ? "active" : ""} onClick={() => setSection("template")}>
+          <span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14H7z" /><path d="M9.5 11h6M9.5 14.5h6M9.5 8h3" /></svg></span>
+          <span>命令模板</span>
+        </button>
+      </nav>
       <main class="command-composer-main">
         <Show when={section() === "broadcast"}>
           <section class="composer-section">

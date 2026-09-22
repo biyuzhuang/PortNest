@@ -371,3 +371,9 @@
 .templates-editor input { width: 100%; min-width: 0; max-width: 100%; height: 30px; padding: 0 9px; text-align: left; }
 .templates-editor label span { display: block; }
 .templates-editor label textarea { width: 100%; }
+
+/* 修正：模板管理卡片与列表项边框露全，去掉 overflow 裁剪与吞边 */
+.templates-card { overflow: visible; padding: 8px 10px; gap: 8px; }
+.templates-list { overflow: hidden; border: 1px solid var(--border-light, #edf0f3); border-radius: var(--radius-md, 9px); }
+.templates-row { border-radius: 0; border-bottom: 1px solid var(--border-light, #edf0f3); }
+.templates-row:last-child { border-bottom: 0; }
