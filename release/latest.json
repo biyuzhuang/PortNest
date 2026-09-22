@@ -1,11 +1,11 @@
 {
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVURHhBc3I1WGpBUWJKNzd6QStmSUwrQVpNbXlNWEZ3TEVIMllWcUM5NjdwWnM4MFFKa2JJZXNTUTlmdENnb011NU1qcCswUVh5VEFhNEZvWXdHbEhPemkwSngvMVlLaVFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDQyODc2CWZpbGU6UG9ydE5lc3RfMC4yLjBfeDY0LXNldHVwLmV4ZQozbTFoM2JoVDg2OTZSbGQxeCtuQXI0SUZKV1RlU0hQamdlUTBMcE9KRUc4TTBrM0VvZFRvaWJzS3ZKRnFhekhPL3FkQlU4eFVTK2FET3lqTzIySHBDQT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.2.0/PortNest_0.2.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeGE0RkV2TFNqR2E4enRhOTZRT1pxaTc3bHBnRXNsQVE1UEtERGtDNERkSzFoT2RBOFhZYlAxajVRM1J6ckp3QUdoRkZscW1veFkyclh6V3VLZDc5R0FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDYwOTQ2CWZpbGU6UG9ydE5lc3RfMC40LjBfeDY0LXNldHVwLmV4ZQpLQ0ZLVms3WERCOWdKVXBsOXBxQTdMSTVzeUJFc25EcFo3b3BGMmlBTzV5NGgzWlFaZjdyMHBHMDAzaUZpNTAwWVFZQWhRZlFJWUNYYVFMcUdJOXZBZz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.4.0/PortNest_0.4.0_x64-setup.exe"
     }
   },
-  "notes": "PortNest v0.2.0 完成阶段二：命令模板与命令广播统一撰写窗格（会话下方文档流布局、目标会话下拉多选、模板列表与设置页管理共用数据源），移除独立任务模板，升级版本并同步 Tauri updater 签名密钥。",
-  "version": "0.2.0",
-  "pub_date": "2026-09-22T02:08:49Z"
+  "notes": "PortNest v0.4.0 交付阶段三：SSH 主机状态仪表盘（收起导轨与详细面板、并发只读采集、阈值状态、历史趋势、进程与磁盘挂载、诊断摘要复制、10 秒自动刷新与总开关），终端字号不再随窗口缩放，命令广播窗格高度可拖拽。更换 updater 签名密钥，旧版本需覆盖安装。",
+  "version": "0.4.0",
+  "pub_date": "2026-09-22T07:20:07Z"
 }
