@@ -92,6 +92,7 @@ export interface ConnectionConfig {
   encoding?: string;
   timeout_ms?: number;
   database?: string;
+  ssl_mode?: string;
   shell_type?: string;
   cwd?: string;
   custom_command?: string;
@@ -369,12 +370,21 @@ export interface PingResult {
   latency_ms: number | null;
 }
 
+export interface QueryColumnMetadata {
+  name: string;
+  type_name: string;
+  charset: number;
+  flags: number;
+}
+
 export interface QueryResult {
   columns: string[];
+  column_metadata?: QueryColumnMetadata[];
   rows: Array<{ values: any[] }>;
   affected_rows: number;
   execution_time_ms: number;
   last_insert_id?: number;
+  truncated?: boolean;
 }
 
 export interface MysqlDatabaseInfo { name: string; charset?: string; collation?: string }
@@ -382,12 +392,18 @@ export interface MysqlCharsetInfo { name: string; description: string; default_c
 export interface MysqlSqlImportResult { total: number; completed: number; failures: Array<{ statement: number; summary: string }> }
 export interface MysqlSqlExportResult { tables: number; rows: number; bytes: number }
 export interface MysqlTableInfo { name: string; kind: string; engine?: string; rows?: number; comment: string; data_length?: number; index_length?: number; auto_increment?: number; collation?: string; created_at?: string; updated_at?: string }
-export interface MysqlColumnInfo { name: string; data_type: string; column_type: string; nullable: boolean; default_value?: string; extra: string; comment: string; key: string; charset?: string; collation?: string; ordinal: number }
-export interface MysqlIndexInfo { name: string; unique: boolean; column: string; sequence: number; prefix_length?: number; direction?: string }
-export interface MysqlColumnDefinition { name: string; column_type: string; nullable: boolean; default_value?: string; auto_increment: boolean; charset?: string; collation?: string; comment: string }
+export interface MysqlColumnInfo { name: string; data_type: string; column_type: string; nullable: boolean; default_value?: string; extra: string; comment: string; key: string; charset?: string; collation?: string; ordinal: number; generation_expression?: string }
+export interface MysqlIndexInfo { name: string; unique: boolean; column?: string; sequence: number; prefix_length?: number; direction?: string; index_type: string }
+export interface MysqlColumnDefinition { name: string; column_type: string; nullable: boolean; default_value?: string; auto_increment: boolean; charset?: string; collation?: string; comment: string; generation_expression?: string; extra?: string }
 export interface MysqlIndexDefinition { name: string; kind: "PRIMARY" | "UNIQUE" | "INDEX"; columns: Array<{ name: string; prefix_length?: number; direction?: string }> }
 export interface MysqlTableDefinition { database: string; name: string; original_name?: string; engine?: string; charset?: string; collation?: string; comment: string; columns: MysqlColumnDefinition[]; indexes: MysqlIndexDefinition[] }
-
+export interface MysqlAutocompleteItem { table: string; column: string }
+export interface MysqlExplainResult { json_plan?: unknown; columns: string[]; rows: unknown[][]; message?: string }
+export interface MysqlTableChangeSet {
+  inserts: Array<Record<string, unknown>>;
+  updates: Array<{ values: Record<string, unknown>; original: Record<string, unknown> }>;
+  deletes: Array<Record<string, unknown>>;
+}
 export interface ChatMessage {
   role: string;
   content: string;
@@ -505,10 +521,6 @@ export const api = {
     return sshInvoke("stop_all_tunnels", { connectionId: connectionId ?? null });
   },
 
-  // Query operations
-  async executeQuery(connectionId: string, sql: string): Promise<QueryResult> {
-    return invoke("execute_query", { connectionId, sql });
-  },
 
   // AI chat operations
   async chatWithAI(connectionId: string, message: string): Promise<ChatResponse> {
@@ -555,15 +567,20 @@ export const api = {
   async mysqlListColumns(connectionId: string, database: string, table: string): Promise<MysqlColumnInfo[]> { return invoke("mysql_list_columns", { connectionId, database, table }); },
   async mysqlListIndexes(connectionId: string, database: string, table: string): Promise<MysqlIndexInfo[]> { return invoke("mysql_list_indexes", { connectionId, database, table }); },
   async mysqlExecuteSql(connectionId: string, sql: string, database?: string): Promise<QueryResult> { return invoke("mysql_execute_sql", { connectionId, sql, database: database || null }); },
+  async mysqlCancelQuery(connectionId: string): Promise<void> { return invoke("mysql_cancel_query", { connectionId }); },
+  async mysqlAutocomplete(connectionId: string, database: string): Promise<MysqlAutocompleteItem[]> { return invoke("mysql_autocomplete", { connectionId, database }); },
+  async mysqlExplainSql(connectionId: string, sql: string, database?: string): Promise<MysqlExplainResult> { return invoke("mysql_explain_sql", { connectionId, sql, database: database || null }); },
+  async mysqlSaveSql(path: string, sql: string): Promise<void> { return invoke("mysql_save_sql", { path, sql }); },
   async mysqlFetchRows(connectionId: string, database: string, table: string, page = 1, pageSize = 100): Promise<QueryResult> { return invoke("mysql_fetch_rows", { connectionId, database, table, page, pageSize }); },
   async mysqlCreateDatabase(connectionId: string, name: string, charset = "utf8mb4", collation?: string): Promise<void> { return invoke("mysql_create_database", { connectionId, name, charset, collation: collation || null }); },
   async mysqlDropDatabase(connectionId: string, database: string): Promise<void> { return invoke("mysql_drop_database", { connectionId, database }); },
   async mysqlCreateTable(connectionId: string, definition: MysqlTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("mysql_create_table", { connectionId, definition }); },
   async mysqlPreviewTable(connectionId: string, definition: MysqlTableDefinition): Promise<string[]> { return invoke("mysql_preview_table", { connectionId, definition }); },
-  async mysqlApplyTable(connectionId: string, definition: MysqlTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("mysql_apply_table", { connectionId, definition }); },
+  async mysqlApplyTable(connectionId: string, definition: MysqlTableDefinition, preview?: string[]): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("mysql_apply_table", { connectionId, definition, preview: preview && preview.length ? preview : null }); },
   async mysqlTableAction(connectionId: string, database: string, table: string, action: "truncate" | "drop" | "rename" | "clone", target?: string): Promise<void> { return invoke("mysql_table_action", { connectionId, database, table, action, target: target || null }); },
   async mysqlShowCreate(connectionId: string, database: string, table: string): Promise<string> { return invoke("mysql_show_create", { connectionId, database, table }); },
   async mysqlMutateRow(connectionId: string, database: string, table: string, action: "insert" | "update" | "delete", values: Record<string, unknown>, original: Record<string, unknown> = {}): Promise<number> { return invoke("mysql_mutate_row", { connectionId, database, table, action, mutation: { values, original } }); },
+  async mysqlApplyTableChanges(connectionId: string, database: string, table: string, changes: MysqlTableChangeSet): Promise<number> { return invoke("mysql_apply_table_changes", { connectionId, database, table, changes }); },
   async mysqlImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("mysql_import_csv", { connectionId, database, table, csv }); },
   async mysqlImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<MysqlSqlImportResult> { return invoke("mysql_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
   async mysqlExportSql(connectionId: string, path: string, database: string): Promise<MysqlSqlExportResult> { return invoke("mysql_export_sql", { connectionId, options: { path, database } }); },

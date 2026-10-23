@@ -38,7 +38,6 @@ ssh2 = "0.9"
 portable-pty = "0.9"
 
 # Database
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "mysql", "sqlite"] }
 mysql_async = "0.34"
 
 # Local storage

@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 dist/
 
@@ -8,6 +8,7 @@ dist/
 # Local planning documents（产品路线图纳入版本控制，其余临时文档忽略）
 docs/*
 !docs/DEVELOPMENT_ROADMAP.md
+!docs/MYSQL_CODE_REVIEW_AND_FIXES.md
 
 # Backup / temp files
 *.bak

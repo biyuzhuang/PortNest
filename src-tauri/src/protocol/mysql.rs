@@ -1,6 +1,6 @@
 //! MySQL 数据库协议插件
 use async_trait::async_trait;
-use mysql_async::{prelude::Queryable, OptsBuilder, Pool, Row};
+use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts, Row, SslOpts};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -9,6 +9,21 @@ use crate::protocol::{
     ConnectionHandle, ConnectionMetadata, ConnectionOptions, Credential, CredentialType,
     ProtocolCapability, ProtocolPlugin,
 };
+
+pub(crate) fn ssl_opts_from_mode(mode: &str) -> Result<Option<SslOpts>> {
+    match mode.trim().to_ascii_lowercase().as_str() {
+        "" | "disabled" => Ok(None),
+        "required" | "verify_identity" => Ok(Some(SslOpts::default())),
+        "skip_verify" => Ok(Some(
+            SslOpts::default()
+                .with_danger_accept_invalid_certs(true)
+                .with_danger_skip_domain_validation(true),
+        )),
+        other => Err(Error::InvalidConfig(format!(
+            "不支持的 MySQL SSL 模式: {other}"
+        ))),
+    }
+}
 
 /// MySQL 连接句柄
 pub struct MysqlConnectionHandle {
@@ -117,12 +132,28 @@ impl ProtocolPlugin for MysqlPlugin {
         };
 
         // OptsBuilder 实现了 TryFrom<Opts>，Pool::new 可以直接接收
+        let constraints = PoolConstraints::new(1, 4)
+            .ok_or_else(|| Error::InvalidConfig("MySQL 连接池配置无效".to_string()))?;
+        let pool_opts = PoolOpts::default().with_constraints(constraints);
+        let ssl_mode = _options
+            .protocol_options
+            .get("ssl_mode")
+            .map(String::as_str)
+            .unwrap_or("disabled");
         let mut opts = OptsBuilder::default()
             .ip_or_hostname(host)
             .tcp_port(port)
             .user(Some(username))
-            .pass(password);
-        if let Some(database) = _options.protocol_options.get("database").filter(|value| !value.is_empty()) {
+            .pass(password)
+            .client_found_rows(true)
+            .stmt_cache_size(64usize)
+            .ssl_opts(ssl_opts_from_mode(ssl_mode)?)
+            .pool_opts(pool_opts);
+        if let Some(database) = _options
+            .protocol_options
+            .get("database")
+            .filter(|value| !value.is_empty())
+        {
             opts = opts.db_name(Some(database.clone()));
         }
 

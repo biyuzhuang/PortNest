@@ -53,6 +53,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [database, setDatabase] = createSignal(props.connection?.database || "");
+  const [sslMode, setSslMode] = createSignal(props.connection?.ssl_mode || "disabled");
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
   const [tunnelRules, setTunnelRules] = createSignal<TunnelRule[]>(props.connection?.tunnel_rules || []);
 
@@ -125,6 +126,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       jump_connection_id: proxyType() === "ssh_jump" ? jumpConnectionId() || undefined : undefined,
       tunnel_rules: tunnelRules(),
       database: protocol() === "mysql" ? database().trim() || undefined : undefined,
+      ssl_mode: protocol() === "mysql" ? sslMode() : undefined,
     };
   };
 
@@ -480,6 +482,15 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                 </label>
                 <Show when={protocol() !== "local"}>
                   <label class="ssh-field"><span>连接超时（秒）</span><input type="number" min="5" max="120" value={timeout()} onInput={event => setTimeout(Number(event.currentTarget.value))} /></label>
+                </Show>
+                <Show when={protocol() === "mysql"}>
+                  <label class="ssh-field"><span>SSL 模式</span>
+                    <select value={sslMode()} onChange={event => setSslMode(event.currentTarget.value)}>
+                      <option value="disabled">禁用</option>
+                      <option value="required">要求 SSL（校验证书和主机名）</option>
+                      <option value="skip_verify">要求 SSL（跳过证书校验）</option>
+                    </select>
+                  </label>
                 </Show>
               </div>
             </Show>
