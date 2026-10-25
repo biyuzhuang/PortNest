@@ -9,9 +9,7 @@
 //! - 支持取消令牌：面板关闭或切换连接时在探测间隙快速放弃本轮采集。
 //! - 命令缺失（能力探测失败）时该组标记为不可用，而不是整体报错。
 
-use crate::protocol::ssh_backend::{
-    session_pool_key, CancellationToken, ExecResult, SshSession,
-};
+use crate::protocol::ssh_backend::{session_pool_key, CancellationToken, ExecResult, SshSession};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -170,8 +168,7 @@ impl DashboardSnapshot {
     }
 
     fn set_issue(&mut self, section: &str, reason: String, stale: bool) {
-        self.issues
-            .retain(|item| item.section != section);
+        self.issues.retain(|item| item.section != section);
         self.issues.push(SectionIssue {
             section: section.to_string(),
             reason,
@@ -529,7 +526,11 @@ fn parse_into(snapshot: &mut DashboardSnapshot, section: &str, raw: &str) -> Res
 }
 
 /// 把旧快照中某组的数据回退到新快照（失败降级用）。
-fn copy_section(previous: &DashboardSnapshot, section: &str, snapshot: &mut DashboardSnapshot) -> bool {
+fn copy_section(
+    previous: &DashboardSnapshot,
+    section: &str,
+    snapshot: &mut DashboardSnapshot,
+) -> bool {
     match section {
         "system" if previous.system.is_some() => {
             snapshot.system = previous.system.clone();
@@ -586,7 +587,10 @@ fn compute_rates(
             info.tx_rate = None;
         }
     }
-    prevs.insert(connection_id.to_string(), (info.rx_bytes, info.tx_bytes, now));
+    prevs.insert(
+        connection_id.to_string(),
+        (info.rx_bytes, info.tx_bytes, now),
+    );
 }
 
 /// 执行单个探测命令：独立 Exec Channel + 超时 + 取消。
@@ -705,7 +709,8 @@ fn probe_processes_command() -> String {
         "(ps axo pid=,ppid=,pcpu=,pmem=,rss=,args= --sort=-pcpu 2>/dev/null | head -n 60; ",
         "ps axo pid=,ppid=,pcpu=,pmem=,rss=,args= 2>/dev/null | grep '[s]shd:') ",
         "| grep -v '__PORTNEST_PROBE'"
-    ).to_string()
+    )
+    .to_string()
 }
 
 fn probe_fallback_command() -> String {
@@ -805,7 +810,10 @@ fn parse_system(raw: &str) -> Result<Option<SystemInfo>, String> {
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
     let load = parse_loadavg(&parts[1]);
-    let uname = parts[2].split_whitespace().map(str::to_string).collect::<Vec<_>>();
+    let uname = parts[2]
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     let kernel = uname.get(1).cloned().unwrap_or_default();
     let arch = uname.get(2).cloned().unwrap_or_default();
     let os = parts[3]
@@ -865,7 +873,14 @@ fn parse_cpu_times(line: &str) -> Option<CpuTimes> {
     let softirq = at(6);
     let steal = at(7);
     let total = user + system + idle + iowait + irq + softirq + steal;
-    Some(CpuTimes { user, system, idle, iowait, steal, total })
+    Some(CpuTimes {
+        user,
+        system,
+        idle,
+        iowait,
+        steal,
+        total,
+    })
 }
 
 /// 计算两个采样之间的使用率与分项占比（百分比）。
@@ -927,13 +942,26 @@ fn parse_cpu(raw: &str) -> Result<Option<CpuInfo>, String> {
         let cur = parse_cpu_times(line);
         if let (Some(p), Some(c)) = (prev, cur) {
             if let Some((percent, user, system, iowait, _)) = usage_between(p, c) {
-                cores.push(CoreUsage { index, percent, user, system, iowait });
+                cores.push(CoreUsage {
+                    index,
+                    percent,
+                    user,
+                    system,
+                    iowait,
+                });
             }
         }
     }
     cores.sort_by_key(|c| c.index);
 
-    Ok(Some(CpuInfo { total, user, system, iowait, steal, cores }))
+    Ok(Some(CpuInfo {
+        total,
+        user,
+        system,
+        iowait,
+        steal,
+        cores,
+    }))
 }
 
 fn parse_memory(raw: &str) -> Result<Option<MemoryInfo>, String> {
@@ -964,8 +992,7 @@ fn parse_memory(raw: &str) -> Result<Option<MemoryInfo>, String> {
     if mem_total == 0 {
         return Err("内存数据缺失".to_string());
     }
-    let available =
-        mem_available.unwrap_or(mem_free + buffers + cached + s_reclaimed);
+    let available = mem_available.unwrap_or(mem_free + buffers + cached + s_reclaimed);
     let used = mem_total.saturating_sub(available);
     let swap_used = swap_total.saturating_sub(swap_free);
     Ok(Some(MemoryInfo {
@@ -986,9 +1013,30 @@ fn parse_memory(raw: &str) -> Result<Option<MemoryInfo>, String> {
 /// 判断挂载项是否为纯伪文件系统（排序时置于真实磁盘之后）。
 fn is_pseudo_fs(fs: &str, mount: &str) -> bool {
     let pseudo = [
-        "proc", "sysfs", "devpts", "tmpfs", "devtmpfs", "overlay", "squashfs", "ramfs", "cgroup",
-        "cgroup2", "bpf", "tracefs", "debugfs", "securityfs", "pstore", "efivarfs", "configfs",
-        "fusectl", "hugetlbfs", "mqueue", "nsfs", "binfmt_misc", "autofs", "rpc_pipefs",
+        "proc",
+        "sysfs",
+        "devpts",
+        "tmpfs",
+        "devtmpfs",
+        "overlay",
+        "squashfs",
+        "ramfs",
+        "cgroup",
+        "cgroup2",
+        "bpf",
+        "tracefs",
+        "debugfs",
+        "securityfs",
+        "pstore",
+        "efivarfs",
+        "configfs",
+        "fusectl",
+        "hugetlbfs",
+        "mqueue",
+        "nsfs",
+        "binfmt_misc",
+        "autofs",
+        "rpc_pipefs",
     ];
     if pseudo.contains(&fs) {
         return true;
@@ -1052,7 +1100,9 @@ fn parse_network(raw: &str) -> Result<Option<NetworkInfo>, String> {
     let mut interfaces = Vec::new();
     let mut physical = Vec::new();
     for line in raw.lines().skip(1) {
-        let Some((name, rest)) = line.split_once(':') else { continue };
+        let Some((name, rest)) = line.split_once(':') else {
+            continue;
+        };
         let name = name.trim().to_string();
         if name == "lo" {
             continue;
@@ -1078,7 +1128,11 @@ fn parse_network(raw: &str) -> Result<Option<NetworkInfo>, String> {
         return Err("网络数据缺失".to_string());
     }
     // 只统计真实物理网卡；机器全是虚拟网卡时回退为全部（除 lo）。
-    let counted: &Vec<InterfaceTraffic> = if physical.is_empty() { &interfaces } else { &physical };
+    let counted: &Vec<InterfaceTraffic> = if physical.is_empty() {
+        &interfaces
+    } else {
+        &physical
+    };
     let rx: u64 = counted.iter().map(|i| i.rx_bytes).sum();
     let tx: u64 = counted.iter().map(|i| i.tx_bytes).sum();
     Ok(Some(NetworkInfo {
@@ -1124,8 +1178,12 @@ fn parse_process_rows(raw: &str) -> Vec<ProcessRow> {
     let mut seen = std::collections::HashSet::new();
     for line in raw.lines() {
         // 前 5 列为数字（pid ppid pcpu pmem rss），剩余整段为 args。
-        let Some((fields, args)) = split_leading_fields(line, 5) else { continue };
-        let Ok(pid) = fields[0].parse::<u32>() else { continue };
+        let Some((fields, args)) = split_leading_fields(line, 5) else {
+            continue;
+        };
+        let Ok(pid) = fields[0].parse::<u32>() else {
+            continue;
+        };
         // 双保险：即使远端 grep -v 失效，解析端也排除采集器自身进程。
         if line.contains(PROBE_MARK) {
             continue;
@@ -1184,7 +1242,8 @@ fn merge_sshd_rows(rows: Vec<ProcessRow>) -> Vec<ProcessRow> {
                     .iter()
                     .filter_map(|child| sshd_session_pts(&child.args))
                     .collect();
-                let user = sshd_session_user(&children[0].args).unwrap_or_else(|| "user".to_string());
+                let user =
+                    sshd_session_user(&children[0].args).unwrap_or_else(|| "user".to_string());
                 let name = if pts.is_empty() {
                     children[0].args.clone()
                 } else {
@@ -1262,7 +1321,11 @@ fn parse_processes(raw: &str) -> Result<Option<Vec<ProcessInfo>>, String> {
         })
         .collect();
     // 合并后重新按 CPU 降序取前 12。
-    processes.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
+    processes.sort_by(|a, b| {
+        b.cpu
+            .partial_cmp(&a.cpu)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     processes.truncate(12);
     Ok(Some(processes))
 }
@@ -1305,14 +1368,31 @@ mod tests {
 
     #[test]
     fn loadavg_parse() {
-        assert_eq!(parse_loadavg("1.23 4.56 7.89 3/1200 1234"), [1.23, 4.56, 7.89]);
+        assert_eq!(
+            parse_loadavg("1.23 4.56 7.89 3/1200 1234"),
+            [1.23, 4.56, 7.89]
+        );
         assert_eq!(parse_loadavg("garbage"), [0.0, 0.0, 0.0]);
     }
 
     #[test]
     fn cpu_usage_between_samples() {
-        let a = CpuTimes { user: 100, system: 50, idle: 400, iowait: 10, steal: 0, total: 600 };
-        let b = CpuTimes { user: 150, system: 60, idle: 500, iowait: 10, steal: 0, total: 730 };
+        let a = CpuTimes {
+            user: 100,
+            system: 50,
+            idle: 400,
+            iowait: 10,
+            steal: 0,
+            total: 600,
+        };
+        let b = CpuTimes {
+            user: 150,
+            system: 60,
+            idle: 500,
+            iowait: 10,
+            steal: 0,
+            total: 730,
+        };
         let (total, user, system, _, _) = usage_between(a, b).expect("usage");
         // dt=130，idle 增量=100 → 使用率 23.08%；user=50/130，system=10/130。
         assert!((total - 23.0769).abs() < 0.01, "total={total}");
@@ -1392,10 +1472,16 @@ mod tests {
         );
         let list = parse_processes(raw).expect("ok").expect("some");
         // sshd 会话按 priv 父进程归组合并为单行。
-        let sshd_lines: Vec<&ProcessInfo> = list.iter().filter(|p| p.name.starts_with("sshd: root@")).collect();
+        let sshd_lines: Vec<&ProcessInfo> = list
+            .iter()
+            .filter(|p| p.name.starts_with("sshd: root@"))
+            .collect();
         assert_eq!(sshd_lines.len(), 3, "三组 sshd 会话应合并为三行");
         let merged_multi: Vec<&str> = sshd_lines.iter().map(|p| p.name.as_str()).collect();
-        assert!(merged_multi.contains(&"sshd: root@pts/2,pts/3"), "合并 pts 列表: {merged_multi:?}");
+        assert!(
+            merged_multi.contains(&"sshd: root@pts/2,pts/3"),
+            "合并 pts 列表: {merged_multi:?}"
+        );
         assert!(merged_multi.contains(&"sshd: root@pts/0"));
         assert!(merged_multi.contains(&"sshd: root@pts/1"));
         // [priv] 行不再出现。

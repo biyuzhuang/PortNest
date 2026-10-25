@@ -7,6 +7,7 @@ import { feedback } from "../stores/feedbackStore";
 import { sessionStore } from "../stores/sessionStore";
 import { pathLinkStore } from "../stores/pathLinkStore";
 import { defaultHomePath } from "../utils/shellCwd";
+import { Icon } from "./Icon";
 import "./FileManager.css";
 
 interface FileManagerProps {
@@ -736,10 +737,10 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     <div class="file-manager" ref={rootRef}>
       <div class="file-manager-header">
         <div class="path-bar">
-          <button class="nav-btn" disabled={historyIndex() === 0} onClick={() => navigateHistory(-1)} title="返回">←</button>
-          <button class="nav-btn" disabled={historyIndex() >= pathHistory().length - 1} onClick={() => navigateHistory(1)} title="前进">→</button>
-          <button class="nav-btn" onClick={navigateUp} title="返回上级目录">↑</button>
-          <button class="nav-btn" onClick={refreshDirectory} title="刷新">↻</button>
+          <button class="nav-btn" disabled={historyIndex() === 0} onClick={() => navigateHistory(-1)} title="返回"><Icon name="arrowLeft" size={15} /></button>
+          <button class="nav-btn" disabled={historyIndex() >= pathHistory().length - 1} onClick={() => navigateHistory(1)} title="前进"><Icon name="arrowRight" size={15} /></button>
+          <button class="nav-btn" onClick={navigateUp} title="返回上级目录"><Icon name="arrowUp" size={15} /></button>
+          <button class="nav-btn" onClick={refreshDirectory} title="刷新"><Icon name="refresh" size={15} /></button>
           <input
             type="text"
             class="path-input"
@@ -938,19 +939,19 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         >
-          <div class="context-menu-item" onClick={handleUpload}>上传到当前目录</div>
-          <div class="context-menu-item" onClick={handleUploadDirectory}>上传目录到当前位置</div>
-          <div class="context-menu-item" onClick={handleDownload}>{contextFile()?.is_dir ? "下载目录" : "下载"}</div>
+          <div class="context-menu-item" onClick={handleUpload}><span class="context-menu-icon"><Icon name="export" size={13} /></span><span>上传到当前目录</span></div>
+          <div class="context-menu-item" onClick={handleUploadDirectory}><span class="context-menu-icon"><Icon name="export" size={13} /></span><span>上传目录到当前位置</span></div>
+          <div class="context-menu-item" onClick={handleDownload}><span class="context-menu-icon"><Icon name="import" size={13} /></span><span>{contextFile()?.is_dir ? "下载目录" : "下载"}</span></div>
           <div class="context-menu-divider" />
-          <div class="context-menu-item" onClick={() => openNewEntryDialog("folder")}>新建文件夹</div>
-          <div class="context-menu-item" onClick={() => openNewEntryDialog("file")}>新建文件</div>
-          <div class="context-menu-item" onClick={handleCopyPath}>复制路径</div>
-          <div class="context-menu-item" onClick={() => { setContextMenu(null); refreshDirectory(); }}>刷新</div>
+          <div class="context-menu-item" onClick={() => openNewEntryDialog("folder")}><span class="context-menu-icon"><Icon name="folder" size={13} /></span><span>新建文件夹</span></div>
+          <div class="context-menu-item" onClick={() => openNewEntryDialog("file")}><span class="context-menu-icon"><Icon name="plus" size={13} /></span><span>新建文件</span></div>
+          <div class="context-menu-item" onClick={handleCopyPath}><span class="context-menu-icon"><Icon name="copy" size={13} /></span><span>复制路径</span></div>
+          <div class="context-menu-item" onClick={() => { setContextMenu(null); refreshDirectory(); }}><span class="context-menu-icon"><Icon name="refresh" size={13} /></span><span>刷新</span></div>
           <Show when={contextFile()}>
             <div class="context-menu-divider" />
-            <Show when={!contextFile()?.is_dir}><div class="context-menu-item" onClick={openRemoteEditor}>编辑文本…</div></Show>
-            <div class="context-menu-item" onClick={openPermissionEditor}>文件属性…</div>
-            <div class="context-menu-item danger" onClick={handleDelete}>删除</div>
+            <Show when={!contextFile()?.is_dir}><div class="context-menu-item" onClick={openRemoteEditor}><span class="context-menu-icon"><Icon name="edit" size={13} /></span><span>编辑文本…</span></div></Show>
+            <div class="context-menu-item" onClick={openPermissionEditor}><span class="context-menu-icon"><Icon name="info" size={13} /></span><span>文件属性…</span></div>
+            <div class="context-menu-item danger" onClick={handleDelete}><span class="context-menu-icon"><Icon name="trash" size={13} /></span><span>删除</span></div>
           </Show>
         </div>
       </Show>
@@ -1017,7 +1018,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <div class="remote-editor-dialog">
             <header>
               <div><strong>{editorFile()?.name}</strong><small>{editorFile()?.path}</small></div>
-              <button onClick={() => void closeRemoteEditor()} aria-label="关闭编辑器">×</button>
+              <button onClick={() => void closeRemoteEditor()} aria-label="关闭编辑器"><Icon name="close" size={15} /></button>
             </header>
             <Show when={editorLoading()} fallback={
               <textarea

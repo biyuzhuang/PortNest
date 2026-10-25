@@ -10,6 +10,7 @@ import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore
 import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
 import { Icon } from "./Icon";
+import { AssetContextMenu, type AssetMenuAction, type AssetMenuHeaderAction } from "./AssetContextMenu";
 import { api, localShellDisplayName, parseLocalProfile } from "../utils/api";
 
 interface SidebarProps {
@@ -18,18 +19,23 @@ interface SidebarProps {
   onEdit: (conn: ConnectionRecord) => void;
   onDelete: (conn: ConnectionRecord) => void;
   onOpenSettings?: () => void;
-  onNewConnection?: (folderId?: string) => void;
+  onOpenAI?: () => void;
+  onOpenTransfer?: () => void;
+  onNewConnection?: (folderId?: string, protocol?: string) => void;
   onNewFolder?: (parentId?: string) => void;
   onCopyConnection?: (conn: ConnectionRecord) => void;
   onOpenLocalTerminal?: () => void;
   onOpenTunnels?: (conn: ConnectionRecord) => void;
   selectedId?: string;
+  aiOpen?: boolean;
+  onCloseAI?: () => void;
 }
 
 export const Sidebar: Component<SidebarProps> = (props) => {
   const { state } = connectionStore;
   const [expandedFolders, setExpandedFolders] = createSignal<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [searchOpen, setSearchOpen] = createSignal(false);
   const [contextMenuConn, setContextMenuConn] = createSignal<ConnectionRecord | null>(null);
   const [showContextMenu, setShowContextMenu] = createSignal(false);
   const [dragOverFolderId, setDragOverFolderId] = createSignal<string | null>(null);
@@ -290,6 +296,83 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     setShowFolderMenu(true);
   };
 
+  const newConnectionActions = (targetFolderId?: string | null): AssetMenuAction[] => [
+    { label: "SSH 连接", icon: "terminal", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "ssh") },
+    { label: "本地终端", icon: "terminal", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "local") },
+    { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "mysql") },
+    { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "postgresql") },
+  ];
+
+  const databaseConnectionActions = (targetFolderId?: string | null): AssetMenuAction[] => [
+    { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "mysql") },
+    { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "postgresql") },
+  ];
+
+  const moreActions = (): AssetMenuAction[] => [
+    { label: "通过文本批量导入 SSH", icon: "terminal", disabled: true },
+    { label: "ssh-copy-id", icon: "key", disabled: true },
+    { label: "批量创建 Docker 连接", icon: "docker", disabled: true, separatorBefore: true },
+    { label: "Ping", icon: "refresh", onSelect: () => void connectionStore.loadConnections() },
+    { label: "导入", icon: "import", onSelect: () => props.onOpenTransfer?.(), separatorBefore: true },
+    { label: "导出", icon: "export", onSelect: () => props.onOpenTransfer?.() },
+  ];
+
+  const copyConnectionInfo = (connection: ConnectionRecord) => {
+    const text = connection.protocol === "local"
+      ? `${connection.name}（本地终端）`
+      : `${connection.username || ""}@${connection.host}:${connection.port}`;
+    void navigator.clipboard.writeText(text);
+  };
+
+  const renameConnection = async (connection: ConnectionRecord) => {
+    const name = await feedback.prompt("请输入新的连接名称", connection.name, "重命名连接");
+    if (!name?.trim() || name.trim() === connection.name) return;
+    try {
+      const config = await api.getConnectionConfig(connection.id);
+      await connectionStore.saveConnection({ ...config, name: name.trim() });
+    } catch (error) {
+      feedback.error("重命名连接失败：" + error);
+    }
+  };
+
+  const connectionHeaderActions = (connection: ConnectionRecord): AssetMenuHeaderAction[] => [
+    { label: "复制连接信息", icon: "copy", onSelect: () => copyConnectionInfo(connection) },
+    { label: "剪切", icon: "scissors", disabled: true },
+    { label: "创建副本", icon: "copyPlus", onSelect: () => props.onCopyConnection?.(connection) },
+  ];
+
+  const connectionMenuItems = (connection: ConnectionRecord): AssetMenuAction[] => [
+    { label: "打开", icon: "play", shortcut: "Enter", onSelect: () => props.onConnect(connection) },
+    { label: "刷新", icon: "refresh", shortcut: "F5", onSelect: () => void connectionStore.loadConnections() },
+    { label: "新标签页打开", icon: "plus", shortcut: "Alt+N", onSelect: () => props.onConnect(connection) },
+    { label: "新窗口打开", icon: "copyPlus", shortcut: "Ctrl+Shift+N", disabled: true },
+    { label: "同屏打开", icon: "view", disabled: true },
+    { label: "新建目录", icon: "folder", separatorBefore: true, onSelect: () => props.onNewFolder?.(connection.folder_id ?? undefined) },
+    { label: "新建连接", icon: "link", children: newConnectionActions(connection.folder_id) },
+    { label: "新建数据库连接", icon: "database", children: databaseConnectionActions(connection.folder_id) },
+    { label: "克隆", icon: "copyPlus", onSelect: () => props.onCopyConnection?.(connection) },
+    { label: "编辑", icon: "edit", onSelect: () => props.onEdit(connection) },
+    { label: "删除", icon: "trash", shortcut: "Backspace", danger: true, onSelect: () => props.onDelete(connection) },
+    { label: "重命名", icon: "edit", shortcut: "F2", onSelect: () => void renameConnection(connection) },
+    { label: "更多", icon: "chevronDown", children: moreActions() },
+  ];
+
+  const folderMenuItems = (): AssetMenuAction[] => {
+    const folder = contextMenuFolder();
+    return [
+      { label: "新建目录", icon: "folder", onSelect: () => props.onNewFolder?.(folder?.id) },
+      { label: "新建连接", icon: "link", children: newConnectionActions(folder?.id) },
+      { label: "新建数据库连接", icon: "database", children: databaseConnectionActions(folder?.id) },
+      { label: "删除", icon: "trash", danger: true, disabled: !folder, separatorBefore: true, onSelect: () => { if (!folder) return; void (async () => { if (await feedback.confirm("确定要删除此文件夹吗？", "删除文件夹")) await connectionStore.deleteFolder(folder.id); })(); } },
+      { label: "重命名", icon: "edit", disabled: !folder, onSelect: () => { if (!folder) return; void (async () => { const nextName = await feedback.prompt("请输入新的文件夹名称", folder.name, "重命名文件夹"); if (nextName?.trim() && nextName.trim() !== folder.name) await connectionStore.renameFolder(folder.id, nextName.trim()); })(); } },
+      { label: "复制", icon: "copy", disabled: true },
+      { label: "剪切", icon: "scissors", disabled: true },
+      { label: "粘贴", icon: "copyPlus", disabled: true },
+      { label: "刷新", icon: "refresh", separatorBefore: true, onSelect: () => void connectionStore.loadConnections() },
+      { label: "更多", icon: "chevronDown", children: moreActions() },
+    ];
+  };
+
   const handleSidebarContextMenu = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -299,64 +382,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     setShowFolderMenu(true);
   };
 
-  // 命令式地把一个 fixed 定位的菜单调整到不超出视口。
-  // 溢出时把菜单的【左下角】贴近鼠标位置（contextMenuPos），
-  // 让菜单向【右上】展开——鼠标正好压在菜单最底部那一项（"移动此会话"），
-  // 用户不用移动鼠标就能看到所有菜单项。如果贴近鼠标后仍会超出顶/右边缘，
-  // 再做最后夹取。
-  const clampMenuToViewport = (el: HTMLElement, margin = 4) => {
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const winH = window.innerHeight;
-    const winW = window.innerWidth;
-    const overflowsBottom = rect.bottom > winH;
-    const overflowsRight = rect.right > winW;
-    if (!overflowsBottom && !overflowsRight) return;
-
-    // 菜单的左下角贴近鼠标位置。
-    const pos = contextMenuPos();
-    // menuLeft = mouseX
-    // menuTop  = mouseY - menuHeight  (即 menuBottom = mouseY)
-    let newLeft = pos.x;
-    let newTop = pos.y - rect.height;
-
-    // 防止菜单超出上边缘：菜单高度 > mouseY 时上提。
-    if (newTop < margin) {
-      newTop = margin;
-    }
-    // 防止菜单超出右边缘：菜单向右延伸到 mouseX + menuWidth，
-    // 如果超出视口右边，把 left 夹到合适位置。
-    if (newLeft + rect.width > winW - margin) {
-      newLeft = Math.max(margin, winW - rect.width - margin);
-    }
-    // 防止菜单超出左边缘（兜底）。
-    if (newLeft < margin) {
-      newLeft = margin;
-    }
-
-    el.style.left = newLeft + "px";
-    el.style.top = newTop + "px";
-    el.style.right = "auto";
-  };
-
-  // 共用的右键菜单挂载回调：
-  // 1. 立即把 element 定位到 cursor 位置（覆盖响应式 style 绑定），并先隐藏避免闪屏；
-  // 2. 用 requestAnimationFrame 等到下一帧布局稳定后，调用 clampMenuToViewport 调整位置；
-  // 3. 调整完成后显示菜单。
-  const attachContextMenuRef = (el: HTMLElement) => {
-    if (!el) return;
-    const pos = contextMenuPos();
-    el.style.position = "fixed";
-    el.style.left = pos.x + "px";
-    el.style.top = pos.y + "px";
-    el.style.visibility = "hidden";
-    requestAnimationFrame(() => {
-      if (!el.isConnected) return;
-      clampMenuToViewport(el);
-      el.style.visibility = "visible";
-    });
-  };
-
   // 整个窗口任意位置点击都应能关闭这两个右键菜单（仅在点击落在菜单外部时关闭）。
   // 菜单自身的 onClick={e => e.stopPropagation()} 已能阻止菜单项点击冒泡；这里只兜底：
   // 若 mousedown 落在 .context-menu 之外，则关闭菜单。
@@ -364,7 +389,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     const handleDocMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest(".context-menu")) return;
+      if (target.closest(".context-menu, .asset-context-menu")) return;
       setShowContextMenu(false);
       setShowFolderMenu(false);
     };
@@ -373,29 +398,38 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   });
 
   return (
-    <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} style={`--asset-sidebar-width:${props.width || 292}px`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
+    <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} style={`--asset-sidebar-width:${props.width || 286}px`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
       <nav class="module-rail" aria-label="功能导航">
-        <button class="module-rail-brand" title="PortNest">P</button>
         <div class="module-rail-primary">
+          <button class={`module-rail-btn module-rail-ai ${props.aiOpen ? "active" : ""}`} title="PortNest AI（Ctrl+Shift+A）" onClick={() => props.onOpenAI?.()}>
+            <span><Icon name="sparkles" /></span><small>AI</small>
+          </button>
           <button
-            class={`module-rail-btn ${uiStore.assetTreeVisible() ? "active" : ""}`}
-            title={uiStore.assetTreeVisible() ? "隐藏资产树" : "显示资产树"}
-            onClick={() => uiStore.toggleAssetTree()}
+            class={`module-rail-btn ${!props.aiOpen && uiStore.assetTreeVisible() ? "active" : ""}`}
+            title={props.aiOpen || !uiStore.assetTreeVisible() ? "显示资产树" : "收起资产树"}
+            onClick={() => {
+              if (props.aiOpen) {
+                props.onCloseAI?.();
+                uiStore.setAssetTreeVisible(true);
+                return;
+              }
+              uiStore.toggleAssetTree();
+            }}
           >
             <span><Icon name="assets" /></span><small>资产树</small>
           </button>
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "all" ? "active" : ""}`} title="显示全部" onClick={() => selectAssetFilter("all")}>
+          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "all" ? "active" : ""}`} title="显示全部" onClick={() => { props.onCloseAI?.(); selectAssetFilter("all"); }}>
             <span><Icon name="list" /></span><small>全部</small>
           </button>
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => selectAssetFilter("terminal")}>
+          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => { props.onCloseAI?.(); selectAssetFilter("terminal"); }}>
             <span><ProtocolIcon kind="ssh" /></span><small>终端</small>
           </button>
-          <button class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => selectAssetFilter("database")}>
-            <span><ProtocolIcon kind="mysql" /></span><small>数据库</small>
+          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => { props.onCloseAI?.(); selectAssetFilter("database"); }}>
+            <span><ProtocolIcon kind="database" /></span><small>数据库</small>
           </button>
         </div>
         <div class="module-rail-bottom">
-          <button class="module-rail-btn" title="设置" onClick={() => props.onOpenSettings?.()}>
+          <button class="module-rail-btn" title="设置" onClick={() => { props.onCloseAI?.(); props.onOpenSettings?.(); }}>
             <span><Icon name="settings" /></span><small>设置</small>
           </button>
         </div>
@@ -405,40 +439,29 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <div class="sidebar-header">
         <strong>资产列表</strong>
         <div class="sidebar-header-actions">
-          <button title="搜索" onClick={() => document.querySelector<HTMLInputElement>(".search-input")?.focus()}><Icon name="search" /></button>
+          <button title="搜索" onClick={() => { setSearchOpen(true); window.setTimeout(() => document.querySelector<HTMLInputElement>(".search-input")?.focus(), 0); }}><Icon name="search" /></button>
           <button title="新建连接" onClick={() => props.onNewConnection?.()}><Icon name="plus" /></button>
           <button title="新建文件夹" onClick={() => props.onNewFolder?.()}><Icon name="folder" /></button>
+          <button title="打开默认本地终端" onClick={() => props.onOpenLocalTerminal?.()}><Icon name="terminal" /></button>
           <button title="刷新" onClick={() => void connectionStore.loadConnections()}><Icon name="refresh" /></button>
         </div>
       </div>
 
-      <div class="sidebar-search">
-        <div class="search-wrapper">
-          <span class="search-icon"><Icon name="search" /></span>
-          <input
-            type="text"
-            placeholder="搜索连接..."
-            value={searchQuery()}
-            onInput={(e) => setSearchQuery(e.currentTarget.value)}
-            class="search-input"
-          />
+      <Show when={searchOpen()}>
+        <div class="sidebar-search">
+          <div class="search-wrapper">
+            <span class="search-icon"><Icon name="search" /></span>
+            <input
+              type="text"
+              placeholder="搜索连接..."
+              value={searchQuery()}
+              onInput={(e) => setSearchQuery(e.currentTarget.value)}
+              onKeyDown={event => { if (event.key === "Escape") { setSearchQuery(""); setSearchOpen(false); } }}
+              class="search-input"
+            />
+          </div>
         </div>
-      </div>
-
-      <div class="sidebar-actions">
-        <button class="action-btn" title="新建连接" onClick={() => props.onNewConnection?.()}>
-          <span><Icon name="plus" /></span>
-        </button>
-        <button class="action-btn" title="打开默认本地终端" onClick={() => props.onOpenLocalTerminal?.()}>
-          <span><ProtocolIcon kind="local" /></span>
-        </button>
-        <button class="action-btn" title="新建文件夹" onClick={() => props.onNewFolder?.()}>
-          <span><Icon name="folder" /></span>
-        </button>
-        <button class="action-btn" title="设置" onClick={() => props.onOpenSettings?.()}>
-          <span><Icon name="settings" /></span>
-        </button>
-      </div>
+      </Show>
 
       <div class="sidebar-nav" onContextMenu={handleSidebarContextMenu}>
         <div class="nav-section">
@@ -476,14 +499,14 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                     style={{ "margin-left": `${node.depth * 13}px` }}
                   >
                     <span class="folder-icon">
-                      {expandedFolders().has(folder.id) ? "📂" : "📁"}
+                      <Icon name={expandedFolders().has(folder.id) ? "folderOpen" : "folder"} size={15} />
                     </span>
                     <span class="folder-name">{folder.name}</span>
                     <span class="folder-count">
                       {folderConnectionCount(folder.id)}
                     </span>
-                    <span class="folder-toggle">
-                      {expandedFolders().has(folder.id) ? "▼" : "▶"}
+                    <span class={`folder-toggle ${expandedFolders().has(folder.id) ? "expanded" : ""}`}>
+                      <Icon name={expandedFolders().has(folder.id) ? "chevronDown" : "chevronRight"} size={14} />
                     </span>
                   </div>
                   <Show when={expandedFolders().has(folder.id)}>
@@ -545,168 +568,22 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       </div>
 
       <Show when={showContextMenu() && contextMenuConn()}>
-        <div
-          class="context-menu"
-          ref={attachContextMenuRef}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div class="context-menu-item" onClick={() => { props.onConnect(contextMenuConn()!); setShowContextMenu(false); }}>
-            连接
-          </div>
-          <Show when={contextMenuConn()?.protocol === "ssh"}>
-            <div class="context-menu-item" onClick={() => { props.onOpenTunnels?.(contextMenuConn()!); setShowContextMenu(false); }}>
-              SSH 隧道
-            </div>
-          </Show>
-          <Show when={contextMenuConn()?.protocol === "mysql"}>
-            <div class="context-menu-item" onClick={() => { void (async () => {
-              const connection = contextMenuConn()!;
-              const name = await feedback.prompt("输入数据库名称", "", "新建 MySQL 数据库");
-              if (!name?.trim()) return;
-              await api.mysqlConnect(connection.id);
-              await api.mysqlCreateDatabase(connection.id, name.trim(), "utf8mb4");
-              feedback.success(`数据库 ${name.trim()} 已创建`);
-              props.onConnect(connection);
-              setShowContextMenu(false);
-            })().catch(error => feedback.error("新建数据库失败：" + error)); }}>
-              新建数据库
-            </div>
-          </Show>
-          <div class="context-menu-item has-submenu">
-            <span>移动此会话</span>
-            <span class="submenu-arrow">›</span>
-            <div
-              class="context-submenu"
-              ref={(el) => {
-                if (!el) return;
-                // 子菜单初始是 display: none，ref 首次执行时尺寸是 0。
-                // 用 ResizeObserver 在子菜单变为可见（hover）时重新计算位置，
-                // 避免子菜单溢出屏幕。observer 在元素卸载时会被 GC。
-                const clampSubmenu = () => {
-                  const rect = el.getBoundingClientRect();
-                  if (rect.width === 0 || rect.height === 0) return;
-                  const winH = window.innerHeight;
-                  const winW = window.innerWidth;
-                  const parent = el.parentElement as HTMLElement | null;
-                  // 默认右侧展开；如果右侧溢出，翻转到父项的左侧。
-                  if (rect.right > winW) {
-                    el.style.left = "auto";
-                    el.style.right = "100%";
-                  }
-                  // 底部溢出：在父项范围内向上夹取。
-                  if (rect.bottom > winH && parent) {
-                    const parentRect = parent.getBoundingClientRect();
-                    const overflow = rect.bottom - winH;
-                    const newTop = -4 - overflow;
-                    el.style.top = Math.min(-4, Math.max(-(rect.height - parentRect.height), newTop)) + "px";
-                  }
-                  if (rect.top < 0) {
-                    el.style.top = "-4px";
-                  }
-                };
-                clampSubmenu();
-                const observer = new ResizeObserver(() => clampSubmenu());
-                observer.observe(el);
-              }}
-            >
-              <div
-                class={`context-menu-item ${!contextMenuConn()!.folder_id ? "is-current" : ""}`}
-                onClick={() => {
-                  connectionStore.moveConnectionToFolder(contextMenuConn()!.id, null);
-                  setShowContextMenu(false);
-                }}
-              >
-                根目录
-              </div>
-              <Show when={state.folders.length > 0}>
-                <div class="context-menu-divider" />
-              </Show>
-              <For each={state.folders}>
-                {(folder) => (
-                  <div
-                    class={`context-menu-item ${contextMenuConn()!.folder_id === folder.id ? "is-current" : ""}`}
-                    onClick={() => {
-                      connectionStore.moveConnectionToFolder(contextMenuConn()!.id, folder.id);
-                      setShowContextMenu(false);
-                    }}
-                  >
-                    {folder.name}
-                  </div>
-                )}
-              </For>
-              <Show when={state.folders.length === 0}>
-                <div class="context-menu-item disabled">（暂无文件夹可移入）</div>
-              </Show>
-            </div>
-          </div>
-          <div class="context-menu-divider" />
-          <div class="context-menu-item" onClick={() => { props.onEdit(contextMenuConn()!); setShowContextMenu(false); }}>
-            编辑
-          </div>
-          <div class="context-menu-item" onClick={() => { props.onCopyConnection?.(contextMenuConn()!); setShowContextMenu(false); }}>
-            复制
-          </div>
-          <div class="context-menu-item danger" onClick={() => { props.onDelete(contextMenuConn()!); setShowContextMenu(false); }}>
-            删除
-          </div>
-        </div>
+        <AssetContextMenu
+          x={contextMenuPos().x}
+          y={contextMenuPos().y}
+          headerActions={connectionHeaderActions(contextMenuConn()!)}
+          items={connectionMenuItems(contextMenuConn()!)}
+          onClose={() => setShowContextMenu(false)}
+        />
       </Show>
 
       <Show when={showFolderMenu()}>
-        <div
-          class="context-menu"
-          ref={attachContextMenuRef}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Show when={contextMenuFolder()}>
-            <div class="context-menu-item" onClick={() => {
-              props.onNewConnection?.(contextMenuFolder()!.id);
-              setShowFolderMenu(false);
-            }}>
-              📁 在此文件夹中新建连接
-            </div>
-            <div class="context-menu-item" onClick={() => {
-              props.onNewFolder?.(contextMenuFolder()!.id);
-              setShowFolderMenu(false);
-            }}>
-              📂 新建子文件夹
-            </div>
-            <div class="context-menu-divider" />
-            <div class="context-menu-item" onClick={() => { void (async () => {
-              const folder = contextMenuFolder()!;
-              const nextName = await feedback.prompt("请输入新的文件夹名称", folder.name, "重命名文件夹");
-              if (nextName?.trim() && nextName.trim() !== folder.name) {
-                await connectionStore.renameFolder(folder.id, nextName.trim());
-              }
-              setShowFolderMenu(false);
-            })(); }}>
-              ✎ 重命名文件夹
-            </div>
-            <div class="context-menu-item danger" onClick={() => { void (async () => {
-              const folder = contextMenuFolder()!;
-              if (await feedback.confirm(`确定要删除文件夹“${folder.name}”吗？`, "删除文件夹")) {
-                await connectionStore.deleteFolder(folder.id);
-              }
-              setShowFolderMenu(false);
-            })(); }}>
-              删除文件夹
-            </div>
-          </Show>
-          <Show when={!contextMenuFolder()}>
-            <div class="context-menu-item" onClick={() => {
-              props.onNewConnection?.();
-              setShowFolderMenu(false);
-            }}>
-              ➕ 新建连接
-            </div>
-            <div class="context-menu-item" onClick={() => {
-              props.onNewFolder?.();
-              setShowFolderMenu(false);
-            }}>
-              📁 新建文件夹
-            </div>
-          </Show>
-        </div>
+        <AssetContextMenu
+          x={contextMenuPos().x}
+          y={contextMenuPos().y}
+          items={folderMenuItems()}
+          onClose={() => setShowFolderMenu(false)}
+        />
       </Show>
 
       <div class="sidebar-footer">

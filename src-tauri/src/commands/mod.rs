@@ -4,6 +4,7 @@ use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -27,11 +28,14 @@ use crate::storage::{
     CommandSnippetRecord, ConnectionRecord, CredentialData, Database, SftpTransferRecord,
     SshKeyRecord,
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+pub mod ai;
 pub mod dashboard;
+pub mod database_admin;
 pub mod mysql_admin;
+pub mod postgres_admin;
 
 pub(crate) fn parse_connection_options(
     raw: Option<&str>,
@@ -383,6 +387,7 @@ pub struct AppState {
     pub(crate) ssh_session_pool: Arc<SshSessionPool>,
     pub(crate) docker_manager: Arc<DockerManager>,
     pub(crate) mysql_manager: Arc<mysql_admin::MysqlManager>,
+    pub(crate) postgres_manager: Arc<postgres_admin::PostgresManager>,
     pub(crate) dashboard_manager: Arc<dashboard::DashboardManager>,
 }
 
@@ -411,6 +416,7 @@ impl AppState {
             ssh_session_pool,
             docker_manager: Arc::new(DockerManager::new()),
             mysql_manager: Arc::new(mysql_admin::MysqlManager::new()),
+            postgres_manager: Arc::new(postgres_admin::PostgresManager::new()),
             dashboard_manager: Arc::new(dashboard::DashboardManager::new()),
         })
     }
@@ -731,7 +737,7 @@ pub async fn save_connection(
             serde_json::Value::String(database.trim().to_string()),
         );
     }
-    if config.protocol == "mysql" {
+    if matches!(config.protocol.as_str(), "mysql" | "postgresql") {
         if let Some(ssl_mode) = config
             .ssl_mode
             .as_ref()
@@ -3754,6 +3760,39 @@ pub async fn delete_ssh_key(state: tauri::State<'_, AppState>, id: String) -> Re
     state.db.delete_ssh_key(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.show().map_err(|error| error.to_string())?;
+        let _ = window.unminimize();
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        "settings",
+        tauri::WebviewUrl::App("index.html?window=settings".into()),
+    )
+    .title("PortNest 设置")
+    .inner_size(920.0, 720.0)
+    .min_inner_size(760.0, 560.0)
+    .center()
+    .resizable(true)
+    .decorations(false)
+    .build()
+    .map_err(|error| format!("无法创建设置窗口: {}", error))?;
+
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionExportBundle {
     pub version: u32,
@@ -3773,6 +3812,10 @@ pub struct SessionExportConnection {
 pub struct SessionImportResult {
     pub folders: usize,
     pub connections: usize,
+    pub skipped: usize,
+    pub password_required: usize,
+    pub private_key_required: usize,
+    pub warnings: Vec<String>,
 }
 
 #[tauri::command]
@@ -3858,6 +3901,20 @@ pub async fn import_sessions(
             .map_err(|e| e.to_string())?;
     }
     let count = bundle.connections.len();
+    let mut password_required = 0;
+    let mut private_key_required = 0;
+    for item in &bundle.connections {
+        let auth_type = item.credential.auth_type.as_str();
+        if auth_type.contains("password") && item.credential.password.is_none() {
+            password_required += 1;
+        }
+        if auth_type.contains("key")
+            && item.credential.private_key.is_none()
+            && item.credential.key_id.is_none()
+        {
+            private_key_required += 1;
+        }
+    }
     let connection_ids: HashMap<String, Uuid> = bundle
         .connections
         .iter()
@@ -3925,7 +3982,378 @@ pub async fn import_sessions(
     Ok(SessionImportResult {
         folders: bundle.folders.len(),
         connections: count,
+        skipped: 0,
+        password_required,
+        private_key_required,
+        warnings: Vec::new(),
     })
+}
+
+const XSHELL_WARNING_LIMIT: usize = 20;
+const XSHELL_MAX_FILE_SIZE: u64 = 2 * 1024 * 1024;
+const XSHELL_MAX_DEPTH: usize = 32;
+
+#[derive(Debug)]
+struct XshellSessionInfo {
+    name: String,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    auth_type: String,
+    password_present: bool,
+    key_name: Option<String>,
+    remark: Option<String>,
+    has_proxy: bool,
+    has_tunneling: bool,
+}
+
+fn decode_xshell_text(bytes: &[u8]) -> Result<String, String> {
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        if (bytes.len() - 2) % 2 != 0 {
+            return Err("Xshell 文件不是有效的 UTF-16LE 文本".to_string());
+        }
+        let units = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&units)
+            .map_err(|_| "Xshell 文件不是有效的 UTF-16LE 文本".to_string());
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        if (bytes.len() - 2) % 2 != 0 {
+            return Err("Xshell 文件不是有效的 UTF-16BE 文本".to_string());
+        }
+        let units = bytes[2..]
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16(&units)
+            .map_err(|_| "Xshell 文件不是有效的 UTF-16BE 文本".to_string());
+    }
+
+    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    if let Ok(text) = std::str::from_utf8(body) {
+        return Ok(text.to_string());
+    }
+
+    let (decoded, _, had_errors) = encoding_rs::GB18030.decode(body);
+    if had_errors {
+        Err("无法识别 Xshell 会话文件编码".to_string())
+    } else {
+        Ok(decoded.into_owned())
+    }
+}
+
+fn xshell_value<'a>(
+    sections: &'a HashMap<String, HashMap<String, String>>,
+    section: &str,
+    key: &str,
+) -> Option<&'a str> {
+    sections
+        .get(section)
+        .and_then(|values| values.get(key))
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_xshell_session(path: &Path) -> Result<XshellSessionInfo, String> {
+    let metadata = fs::metadata(path).map_err(|error| format!("读取文件信息失败: {error}"))?;
+    if metadata.len() > XSHELL_MAX_FILE_SIZE {
+        return Err("会话文件超过 2 MB，已跳过".to_string());
+    }
+    let bytes = fs::read(path).map_err(|error| format!("读取文件失败: {error}"))?;
+    let text = decode_xshell_text(&bytes)?;
+
+    let mut sections: HashMap<String, HashMap<String, String>> = HashMap::new();
+    let mut current_section = String::new();
+    for raw_line in text.lines() {
+        let line = raw_line.trim_matches('\u{feff}').trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            current_section = line[1..line.len() - 1].trim().to_ascii_lowercase();
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim().to_ascii_lowercase();
+            if key.is_empty() {
+                continue;
+            }
+            sections
+                .entry(current_section.clone())
+                .or_default()
+                .insert(key, value.trim().to_string());
+        }
+    }
+
+    let name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "无法读取会话名称".to_string())?
+        .to_string();
+
+    let protocol = xshell_value(&sections, "connection", "protocol")
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    if protocol != "SSH" && protocol != "SFTP" {
+        return Err(if protocol.is_empty() {
+            "未找到连接协议".to_string()
+        } else {
+            format!("暂不支持 {protocol} 协议")
+        });
+    }
+
+    let host = xshell_value(&sections, "connection", "host")
+        .ok_or_else(|| "未找到主机地址".to_string())?
+        .to_string();
+    let port = xshell_value(&sections, "connection", "port")
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(22);
+    let username = xshell_value(&sections, "connection:authentication", "username").map(str::to_string);
+    let password_present = xshell_value(&sections, "connection:authentication", "password").is_some();
+    let key_name = xshell_value(&sections, "connection:authentication", "userkey").map(str::to_string);
+    let auth_type = if password_present || key_name.is_none() {
+        "password"
+    } else {
+        "key"
+    }
+    .to_string();
+    let remark = xshell_value(&sections, "connection", "description").map(str::to_string);
+    let has_proxy = xshell_value(&sections, "connection:proxy", "proxy")
+        .map(|value| value != "0" && !value.eq_ignore_ascii_case("none"))
+        .unwrap_or(false);
+    let has_tunneling = xshell_value(&sections, "trace", "sshtunneling")
+        .or_else(|| xshell_value(&sections, "connection:ssh", "sshtunneling"))
+        .map(|value| value == "1")
+        .unwrap_or(false);
+
+    Ok(XshellSessionInfo {
+        name,
+        host,
+        port,
+        username,
+        auth_type,
+        password_present,
+        key_name,
+        remark,
+        has_proxy,
+        has_tunneling,
+    })
+}
+
+fn collect_xshell_entries(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    let mut directories = Vec::new();
+    let mut sessions = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            directories.push(path);
+        } else if file_type.is_file()
+            && path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(|value| value.eq_ignore_ascii_case("xsh"))
+                .unwrap_or(false)
+        {
+            sessions.push(path);
+        }
+    }
+    directories.sort_by_key(|path| path.to_string_lossy().to_lowercase());
+    sessions.sort_by_key(|path| path.to_string_lossy().to_lowercase());
+    Ok((directories, sessions))
+}
+
+fn push_xshell_warning(result: &mut SessionImportResult, warning: String) {
+    if result.warnings.len() < XSHELL_WARNING_LIMIT {
+        result.warnings.push(warning);
+    }
+}
+
+fn import_xshell_dir(
+    db: &Database,
+    dir: &Path,
+    parent_folder_id: Option<&str>,
+    depth: usize,
+    root: &Path,
+    result: &mut SessionImportResult,
+) -> Result<(), String> {
+    if depth > XSHELL_MAX_DEPTH {
+        push_xshell_warning(
+            result,
+            format!(
+                "目录层级超过 {} 层，已跳过：{}",
+                XSHELL_MAX_DEPTH,
+                dir.to_string_lossy()
+            ),
+        );
+        return Ok(());
+    }
+
+    let (directories, sessions) = match collect_xshell_entries(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            push_xshell_warning(
+                result,
+                format!("无法读取目录 {}：{error}", dir.to_string_lossy()),
+            );
+            return Ok(());
+        }
+    };
+
+    for (index, child_dir) in directories.iter().enumerate() {
+        let name = child_dir
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("未命名文件夹")
+            .to_string();
+        let folder_id = Uuid::new_v4();
+        db.save_folder(folder_id, &name, parent_folder_id, index as i32)
+            .map_err(|error| error.to_string())?;
+        result.folders += 1;
+        let folder_id_string = folder_id.to_string();
+        import_xshell_dir(
+            db,
+            child_dir,
+            Some(&folder_id_string),
+            depth + 1,
+            root,
+            result,
+        )?;
+    }
+
+    for session_path in &sessions {
+        let relative_path = session_path
+            .strip_prefix(root)
+            .unwrap_or(session_path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let info = match parse_xshell_session(session_path) {
+            Ok(info) => info,
+            Err(error) => {
+                result.skipped += 1;
+                push_xshell_warning(result, format!("{relative_path}：{error}"));
+                continue;
+            }
+        };
+
+        let credential_id = Uuid::new_v4();
+        let connection_id = Uuid::new_v4();
+        let credential = CredentialData {
+            auth_type: info.auth_type.clone(),
+            password: None,
+            private_key: None,
+            passphrase: None,
+            key_id: None,
+            proxy_password: None,
+        };
+        db.save_credential_structured(credential_id, &info.name, &info.auth_type, &credential)
+            .map_err(|error| error.to_string())?;
+
+        let mut protocol_options = HashMap::new();
+        protocol_options.insert("imported_from".to_string(), "xshell".to_string());
+        protocol_options.insert("xshell_source".to_string(), relative_path.clone());
+        if let Some(key_name) = &info.key_name {
+            protocol_options.insert("xshell_key_name".to_string(), key_name.clone());
+        }
+        if info.has_proxy {
+            protocol_options.insert("xshell_proxy_not_imported".to_string(), "true".to_string());
+        }
+        if info.has_tunneling {
+            protocol_options.insert("xshell_tunnel_not_imported".to_string(), "true".to_string());
+        }
+        let options = serde_json::to_string(&serde_json::json!({
+            "protocol_options": protocol_options
+        }))
+        .ok();
+
+        db.save_connection(
+            connection_id,
+            &info.name,
+            "ssh",
+            &info.host,
+            info.port,
+            info.username.as_deref(),
+            credential_id,
+            options.as_deref(),
+            info.remark.as_deref(),
+            None,
+            parent_folder_id,
+        )
+        .map_err(|error| error.to_string())?;
+
+        result.connections += 1;
+        if info.password_present {
+            result.password_required += 1;
+        }
+        if info.key_name.is_some() {
+            result.private_key_required += 1;
+        }
+        if info.has_proxy || info.has_tunneling {
+            push_xshell_warning(
+                result,
+                format!("{relative_path}：代理或隧道配置未导入，请在连接设置中补全"),
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn import_xshell_sessions(
+    state: tauri::State<'_, AppState>,
+    session_dir: String,
+) -> Result<SessionImportResult, String> {
+    let root = PathBuf::from(session_dir.trim());
+    if !root.is_dir() {
+        return Err(format!("Xshell 会话目录不存在：{}", root.to_string_lossy()));
+    }
+
+    let mut result = SessionImportResult {
+        folders: 0,
+        connections: 0,
+        skipped: 0,
+        password_required: 0,
+        private_key_required: 0,
+        warnings: Vec::new(),
+    };
+    import_xshell_dir(&state.db, &root, None, 0, &root, &mut result)?;
+
+    if result.connections == 0 && result.skipped == 0 {
+        return Err("该目录中未找到 Xshell .xsh 会话文件".to_string());
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn detect_xshell_sessions_dir() -> Option<String> {
+    let base = dirs::document_dir()?.join("NetSarang Computer");
+    let mut best: Option<(u32, PathBuf)> = None;
+    if let Ok(entries) = fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let version = entry
+                .file_name()
+                .to_string_lossy()
+                .parse::<u32>()
+                .unwrap_or(0);
+            let candidate = entry.path().join("Xshell").join("Sessions");
+            if candidate.is_dir() && best.as_ref().map(|(value, _)| version > *value).unwrap_or(true) {
+                best = Some((version, candidate));
+            }
+        }
+    }
+    best.map(|(_, path)| path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

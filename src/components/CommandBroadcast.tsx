@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import { templateStore } from "../stores/templateStore";
 import { sessionStore, type SessionTab } from "../stores/sessionStore";
+import { Icon } from "./Icon";
 import "./CommandBroadcast.css";
 
 interface Props { sessions: SessionTab[]; activeSessionId: string | null; onClose: () => void; height?: number; }
@@ -138,7 +139,7 @@ export const CommandBroadcast: Component<Props> = (props) => {
           <span class="rail-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7" /></svg></span>
         </button>
         <span class="rail-spacer" />
-        <button class="command-composer-close" title="关闭撰写栏" aria-label="关闭撰写栏" onClick={props.onClose}>×</button>
+        <button class="command-composer-close" title="关闭撰写栏" aria-label="关闭撰写栏" onClick={props.onClose}><Icon name="close" size={14} /></button>
       </nav>
       <main class="command-composer-main">
         <Show when={section() === "broadcast"}>

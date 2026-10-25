@@ -31,10 +31,12 @@ const setPathLinked = (value: boolean) => {
   localStorage.setItem("portnest-file-view-options", JSON.stringify(options));
 };
 
+const DATABASE_PROTOCOLS = new Set(["mysql", "postgresql"]);
+
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
-  if (filter === "database") return protocol === "mysql";
+  if (filter === "database") return DATABASE_PROTOCOLS.has(protocol);
   if (filter === "terminal") return protocol === "ssh" || protocol === "sftp" || protocol === "local";
-  return protocol === "ssh" || protocol === "sftp" || protocol === "local" || protocol === "mysql";
+  return protocol === "ssh" || protocol === "sftp" || protocol === "local" || DATABASE_PROTOCOLS.has(protocol);
 };
 
 export const uiStore = {

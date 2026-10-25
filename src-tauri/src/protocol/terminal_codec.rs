@@ -100,10 +100,7 @@ impl TerminalCodec {
                     // 容错解码：无效字节以 U+FFFD 替换，而不是中断会话。
                     // 终端输出可能是混编编码（如本地 ConPTY 的 UTF-8 文本里
                     // 混入少量 GBK 字节）或二进制数据，硬报错会让整个终端断开。
-                    tracing::debug!(
-                        "{} 输出包含无效字节，已替换为 U+FFFD",
-                        self.label
-                    );
+                    tracing::debug!("{} 输出包含无效字节，已替换为 U+FFFD", self.label);
                 }
                 if matches!(result, CoderResult::InputEmpty) && read == bytes.len() {
                     Ok(output)
@@ -206,7 +203,9 @@ mod tests {
         // UTF-8 的“版”（E7 89 88）在 GBK 下会在 88 + 换行处形成无效序列；
         // 容错模式下不应报错，无效字节应替换为 U+FFFD。
         let mut codec = TerminalCodec::new("GBK").unwrap();
-        let output = codec.decode(b"a\xe7\x89\x88\n").expect("decode must not fail");
+        let output = codec
+            .decode(b"a\xe7\x89\x88\n")
+            .expect("decode must not fail");
         assert!(output.contains('\u{FFFD}'), "输出应包含替换符: {output:?}");
     }
 }

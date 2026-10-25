@@ -1,5 +1,5 @@
 import { createSignal, type Setter } from "solid-js";
-import { api, type ConnectionRecord, type LocalShellProfile } from "../utils/api";
+import { api, isDatabaseProtocol, type ConnectionRecord, type LocalShellProfile } from "../utils/api";
 
 export type SessionStatus = "restored" | "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
 
@@ -72,7 +72,7 @@ const create = (
   const session: SessionTab = {
     id: newId(connection.id),
     connection,
-    viewMode: connection.protocol === "mysql" ? "database" : "terminal",
+    viewMode: isDatabaseProtocol(connection.protocol) ? "database" : "terminal",
     activeTab: "query",
     status,
     ...extra,
@@ -121,7 +121,7 @@ const hydrate = (connections: ConnectionRecord[]) => {
     return [{
       id: newId(connection.id),
       connection,
-      viewMode: (connection.protocol === "mysql" ? "database" : "terminal") as "database" | "terminal",
+      viewMode: (isDatabaseProtocol(connection.protocol) ? "database" : "terminal") as "database" | "terminal",
       activeTab: "query" as const,
       status: "restored" as const,
       displayName: tab.displayName,

@@ -191,69 +191,76 @@ impl SshBackend for RusshBackend {
             ..Default::default()
         };
 
-        let mut handle = tokio::time::timeout(timeout, client::connect_stream(Arc::new(config), stream, handler))
-            .await
-            .map_err(|_| Error::Timeout(format!("SSH 握手 {}:{} 超时", target.host, target.port)))?
-            .map_err(|error| {
-                let rejection = rejection.lock().expect("host-key rejection lock").take();
-                Error::ConnectionFailed(
-                    rejection.unwrap_or_else(|| format!("SSH 握手失败: {error}")),
-                )
-            })?;
+        let mut handle = tokio::time::timeout(
+            timeout,
+            client::connect_stream(Arc::new(config), stream, handler),
+        )
+        .await
+        .map_err(|_| Error::Timeout(format!("SSH 握手 {}:{} 超时", target.host, target.port)))?
+        .map_err(|error| {
+            let rejection = rejection.lock().expect("host-key rejection lock").take();
+            Error::ConnectionFailed(rejection.unwrap_or_else(|| format!("SSH 握手失败: {error}")))
+        })?;
 
-        let authenticated = tokio::time::timeout(timeout, async { Ok::<bool, Error>(match credential.credential_type {
-            CredentialType::Password => {
-                let password = credential
-                    .password
-                    .as_deref()
-                    .ok_or_else(|| Error::AuthenticationFailed("缺少密码".to_string()))?;
-                handle
-                    .authenticate_password(&target.username, password)
-                    .await
-                    .map_err(|error| Error::AuthenticationFailed(format!("密码认证失败: {error}")))?
-                    .success()
-            }
-            CredentialType::PrivateKey | CredentialType::PrivateKeyWithPassphrase => {
-                let private_key = credential
-                    .private_key
-                    .as_deref()
-                    .ok_or_else(|| Error::AuthenticationFailed("缺少私钥".to_string()))?;
-                let key = decode_secret_key(private_key, credential.passphrase.as_deref())
-                    .map_err(|error| {
-                        Error::AuthenticationFailed(format!("私钥解析失败: {error}"))
-                    })?;
-                let advertised_hash = handle.best_supported_rsa_hash().await.map_err(|error| {
-                    Error::AuthenticationFailed(format!("协商 RSA 签名算法失败: {error}"))
-                })?;
-                // Some OpenSSH servers do not send EXT_INFO soon enough while
-                // rejecting legacy ssh-rsa/SHA-1. In that case try the modern
-                // RSA algorithms first, then retain compatibility with old
-                // servers. Non-RSA keys ignore the hash selection.
-                let hashes = advertised_hash
-                    .map(|hash| vec![hash])
-                    .unwrap_or_else(|| vec![Some(HashAlg::Sha512), Some(HashAlg::Sha256), None]);
-                let key = Arc::new(key);
-                let mut success = false;
-                for hash in hashes {
-                    let result = handle
-                        .authenticate_publickey(
-                            &target.username,
-                            PrivateKeyWithHashAlg::new(key.clone(), hash),
-                        )
+        let authenticated = tokio::time::timeout(timeout, async {
+            Ok::<bool, Error>(match credential.credential_type {
+                CredentialType::Password => {
+                    let password = credential
+                        .password
+                        .as_deref()
+                        .ok_or_else(|| Error::AuthenticationFailed("缺少密码".to_string()))?;
+                    handle
+                        .authenticate_password(&target.username, password)
                         .await
                         .map_err(|error| {
-                            Error::AuthenticationFailed(format!("私钥认证失败: {error}"))
-                        })?;
-                    if result.success() {
-                        success = true;
-                        break;
-                    }
+                            Error::AuthenticationFailed(format!("密码认证失败: {error}"))
+                        })?
+                        .success()
                 }
-                success
-            }
-            CredentialType::Agent => authenticate_agent(&mut handle, &target.username).await?,
-        }) }).await
-            .map_err(|_| Error::Timeout(format!("SSH 认证 {}:{} 超时", target.host, target.port)))??;
+                CredentialType::PrivateKey | CredentialType::PrivateKeyWithPassphrase => {
+                    let private_key = credential
+                        .private_key
+                        .as_deref()
+                        .ok_or_else(|| Error::AuthenticationFailed("缺少私钥".to_string()))?;
+                    let key = decode_secret_key(private_key, credential.passphrase.as_deref())
+                        .map_err(|error| {
+                            Error::AuthenticationFailed(format!("私钥解析失败: {error}"))
+                        })?;
+                    let advertised_hash =
+                        handle.best_supported_rsa_hash().await.map_err(|error| {
+                            Error::AuthenticationFailed(format!("协商 RSA 签名算法失败: {error}"))
+                        })?;
+                    // Some OpenSSH servers do not send EXT_INFO soon enough while
+                    // rejecting legacy ssh-rsa/SHA-1. In that case try the modern
+                    // RSA algorithms first, then retain compatibility with old
+                    // servers. Non-RSA keys ignore the hash selection.
+                    let hashes = advertised_hash.map(|hash| vec![hash]).unwrap_or_else(|| {
+                        vec![Some(HashAlg::Sha512), Some(HashAlg::Sha256), None]
+                    });
+                    let key = Arc::new(key);
+                    let mut success = false;
+                    for hash in hashes {
+                        let result = handle
+                            .authenticate_publickey(
+                                &target.username,
+                                PrivateKeyWithHashAlg::new(key.clone(), hash),
+                            )
+                            .await
+                            .map_err(|error| {
+                                Error::AuthenticationFailed(format!("私钥认证失败: {error}"))
+                            })?;
+                        if result.success() {
+                            success = true;
+                            break;
+                        }
+                    }
+                    success
+                }
+                CredentialType::Agent => authenticate_agent(&mut handle, &target.username).await?,
+            })
+        })
+        .await
+        .map_err(|_| Error::Timeout(format!("SSH 认证 {}:{} 超时", target.host, target.port)))??;
 
         if !authenticated {
             return Err(Error::AuthenticationFailed("认证未成功".to_string()));
@@ -729,7 +736,10 @@ impl SftpHandle for RusshSftpHandle {
             offset = 0;
         }
         let result = async {
-            remote.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
+            remote
+                .seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(Error::IoError)?;
             let mut local = tokio::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -738,7 +748,9 @@ impl SftpHandle for RusshSftpHandle {
             let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
             let mut transferred = offset;
             let started = tokio::time::Instant::now();
-            if let Some(callback) = &progress { callback(transferred, total); }
+            if let Some(callback) = &progress {
+                callback(transferred, total);
+            }
             loop {
                 let count = tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -753,7 +765,9 @@ impl SftpHandle for RusshSftpHandle {
                 }
                 transferred += count as u64;
                 if let Some(limit) = rate_limit_bps.filter(|limit| *limit > 0) {
-                    let expected = Duration::from_secs_f64(transferred.saturating_sub(offset) as f64 / limit as f64);
+                    let expected = Duration::from_secs_f64(
+                        transferred.saturating_sub(offset) as f64 / limit as f64,
+                    );
                     if expected > started.elapsed() {
                         tokio::select! {
                             _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -771,13 +785,19 @@ impl SftpHandle for RusshSftpHandle {
             let had_destination = tokio::fs::try_exists(local_path).await.unwrap_or(false);
             if had_destination {
                 let _ = tokio::fs::remove_file(&backup).await;
-                tokio::fs::rename(local_path, &backup).await.map_err(Error::IoError)?;
+                tokio::fs::rename(local_path, &backup)
+                    .await
+                    .map_err(Error::IoError)?;
             }
             if let Err(error) = tokio::fs::rename(&partial_path, local_path).await {
-                if had_destination { let _ = tokio::fs::rename(&backup, local_path).await; }
+                if had_destination {
+                    let _ = tokio::fs::rename(&backup, local_path).await;
+                }
                 return Err(Error::IoError(error));
             }
-            if had_destination { let _ = tokio::fs::remove_file(&backup).await; }
+            if had_destination {
+                let _ = tokio::fs::remove_file(&backup).await;
+            }
             Ok::<u64, Error>(transferred)
         }
         .await;
@@ -816,12 +836,20 @@ impl SftpHandle for RusshSftpHandle {
             .await
             .map_err(|error| protocol_error("创建远程文件失败", error))?;
         let result = async {
-            local.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
-            remote.seek(std::io::SeekFrom::Start(offset)).await.map_err(Error::IoError)?;
+            local
+                .seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(Error::IoError)?;
+            remote
+                .seek(std::io::SeekFrom::Start(offset))
+                .await
+                .map_err(Error::IoError)?;
             let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
             let mut transferred = offset;
             let started = tokio::time::Instant::now();
-            if let Some(callback) = &progress { callback(transferred, total); }
+            if let Some(callback) = &progress {
+                callback(transferred, total);
+            }
             loop {
                 let count = tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -836,7 +864,9 @@ impl SftpHandle for RusshSftpHandle {
                 }
                 transferred += count as u64;
                 if let Some(limit) = rate_limit_bps.filter(|limit| *limit > 0) {
-                    let expected = Duration::from_secs_f64(transferred.saturating_sub(offset) as f64 / limit as f64);
+                    let expected = Duration::from_secs_f64(
+                        transferred.saturating_sub(offset) as f64 / limit as f64,
+                    );
                     if expected > started.elapsed() {
                         tokio::select! {
                             _ = cancel.cancelled() => return Err(Error::TransferCancelled),
@@ -854,14 +884,20 @@ impl SftpHandle for RusshSftpHandle {
             let had_destination = self.session.metadata(remote_path).await.is_ok();
             if had_destination {
                 let _ = self.session.remove_file(&backup).await;
-                self.session.rename(remote_path, &backup).await
+                self.session
+                    .rename(remote_path, &backup)
+                    .await
                     .map_err(|error| protocol_error("备份远程目标失败", error))?;
             }
             if let Err(error) = self.session.rename(&partial_path, remote_path).await {
-                if had_destination { let _ = self.session.rename(&backup, remote_path).await; }
+                if had_destination {
+                    let _ = self.session.rename(&backup, remote_path).await;
+                }
                 return Err(protocol_error("提交上传文件失败", error));
             }
-            if had_destination { let _ = self.session.remove_file(&backup).await; }
+            if had_destination {
+                let _ = self.session.remove_file(&backup).await;
+            }
             Ok::<u64, Error>(transferred)
         }
         .await;
@@ -924,7 +960,9 @@ impl SftpHandle for RusshSftpHandle {
         let mut buffer = vec![0_u8; TRANSFER_CHUNK_SIZE];
         loop {
             let count = remote.read(&mut buffer).await.map_err(Error::IoError)?;
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             digest.update(&buffer[..count]);
         }
         Ok(format!("{:x}", digest.finalize()))
@@ -958,12 +996,22 @@ impl SftpHandle for RusshSftpHandle {
     }
 
     async fn read_file(&self, path: &str, max_bytes: usize) -> Result<Vec<u8>> {
-        let remote = self.session.open(path).await.map_err(|error| protocol_error("打开远程文件失败", error))?;
+        let remote = self
+            .session
+            .open(path)
+            .await
+            .map_err(|error| protocol_error("打开远程文件失败", error))?;
         let mut limited = remote.take(max_bytes as u64 + 1);
         let mut data = Vec::new();
-        limited.read_to_end(&mut data).await.map_err(Error::IoError)?;
+        limited
+            .read_to_end(&mut data)
+            .await
+            .map_err(Error::IoError)?;
         if data.len() > max_bytes {
-            return Err(Error::ProtocolError(format!("文件超过编辑上限 {} 字节", max_bytes)));
+            return Err(Error::ProtocolError(format!(
+                "文件超过编辑上限 {} 字节",
+                max_bytes
+            )));
         }
         Ok(data)
     }
@@ -972,20 +1020,40 @@ impl SftpHandle for RusshSftpHandle {
         let original = self.session.metadata(path).await.ok();
         let partial = format!("{path}.portnest.edit");
         let backup = format!("{path}.portnest.backup");
-        let mut remote = self.session.create(&partial).await.map_err(|error| protocol_error("创建远程编辑临时文件失败", error))?;
+        let mut remote = self
+            .session
+            .create(&partial)
+            .await
+            .map_err(|error| protocol_error("创建远程编辑临时文件失败", error))?;
         remote.write_all(data).await.map_err(Error::IoError)?;
         remote.flush().await.map_err(Error::IoError)?;
         remote.shutdown().await.map_err(Error::IoError)?;
         if let Some(metadata) = &original {
-            let _ = self.session.set_metadata(&partial, FileAttributes { permissions: metadata.permissions, ..FileAttributes::empty() }).await;
+            let _ = self
+                .session
+                .set_metadata(
+                    &partial,
+                    FileAttributes {
+                        permissions: metadata.permissions,
+                        ..FileAttributes::empty()
+                    },
+                )
+                .await;
             let _ = self.session.remove_file(&backup).await;
-            self.session.rename(path, &backup).await.map_err(|error| protocol_error("备份远程文件失败", error))?;
+            self.session
+                .rename(path, &backup)
+                .await
+                .map_err(|error| protocol_error("备份远程文件失败", error))?;
         }
         if let Err(error) = self.session.rename(&partial, path).await {
-            if original.is_some() { let _ = self.session.rename(&backup, path).await; }
+            if original.is_some() {
+                let _ = self.session.rename(&backup, path).await;
+            }
             return Err(protocol_error("保存远程文件失败", error));
         }
-        if original.is_some() { let _ = self.session.remove_file(&backup).await; }
+        if original.is_some() {
+            let _ = self.session.remove_file(&backup).await;
+        }
         Ok(())
     }
 
@@ -1064,9 +1132,10 @@ async fn connect_transport(
 ) -> Result<(BoxedIo, Option<Arc<dyn SshSession>>)> {
     if let Some(proxy) = &options.proxy {
         if proxy.proxy_type == "ssh_jump" {
-            let jump = proxy.jump.as_ref().ok_or_else(|| {
-                Error::InvalidConfig("SSH 跳板机配置尚未解析".to_string())
-            })?;
+            let jump = proxy
+                .jump
+                .as_ref()
+                .ok_or_else(|| Error::InvalidConfig("SSH 跳板机配置尚未解析".to_string()))?;
             if jump
                 .options
                 .proxy
@@ -1078,11 +1147,15 @@ async fn connect_transport(
             let jump_session = RusshBackend
                 .connect(&jump.target, &jump.credential, &jump.options)
                 .await
-                .map_err(|error| Error::ConnectionFailed(format!("连接 SSH 跳板机失败: {error}")))?;
+                .map_err(|error| {
+                    Error::ConnectionFailed(format!("连接 SSH 跳板机失败: {error}"))
+                })?;
             let stream = jump_session
                 .open_direct_tcpip(&target.host, target.port, "127.0.0.1", 0)
                 .await
-                .map_err(|error| Error::ConnectionFailed(format!("跳板机打开目标通道失败: {error}")))?;
+                .map_err(|error| {
+                    Error::ConnectionFailed(format!("跳板机打开目标通道失败: {error}"))
+                })?;
             return Ok((stream, Some(jump_session)));
         }
         let mut stream = tokio::net::TcpStream::connect((&*proxy.host, proxy.port))
@@ -1165,10 +1238,15 @@ mod tests {
             stream.read_exact(&mut request).await.unwrap();
             assert_eq!(&request[..5], &[5, 1, 0, 3, 11]);
             assert_eq!(&request[5..16], b"example.com");
-            stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 22]).await.unwrap();
+            stream
+                .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 22])
+                .await
+                .unwrap();
         });
         let mut client = TcpStream::connect(address).await.unwrap();
-        socks5_connect(&mut client, "example.com", 22, None, None).await.unwrap();
+        socks5_connect(&mut client, "example.com", 22, None, None)
+            .await
+            .unwrap();
         server.await.unwrap();
     }
 
@@ -1183,7 +1261,9 @@ mod tests {
             stream.write_all(&[5, 1]).await.unwrap();
         });
         let mut client = TcpStream::connect(address).await.unwrap();
-        assert!(socks5_connect(&mut client, "example.com", 22, None, None).await.is_err());
+        assert!(socks5_connect(&mut client, "example.com", 22, None, None)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -1196,15 +1276,22 @@ mod tests {
             loop {
                 let byte = stream.read_u8().await.unwrap();
                 request.push(byte);
-                if request.ends_with(b"\r\n\r\n") { break; }
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
             }
             let request = String::from_utf8(request).unwrap();
             assert!(request.starts_with("CONNECT [::1]:22 HTTP/1.1\r\n"));
             assert!(request.contains("Proxy-Authorization: Basic "));
-            stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .unwrap();
         });
         let mut client = TcpStream::connect(address).await.unwrap();
-        http_connect(&mut client, "::1", 22, Some("user"), Some("pass")).await.unwrap();
+        http_connect(&mut client, "::1", 22, Some("user"), Some("pass"))
+            .await
+            .unwrap();
         server.await.unwrap();
     }
 }
@@ -1327,7 +1414,9 @@ async fn http_connect(
             break;
         }
         if response.len() >= 16 * 1024 {
-            return Err(Error::ProtocolError("HTTP CONNECT 响应头超过 16 KiB".to_string()));
+            return Err(Error::ProtocolError(
+                "HTTP CONNECT 响应头超过 16 KiB".to_string(),
+            ));
         }
     }
     let status = String::from_utf8_lossy(&response);

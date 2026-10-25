@@ -8,7 +8,7 @@ pub use vault::CredentialVault;
 
 use base64::Engine;
 use parking_lot::Mutex;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -305,9 +305,42 @@ impl Database {
                 updated_at INTEGER NOT NULL
             )",
             [],
-        ).map_err(|e| Error::StorageError(format!("创建命令片段表失败: {}", e)))?;
+        )
+        .map_err(|e| Error::StorageError(format!("创建命令片段表失败: {}", e)))?;
         conn.execute("CREATE INDEX IF NOT EXISTS idx_command_snippets_kind ON command_snippets(kind, updated_at DESC)", [])
             .map_err(|e| Error::StorageError(format!("创建命令片段索引失败: {}", e)))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_secrets (
+                id TEXT PRIMARY KEY,
+                encrypted_data TEXT NOT NULL,
+                iv TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建应用密钥表失败: {}", e)))?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ai_tool_audit (
+                id TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                connection_id TEXT,
+                mode TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                risk TEXT NOT NULL,
+                status TEXT NOT NULL,
+                result TEXT
+            )",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 AI 工具审计表失败: {}", e)))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_tool_audit_created_at ON ai_tool_audit(created_at DESC)",
+            [],
+        )
+        .map_err(|e| Error::StorageError(format!("创建 AI 工具审计索引失败: {}", e)))?;
 
         // 上次进程退出时仍在运行的任务不能继续持有内存中的 SFTP 句柄，启动后明确标记为中断。
         conn.execute(
@@ -359,6 +392,113 @@ impl Database {
         Ok(())
     }
 
+    pub fn save_ai_tool_audit(&self, record: &AiToolAuditRecord) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO ai_tool_audit
+             (id, created_at, connection_id, mode, tool_name, payload, risk, status, result)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                record.id,
+                record.created_at,
+                record.connection_id,
+                record.mode,
+                record.tool_name,
+                record.payload,
+                record.risk,
+                record.status,
+                record.result
+            ],
+        )
+        .map_err(|e| Error::StorageError(format!("保存 AI 工具审计失败: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn list_ai_tool_audit(&self, limit: u32) -> Result<Vec<AiToolAuditRecord>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, created_at, connection_id, mode, tool_name, payload, risk, status, result
+                 FROM ai_tool_audit ORDER BY created_at DESC LIMIT ?1",
+            )
+            .map_err(|e| Error::StorageError(format!("读取 AI 工具审计失败: {}", e)))?;
+        let rows = stmt
+            .query_map(params![limit.max(1).min(500)], |row| {
+                Ok(AiToolAuditRecord {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    connection_id: row.get(2)?,
+                    mode: row.get(3)?,
+                    tool_name: row.get(4)?,
+                    payload: row.get(5)?,
+                    risk: row.get(6)?,
+                    status: row.get(7)?,
+                    result: row.get(8)?,
+                })
+            })
+            .map_err(|e| Error::StorageError(format!("读取 AI 工具审计失败: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::StorageError(format!("读取 AI 工具审计失败: {}", e)))?;
+        Ok(rows)
+    }
+
+    pub fn clear_ai_tool_audit(&self) -> Result<()> {
+        let conn = self.conn.lock();
+        conn.execute("DELETE FROM ai_tool_audit", [])
+            .map_err(|e| Error::StorageError(format!("清空 AI 工具审计失败: {}", e)))?;
+        Ok(())
+    }
+
+    /// 保存一份加密的 JSON 设置（例如 AI 供应商配置）。
+    pub fn save_secret_json(&self, id: &str, value: &serde_json::Value) -> Result<()> {
+        let plaintext = serde_json::to_vec(value)
+            .map_err(|e| Error::StorageError(format!("序列化加密设置失败: {}", e)))?;
+        let (encrypted, iv) = self.vault.encrypt(&plaintext)?;
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO app_secrets (id, encrypted_data, iv, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               encrypted_data = excluded.encrypted_data,
+               iv = excluded.iv,
+               updated_at = excluded.updated_at",
+            params![
+                id,
+                base64::engine::general_purpose::STANDARD.encode(encrypted),
+                base64::engine::general_purpose::STANDARD.encode(iv),
+                chrono::Utc::now().timestamp()
+            ],
+        )
+        .map_err(|e| Error::StorageError(format!("保存加密设置失败: {}", e)))?;
+        Ok(())
+    }
+
+    /// 读取一份加密的 JSON 设置。
+    pub fn get_secret_json(&self, id: &str) -> Result<Option<serde_json::Value>> {
+        let conn = self.conn.lock();
+        let row: Option<(String, String)> = conn
+            .query_row(
+                "SELECT encrypted_data, iv FROM app_secrets WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| Error::StorageError(format!("读取加密设置失败: {}", e)))?;
+        let Some((encrypted, iv)) = row else {
+            return Ok(None);
+        };
+        let encrypted = base64::engine::general_purpose::STANDARD
+            .decode(encrypted)
+            .map_err(|e| Error::EncryptionError(format!("解码加密设置失败: {}", e)))?;
+        let iv = base64::engine::general_purpose::STANDARD
+            .decode(iv)
+            .map_err(|e| Error::EncryptionError(format!("解码加密设置 IV 失败: {}", e)))?;
+        let plaintext = self.vault.decrypt(&encrypted, &iv)?;
+        let value = serde_json::from_slice(&plaintext)
+            .map_err(|e| Error::StorageError(format!("解析加密设置失败: {}", e)))?;
+        Ok(Some(value))
+    }
+
     pub fn save_command_snippet(&self, item: &CommandSnippetRecord) -> Result<()> {
         let conn = self.conn.lock();
         conn.execute(
@@ -372,23 +512,42 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_command_snippets(&self, kind: Option<&str>, query: Option<&str>) -> Result<Vec<CommandSnippetRecord>> {
+    pub fn list_command_snippets(
+        &self,
+        kind: Option<&str>,
+        query: Option<&str>,
+    ) -> Result<Vec<CommandSnippetRecord>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, kind, name, description, content, folder, tags, variables, favorite, created_at, updated_at
              FROM command_snippets WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR name LIKE '%' || ?2 || '%' OR content LIKE '%' || ?2 || '%')
              ORDER BY favorite DESC, updated_at DESC"
         ).map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))?;
-        let rows = stmt.query_map(params![kind, query], |row| Ok(CommandSnippetRecord {
-            id: row.get(0)?, kind: row.get(1)?, name: row.get(2)?, description: row.get(3)?, content: row.get(4)?,
-            folder: row.get(5)?, tags: row.get(6)?, variables: row.get(7)?, favorite: row.get::<_, i32>(8)? != 0,
-            created_at: row.get(9)?, updated_at: row.get(10)?,
-        })).map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))?;
-        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))
+        let rows = stmt
+            .query_map(params![kind, query], |row| {
+                Ok(CommandSnippetRecord {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    content: row.get(4)?,
+                    folder: row.get(5)?,
+                    tags: row.get(6)?,
+                    variables: row.get(7)?,
+                    favorite: row.get::<_, i32>(8)? != 0,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
+                })
+            })
+            .map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::StorageError(format!("读取命令片段失败: {}", e)))
     }
 
     pub fn delete_command_snippet(&self, id: &str) -> Result<()> {
-        self.conn.lock().execute("DELETE FROM command_snippets WHERE id = ?1", params![id])
+        self.conn
+            .lock()
+            .execute("DELETE FROM command_snippets WHERE id = ?1", params![id])
             .map_err(|e| Error::StorageError(format!("删除命令片段失败: {}", e)))?;
         Ok(())
     }
@@ -912,8 +1071,8 @@ impl Database {
         error: Option<&str>,
     ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
-        let completed_at = matches!(status, "done" | "skipped" | "cancelled" | "error")
-            .then_some(now);
+        let completed_at =
+            matches!(status, "done" | "skipped" | "cancelled" | "error").then_some(now);
         self.conn
             .lock()
             .execute(
@@ -1088,6 +1247,19 @@ pub struct SftpTransferRecord {
     pub completed_at: Option<i64>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AiToolAuditRecord {
+    pub id: String,
+    pub created_at: i64,
+    pub connection_id: Option<String>,
+    pub mode: String,
+    pub tool_name: String,
+    pub payload: String,
+    pub risk: String,
+    pub status: String,
+    pub result: Option<String>,
+}
+
 #[cfg(test)]
 mod sftp_transfer_tests {
     use super::{Database, SftpTransferRecord};
@@ -1116,25 +1288,49 @@ mod sftp_transfer_tests {
 
     #[test]
     fn persists_progress_and_marks_running_tasks_interrupted_after_restart() {
-        let directory = std::env::temp_dir().join(format!("portnest-sftp-test-{}", uuid::Uuid::new_v4()));
+        let directory =
+            std::env::temp_dir().join(format!("portnest-sftp-test-{}", uuid::Uuid::new_v4()));
         {
             let database = Database::new(directory.clone()).unwrap();
-            database.conn.lock().execute(
-                "INSERT INTO connections
+            database
+                .conn
+                .lock()
+                .execute(
+                    "INSERT INTO connections
                  (id, name, protocol, host, port, credential_id, created_at, updated_at)
                  VALUES ('connection-1', 'test', 'sftp', 'localhost', 22, 'credential-1', 1, 1)",
-                [],
-            ).unwrap();
+                    [],
+                )
+                .unwrap();
             database.save_sftp_transfer(&record("running")).unwrap();
-            database.update_sftp_transfer("transfer-1", "running", 512, 1024, "C:\\tmp\\file.bin", None, None).unwrap();
-            assert_eq!(database.get_sftp_transfer("transfer-1").unwrap().transferred, 512);
+            database
+                .update_sftp_transfer(
+                    "transfer-1",
+                    "running",
+                    512,
+                    1024,
+                    "C:\\tmp\\file.bin",
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                database
+                    .get_sftp_transfer("transfer-1")
+                    .unwrap()
+                    .transferred,
+                512
+            );
         }
         {
             let database = Database::new(directory.clone()).unwrap();
             let recovered = database.get_sftp_transfer("transfer-1").unwrap();
             assert_eq!(recovered.status, "interrupted");
             assert_eq!(recovered.transferred, 512);
-            assert_eq!(database.list_sftp_transfers("connection-1").unwrap().len(), 1);
+            assert_eq!(
+                database.list_sftp_transfers("connection-1").unwrap().len(),
+                1
+            );
         }
         let _ = std::fs::remove_dir_all(directory);
     }

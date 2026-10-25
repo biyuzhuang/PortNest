@@ -1,9 +1,11 @@
 import { Component, For, Index, Show, createSignal, onMount } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { api, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
+import { api, isDatabaseProtocol, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
 import { Icon } from "./Icon";
+import { ProtocolIcon } from "./ProtocolIcon";
+import { SelectMenu } from "./SelectMenu";
 
 interface ConnectionFormProps {
   connection?: ConnectionConfig;
@@ -19,6 +21,9 @@ type TabType = "general" | "tunnel" | "proxy" | "advanced";
 const COLORS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#32b4d4", "#2589e8", "#9b51e0", "#8e8e93"];
 const ENCODINGS = ["UTF-8", "GBK", "GB2312", "GB18030", "Big5", "Shift-JIS", "EUC-KR", "ISO-8859-1", "Windows-1252", "CP437"];
 const LOCAL_ENCODINGS = ["auto", ...ENCODINGS];
+const DEFAULT_DATABASE_PORT: Record<string, number> = { mysql: 3306, postgresql: 5432 };
+const databasePort = (protocol?: string) => DEFAULT_DATABASE_PORT[protocol || ""] || 22;
+const protocolLabel = (protocol: string) => protocol === "postgresql" ? "PostgreSQL" : protocol === "mysql" ? "MySQL" : protocol === "local" ? "本地终端" : "SSH";
 
 export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
@@ -32,7 +37,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [customCommand, setCustomCommand] = createSignal(props.connection?.custom_command || "");
   const [name, setName] = createSignal(props.connection?.name || "");
   const [host, setHost] = createSignal(props.connection?.host || "");
-  const [port, setPort] = createSignal(props.connection?.port || (props.defaultProtocol === "mysql" ? 3306 : 22));
+  const [port, setPort] = createSignal(props.connection?.port || databasePort(props.connection?.protocol || props.defaultProtocol));
   const [username, setUsername] = createSignal(props.connection?.username || "root");
   const [authType, setAuthType] = createSignal(props.connection?.auth_type === "key_with_passphrase" ? "key" : props.connection?.auth_type || "password");
   const [password, setPassword] = createSignal(props.connection?.password || "");
@@ -53,11 +58,65 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [database, setDatabase] = createSignal(props.connection?.database || "");
-  const [sslMode, setSslMode] = createSignal(props.connection?.ssl_mode || "disabled");
+  const [sslMode, setSslMode] = createSignal(props.connection?.ssl_mode || ((props.connection?.protocol || props.defaultProtocol) === "postgresql" ? "prefer" : "disabled"));
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
   const [tunnelRules, setTunnelRules] = createSignal<TunnelRule[]>(props.connection?.tunnel_rules || []);
 
-  const visibleTabs = (): Array<[TabType, string]> => protocol() === "local" || protocol() === "mysql"
+  const isDatabase = () => isDatabaseProtocol(protocol());
+  const [touched, setTouched] = createSignal<Set<string>>(new Set());
+  const markTouched = (field: string) => setTouched(previous => {
+    if (previous.has(field)) return previous;
+    const next = new Set(previous);
+    next.add(field);
+    return next;
+  });
+  const fieldInvalid = (field: string, invalid: boolean) => touched().has(field) && invalid;
+  const protocolIconKind = () => protocol() === "local" ? "local" : isDatabase() ? "database" : "ssh";
+  const protocolDescription = (id: string) => id === "local"
+    ? "本机终端"
+    : id === "mysql"
+      ? "关系型数据库"
+      : id === "postgresql"
+        ? "关系型数据库"
+        : "远程终端与文件传输";
+  const modalTitle = () => props.connection?.id
+    ? `编辑 ${protocolLabel(protocol())} 连接`
+    : `新建 ${protocolLabel(protocol())} 连接`;
+  const modalSubtitle = () => protocol() === "local"
+    ? "配置本机终端类型和工作目录"
+    : isDatabase()
+      ? "配置数据库地址、认证信息和 SSL 连接选项"
+      : "配置远程主机、身份认证、代理和隧道";
+  const validationHint = () => !name().trim()
+    ? "请填写连接名称"
+    : protocol() !== "local" && !host().trim()
+      ? "请填写主机地址"
+      : isDatabase() && !username().trim()
+        ? `请填写 ${protocolLabel(protocol())} 用户名`
+        : protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id
+          ? "请填写 SSH 密码"
+          : "请检查连接配置";
+
+  const selectProtocol = (next: string) => {
+    setProtocol(next);
+    setTouched(new Set<string>());
+    if (next === "local") {
+      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
+      if (encoding() === "UTF-8") setEncoding("auto");
+      setPort(0);
+      return;
+    }
+    if (isDatabaseProtocol(next)) {
+      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
+      setAuthType("password");
+      setPort(databasePort(next));
+      setSslMode(next === "postgresql" ? "prefer" : "disabled");
+      return;
+    }
+    if (encoding() === "auto") setEncoding("UTF-8");
+    setPort(22);
+  };
+  const visibleTabs = (): Array<[TabType, string]> => protocol() === "local" || isDatabase()
     ? [["general", "常规"], ["advanced", "高级"]]
     : [["general", "常规"], ["tunnel", "隧道"], ["proxy", "代理"], ["advanced", "高级"]];
 
@@ -75,7 +134,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       return shellType() !== "custom" || customCommand().trim().length > 0;
     }
     if (!host().trim()) return false;
-    if (protocol() === "mysql") return Boolean(username().trim()) && port() > 0 && port() <= 65535;
+    if (isDatabase()) return Boolean(username().trim()) && port() > 0 && port() <= 65535;
     if (authType() === "password" && !password() && !props.connection?.id) return false;
     if ((authType() === "key" || authType() === "key_with_passphrase") &&
         !keyId() && !privateKey() && !props.connection?.id) return false;
@@ -113,7 +172,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       host: host().trim(),
       port: port(),
       username: username().trim(),
-      auth_type: protocol() === "mysql" ? "password" : authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
+      auth_type: isDatabase() ? "password" : authType() === "key" && passphrase() ? "key_with_passphrase" : authType(),
       password: authType() === "password" ? password() : undefined,
       private_key: authType() === "key" || authType() === "key_with_passphrase" ? privateKey() : undefined,
       key_id: authType() === "key" || authType() === "key_with_passphrase" ? keyId() || undefined : undefined,
@@ -125,8 +184,8 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       proxy_password: proxyPassword() || undefined,
       jump_connection_id: proxyType() === "ssh_jump" ? jumpConnectionId() || undefined : undefined,
       tunnel_rules: tunnelRules(),
-      database: protocol() === "mysql" ? database().trim() || undefined : undefined,
-      ssl_mode: protocol() === "mysql" ? sslMode() : undefined,
+      database: isDatabase() ? database().trim() || undefined : undefined,
+      ssl_mode: isDatabase() ? sslMode() : undefined,
     };
   };
 
@@ -219,181 +278,254 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       disabled={disabled}
       onClick={() => !disabled && setAuthType(value)}
     >
-      {label}
+      <Icon name={value === "key" ? "key" : value === "agent" ? "settings" : "terminal"} size={14} />
+      <span>{label}</span>
     </button>
   );
 
   return (
     <div class="modal-overlay ssh-config-overlay" onClick={props.onCancel}>
-      <div class="ssh-config-modal" onClick={event => event.stopPropagation()}>
-        <header class="ssh-config-header">
-          <h2>{protocol() === "local" ? "本地终端配置" : protocol() === "mysql" ? "MySQL 连接配置" : "SSH 连接配置"}</h2>
+      <div class="ssh-config-modal connect-modal-v2" onClick={event => event.stopPropagation()}>
+        <header class="connect-modal-header">
+          <div class="connect-modal-heading">
+            <span class={`connect-modal-protocol-icon protocol-${protocol()}`}>
+              <ProtocolIcon kind={protocolIconKind()} />
+            </span>
+            <div>
+              <span class="connect-modal-kicker">{props.connection?.id ? "连接设置" : "创建新资产"}</span>
+              <h2>{modalTitle()}</h2>
+              <p>{modalSubtitle()}</p>
+            </div>
+          </div>
           <button type="button" class="ssh-config-close" onClick={props.onCancel} aria-label="关闭">
             <Icon name="close" size={17} />
           </button>
         </header>
 
         <form class="ssh-config-form" onSubmit={handleSubmit}>
-          <div class="ssh-config-card">
-            <nav class="ssh-config-tabs">
+          <div class="connect-modal-body">
+            <aside class="connect-protocol-rail">
+              <div class="connect-rail-heading">
+                <span>连接类型</span>
+                <small>选择协议后配置对应参数</small>
+              </div>
+              <div class="connect-protocol-list">
+                <For each={props.protocols.filter(item => ["ssh", "local", "mysql", "postgresql"].includes(item.id))}>{item => (
+                  <button
+                    type="button"
+                    class={`connect-protocol-card ${protocol() === item.id ? "active" : ""}`}
+                    onClick={() => selectProtocol(item.id)}
+                  >
+                    <span class={`connect-protocol-card-icon protocol-${item.id}`}>
+                      <ProtocolIcon kind={item.id === "local" ? "local" : isDatabaseProtocol(item.id) ? "database" : "ssh"} />
+                    </span>
+                    <span class="connect-protocol-card-copy">
+                      <strong>{item.name}</strong>
+                      <small>{protocolDescription(item.id)}</small>
+                    </span>
+                    <span class="connect-protocol-check"><Icon name={protocol() === item.id ? "check" : "chevronRight"} size={13} /></span>
+                  </button>
+                )}</For>
+              </div>
+              <div class="connect-rail-tip">
+                <Icon name="info" size={14} />
+                <span>保存后可从资产列表双击打开，也可以直接保存并连接。</span>
+              </div>
+            </aside>
+            <main class="connect-form-main">
+              <div class="ssh-config-card connect-form-card">
+                <nav class="ssh-config-tabs">
               <For each={visibleTabs()}>{([id, label]) => (
-                <button type="button" class={activeTab() === id ? "active" : ""} onClick={() => setActiveTab(id)}>{label}</button>
+                <button type="button" class={activeTab() === id ? "active" : ""} onClick={() => setActiveTab(id)}>
+                  <Icon name={id === "general" ? "edit" : id === "tunnel" ? "transfer" : id === "proxy" ? "assets" : "settings"} size={14} />
+                  <span>{label}</span>
+                </button>
               )}</For>
             </nav>
 
             <Show when={activeTab() === "general"}>
-              <div class="ssh-general-grid">
-                <label class="ssh-field">
-                  <span>协议</span>
-                  <select value={protocol()} onChange={event => {
-                    const next = event.currentTarget.value;
-                    setProtocol(next);
-                    if (next === "local") {
-                      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
-                      if (encoding() === "UTF-8") setEncoding("auto");
-                      setPort(0);
-                    } else if (next === "mysql") {
-                      if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
-                      setAuthType("password");
-                      setPort(3306);
-                    } else if (encoding() === "auto") {
-                      setEncoding("UTF-8");
-                      setPort(22);
-                    }
-                  }}>
-                    <For each={props.protocols.filter(item => ["ssh", "local", "mysql"].includes(item.id))}>{item => (
-                      <option value={item.id}>{item.name}</option>
-                    )}</For>
-                  </select>
-                </label>
-
-                <div class="ssh-field ssh-color-field">
-                  <label>颜色标签</label>
-                  <div class="ssh-color-palette">
-                    <For each={COLORS}>{item => (
-                      <button
-                        type="button"
-                        aria-label={`选择颜色 ${item}`}
-                        class={color() === item ? "active" : ""}
-                        style={{ background: item }}
-                        onClick={() => setColor(item)}
-                      />
-                    )}</For>
-                    <button type="button" class="ssh-color-clear" aria-label="清除颜色标签" title="清除颜色标签" onClick={() => setColor("")}>
-                      <Icon name="close" size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <label class="ssh-field">
-                  <span>环境</span>
-                  <select value={folderId()} onChange={event => setFolderId(event.currentTarget.value)}>
-                    <option value="">无</option>
-                    <For each={connectionStore.state.folders}>{folder => (
-                      <option value={folder.id}>{folder.name}</option>
-                    )}</For>
-                  </select>
-                </label>
-
-                <label class={`ssh-field ${!name().trim() ? "invalid" : ""}`}>
-                  <span>名称</span>
-                  <input autofocus value={name()} onInput={event => setName(event.currentTarget.value)} />
-                  <small>名称不能为空</small>
-                </label>
-
-                <Show when={protocol() === "local"}>
-                  <label class="ssh-field">
-                    <span>终端类型</span>
-                    <select value={shellType()} onChange={event => setShellType(event.currentTarget.value)}>
-                      <option value="powershell">PowerShell 5.1</option>
-                      <option value="powershell7">PowerShell 7 (pwsh)</option>
-                      <option value="cmd">命令提示符 (cmd)</option>
-                      <option value="bash">Git Bash</option>
-                      <option value="wsl">WSL</option>
-                      <option value="custom">自定义命令</option>
-                    </select>
-                  </label>
-                  <Show when={shellType() === "custom"}>
-                    <label class={`ssh-field ${!customCommand().trim() ? "invalid" : ""}`}>
-                      <span>命令</span>
-                      <input
-                        value={customCommand()}
-                        placeholder='例如 "C:\Program Files\Git\bin\bash.exe" --login'
-                        onInput={event => setCustomCommand(event.currentTarget.value)}
-                      />
-                      <small>自定义命令不能为空</small>
+              <div class="connect-form-scroll-content">
+                <section class="connect-form-section">
+                  <header class="connect-form-section-head">
+                    <span class="connect-form-section-icon"><Icon name="edit" size={15} /></span>
+                    <div><h3>基本信息</h3><p>设置连接名称、所属环境和识别色</p></div>
+                  </header>
+                  <div class="connect-form-grid">
+                    <label class={`ssh-field ${fieldInvalid("name", !name().trim()) ? "invalid" : ""}`}>
+                      <span>连接名称<span class="required-mark">*</span></span>
+                      <input autofocus value={name()} placeholder="例如：生产环境 Web 服务器" onInput={event => setName(event.currentTarget.value)} onBlur={() => markTouched("name")} />
+                      <small>请填写连接名称</small>
                     </label>
-                  </Show>
-                  <label class="ssh-field">
-                    <span>工作路径</span>
-                    <div class="ssh-secret-input">
-                      <input value={cwd()} placeholder="默认：用户主目录" onInput={event => setCwd(event.currentTarget.value)} />
-                      <button type="button" title="选择目录" onClick={() => void pickDirectory()}>浏览</button>
-                    </div>
-                  </label>
-                </Show>
 
-                <Show when={protocol() !== "local"}>
-                  <label class={`ssh-field ${!host().trim() ? "invalid" : ""}`}>
-                    <span>主机</span>
-                    <input value={host()} onInput={event => setHost(event.currentTarget.value)} />
-                    <small>主机不能为空</small>
-                  </label>
-
-                  <label class="ssh-field">
-                    <span>用户</span>
-                    <input value={username()} onInput={event => setUsername(event.currentTarget.value)} />
-                  </label>
-
-                  <label class="ssh-field">
-                    <span>端口</span>
-                    <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
-                  </label>
-
-                  <Show when={protocol() === "mysql"}>
                     <label class="ssh-field">
-                      <span>默认数据库</span>
-                      <input value={database()} placeholder="可留空，连接后选择" onInput={event => setDatabase(event.currentTarget.value)} />
+                      <span>所属环境</span>
+                      <SelectMenu
+                        value={folderId()}
+                        onChange={setFolderId}
+                        ariaLabel="所属环境"
+                        options={[{ value: "", label: "根目录", description: "不放入任何文件夹" }, ...connectionStore.state.folders.map(folder => ({ value: folder.id, label: folder.name }))]}
+                      />
                     </label>
-                  </Show>
 
-                  <Show when={protocol() === "ssh"}><div class="ssh-auth-options">
-                    {authButton("password", "密码")}
-                    {authButton("key", "私钥")}
-                    {authButton("agent", "SSH Agent")}
-                  </div></Show>
-
-                  <Show when={authType() === "password"}>
-                    <label class="ssh-field">
-                      <span>密码</span>
-                      <div class="ssh-secret-input">
-                        <input type={showPassword() ? "text" : "password"} value={password()} onInput={event => setPassword(event.currentTarget.value)} />
-                        <button type="button" onClick={() => setShowPassword(!showPassword())}>{showPassword() ? "◉" : "⊙"}</button>
-                      </div>
-                    </label>
-                  </Show>
-
-                  <Show when={protocol() === "ssh" && authType() === "key"}>
-                    <div class="ssh-field ssh-key-field">
-                      <span>私钥</span>
-                      <div class="ssh-key-actions">
-                        <button type="button" class="ssh-key-select" onClick={() => setShowKeyPicker(true)}>
-                          <span>{keyName() || (keyId() ? "已选择密钥" : "请选择私钥")}</span>
-                          <span class="ssh-key-settings-icon">⚙</span>
+                    <div class="ssh-field ssh-color-field">
+                      <label>颜色标签</label>
+                      <div class="ssh-color-palette">
+                        <For each={COLORS}>{item => (
+                          <button
+                            type="button"
+                            aria-label={`选择颜色 ${item}`}
+                            class={color() === item ? "active" : ""}
+                            style={{ background: item }}
+                            onClick={() => setColor(item)}
+                          />
+                        )}</For>
+                        <button type="button" class="ssh-color-clear" aria-label="清除颜色标签" title="清除颜色标签" onClick={() => setColor("")}>
+                          <Icon name="close" size={14} />
                         </button>
                       </div>
                     </div>
-                    <label class="ssh-field">
-                      <span>私钥密码</span>
-                      <input type="password" value={passphrase()} onInput={event => setPassphrase(event.currentTarget.value)} />
+
+                    <label class="ssh-field connect-field-full">
+                      <span>备注</span>
+                      <textarea class="connect-remark-input" value={remark()} placeholder="记录这台主机的用途、负责人或其他说明" onInput={event => setRemark(event.currentTarget.value)} />
                     </label>
-                  </Show>
+                  </div>
+                </section>
+
+                <Show when={protocol() === "local"}>
+                  <section class="connect-form-section">
+                    <header class="connect-form-section-head">
+                      <span class="connect-form-section-icon local"><Icon name="terminal" size={15} /></span>
+                      <div><h3>本地终端</h3><p>选择 Shell、启动命令和工作目录</p></div>
+                    </header>
+                    <div class="connect-form-grid">
+                      <label class="ssh-field">
+                        <span>终端类型</span>
+                        <SelectMenu
+                          value={shellType()}
+                          onChange={setShellType}
+                          ariaLabel="终端类型"
+                          options={[
+                            { value: "powershell", label: "PowerShell 5.1", description: "Windows 内置 PowerShell" },
+                            { value: "powershell7", label: "PowerShell 7 (pwsh)", description: "跨平台 PowerShell" },
+                            { value: "cmd", label: "命令提示符 (cmd)", description: "Windows 传统命令行" },
+                            { value: "bash", label: "Git Bash", description: "Git for Windows 终端" },
+                            { value: "wsl", label: "WSL", description: "Windows Subsystem for Linux" },
+                            { value: "custom", label: "自定义命令", description: "手动指定可执行文件参数" },
+                          ]}
+                        />
+                      </label>
+                      <Show when={shellType() === "custom"}>
+                        <label class={`ssh-field ${fieldInvalid("customCommand", !customCommand().trim()) ? "invalid" : ""}`}>
+                          <span>自定义命令<span class="required-mark">*</span></span>
+                          <input
+                            value={customCommand()}
+                            placeholder='例如 "C:\Program Files\Git\bin\bash.exe" --login'
+                            onInput={event => setCustomCommand(event.currentTarget.value)}
+                            onBlur={() => markTouched("customCommand")}
+                          />
+                          <small>自定义命令不能为空</small>
+                        </label>
+                      </Show>
+                      <label class="ssh-field connect-field-full">
+                        <span>工作路径</span>
+                        <div class="connect-input-action">
+                          <input value={cwd()} placeholder="默认：用户主目录" onInput={event => setCwd(event.currentTarget.value)} />
+                          <button type="button" title="选择目录" onClick={() => void pickDirectory()}><Icon name="folder" size={14} />浏览</button>
+                        </div>
+                      </label>
+                    </div>
+                  </section>
                 </Show>
 
-                <label class="ssh-field ssh-remark-field">
-                  <span>备注</span>
-                  <textarea value={remark()} onInput={event => setRemark(event.currentTarget.value)} />
-                </label>
+                <Show when={protocol() !== "local"}>
+                  <section class="connect-form-section">
+                    <header class="connect-form-section-head">
+                      <span class="connect-form-section-icon connection"><Icon name="terminal" size={15} /></span>
+                      <div><h3>连接信息</h3><p>{isDatabase() ? "填写数据库服务器地址和默认数据库" : "填写远程主机地址和登录用户"}</p></div>
+                    </header>
+                    <div class="connect-form-grid">
+                      <label class={`ssh-field ${fieldInvalid("host", !host().trim()) ? "invalid" : ""}`}>
+                        <span>主机地址<span class="required-mark">*</span></span>
+                        <input value={host()} placeholder={isDatabase() ? "例如：db.example.com" : "例如：192.168.1.10"} onInput={event => setHost(event.currentTarget.value)} onBlur={() => markTouched("host")} />
+                        <small>请填写主机地址</small>
+                      </label>
+
+                      <label class="ssh-field">
+                        <span>端口</span>
+                        <input type="number" min="1" max="65535" value={port()} onInput={event => setPort(Number(event.currentTarget.value))} />
+                      </label>
+
+                      <label class={`ssh-field ${fieldInvalid("username", isDatabase() && !username().trim()) ? "invalid" : ""}`}>
+                        <span>用户名{isDatabase() && <span class="required-mark">*</span>}</span>
+                        <input value={username()} placeholder={isDatabase() ? "数据库用户名" : "SSH 登录用户"} onInput={event => setUsername(event.currentTarget.value)} onBlur={() => markTouched("username")} />
+                        <small>请填写用户名</small>
+                      </label>
+
+                      <Show when={isDatabase()}>
+                        <label class="ssh-field">
+                          <span>默认数据库</span>
+                          <input value={database()} placeholder={protocol() === "postgresql" ? "可留空，默认使用用户名同名数据库" : "可留空，连接后选择"} onInput={event => setDatabase(event.currentTarget.value)} />
+                        </label>
+                      </Show>
+                    </div>
+                  </section>
+
+                  <section class="connect-form-section">
+                    <header class="connect-form-section-head">
+                      <span class="connect-form-section-icon security"><Icon name="key" size={15} /></span>
+                      <div><h3>认证与安全</h3><p>{isDatabase() ? "填写数据库密码；凭据会保存在本地加密存储中" : "选择认证方式并填写对应凭据"}</p></div>
+                    </header>
+                    <div class="connect-form-grid">
+                      <Show when={protocol() === "ssh"}>
+                        <div class="ssh-field connect-field-full">
+                          <span>认证方式</span>
+                          <div class="ssh-auth-options connect-auth-options">
+                            {authButton("password", "密码")}
+                            {authButton("key", "私钥")}
+                            {authButton("agent", "SSH Agent")}
+                          </div>
+                        </div>
+                      </Show>
+
+                      <Show when={authType() === "password"}>
+                        <label class={`ssh-field connect-field-full ${fieldInvalid("password", protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id) ? "invalid" : ""}`}>
+                          <span>密码{protocol() === "ssh" && <span class="required-mark">*</span>}</span>
+                          <div class="ssh-secret-input connect-password-input">
+                            <input
+                              type={showPassword() ? "text" : "password"}
+                              value={password()}
+                              placeholder={isDatabase() ? "输入数据库密码" : "输入 SSH 密码"}
+                              onInput={event => setPassword(event.currentTarget.value)}
+                              onBlur={() => markTouched("password")}
+                            />
+                            <button type="button" aria-label={showPassword() ? "隐藏密码" : "显示密码"} onClick={() => setShowPassword(!showPassword())}>
+                              <Icon name={showPassword() ? "eyeOff" : "eye"} size={15} />
+                            </button>
+                          </div>
+                          <small>请填写 SSH 密码</small>
+                        </label>
+                      </Show>
+
+                      <Show when={protocol() === "ssh" && authType() === "key"}>
+                        <div class="ssh-field connect-field-full ssh-key-field">
+                          <span>私钥<span class="required-mark">*</span></span>
+                          <button type="button" class="ssh-key-select connect-key-select" onClick={() => setShowKeyPicker(true)}>
+                            <span class="connect-key-select-copy">
+                              <Icon name="key" size={15} />
+                              <span>{keyName() || (keyId() ? "已选择密钥" : "请选择私钥")}</span>
+                            </span>
+                            <Icon name="settings" size={15} />
+                          </button>
+                        </div>
+                        <label class="ssh-field connect-field-full">
+                          <span>私钥密码</span>
+                          <input type="password" value={passphrase()} placeholder="如果私钥有口令，请填写" onInput={event => setPassphrase(event.currentTarget.value)} />
+                        </label>
+                      </Show>
+                    </div>
+                  </section>
+                </Show>
               </div>
             </Show>
 
@@ -401,7 +533,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
               <div class="ssh-tunnel-panel">
                 <div class="ssh-tunnel-toolbar">
                   <div><strong>SSH 隧道</strong><small>本地、远程和动态 SOCKS5 转发</small></div>
-                  <button type="button" class="ssh-tunnel-add" onClick={addTunnelRule}>＋ 添加规则</button>
+                  <button type="button" class="ssh-tunnel-add" onClick={addTunnelRule}><Icon name="plus" size={14} /> 添加规则</button>
                 </div>
                 <Show when={tunnelRules().length === 0}>
                   <div class="ssh-tunnel-empty">尚未配置隧道。保存连接后也可从连接右键菜单启动。</div>
@@ -415,19 +547,28 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                         <label><input type="checkbox" checked={rule().enabled} onChange={event => updateTunnelRule(rule().id, { enabled: event.currentTarget.checked })} />启用</label>
                         <label><input type="checkbox" checked={rule().auto_start} onChange={event => updateTunnelRule(rule().id, { auto_start: event.currentTarget.checked })} />连接后启动</label>
                         <div class="ssh-tunnel-rule-actions">
-                          <button type="button" title="上移" disabled={index === 0} onClick={() => moveTunnelRule(index, -1)}>↑</button>
-                          <button type="button" title="下移" disabled={index === tunnelRules().length - 1} onClick={() => moveTunnelRule(index, 1)}>↓</button>
-                          <button type="button" title="复制" onClick={() => duplicateTunnelRule(rule())}>⧉</button>
-                          <button type="button" class="danger" title="删除" onClick={() => removeTunnelRule(rule().id)}>×</button>
+                          <button type="button" title="上移" disabled={index === 0} onClick={() => moveTunnelRule(index, -1)}><Icon name="chevronUp" size={14} /></button>
+                          <button type="button" title="下移" disabled={index === tunnelRules().length - 1} onClick={() => moveTunnelRule(index, 1)}><Icon name="chevronDown" size={14} /></button>
+                          <button type="button" title="复制" onClick={() => duplicateTunnelRule(rule())}><Icon name="copy" size={14} /></button>
+                          <button type="button" class="danger" title="删除" onClick={() => removeTunnelRule(rule().id)}><Icon name="close" size={14} /></button>
                         </div>
                       </header>
                       <div class="ssh-tunnel-grid">
-                        <label><span>类型</span><select value={rule().tunnel_type} onChange={event => {
-                          const tunnel_type = event.currentTarget.value as TunnelType;
-                          updateTunnelRule(rule().id, tunnel_type === "dynamic"
-                            ? { tunnel_type, target_host: undefined, target_port: undefined }
-                            : { tunnel_type, target_host: rule().target_host || "127.0.0.1", target_port: rule().target_port || 80 });
-                        }}><option value="local">本地转发</option><option value="remote">远程转发</option><option value="dynamic">动态 SOCKS5</option></select></label>
+                        <label><span>类型</span><SelectMenu
+                          value={rule().tunnel_type}
+                          ariaLabel="隧道类型"
+                          options={[
+                            { value: "local", label: "本地转发", description: "本机端口转发到远端服务" },
+                            { value: "remote", label: "远程转发", description: "远端端口转发到本机服务" },
+                            { value: "dynamic", label: "动态 SOCKS5", description: "通过 SSH 建立 SOCKS 代理" },
+                          ]}
+                          onChange={value => {
+                            const tunnel_type = value as TunnelType;
+                            updateTunnelRule(rule().id, tunnel_type === "dynamic"
+                              ? { tunnel_type, target_host: undefined, target_port: undefined }
+                              : { tunnel_type, target_host: rule().target_host || "127.0.0.1", target_port: rule().target_port || 80 });
+                          }}
+                        /></label>
                         <label><span>{rule().tunnel_type === "remote" ? "远端监听地址" : "本机监听地址"}</span><input value={rule().bind_host} onInput={event => updateTunnelRule(rule().id, { bind_host: event.currentTarget.value, allow_public_bind: false })} /></label>
                         <label><span>监听端口</span><input type="number" min="1" max="65535" value={rule().bind_port} onInput={event => updateTunnelRule(rule().id, { bind_port: Number(event.currentTarget.value) })} /></label>
                         <Show when={rule().tunnel_type !== "dynamic"}>
@@ -449,17 +590,30 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
             <Show when={activeTab() === "proxy"}>
               <div class="ssh-tab-panel">
                 <label class="ssh-field"><span>代理类型</span>
-                  <select value={proxyType()} onChange={event => setProxyType(event.currentTarget.value as ConnectionConfig["proxy_type"] | "")}>
-                    <option value="">不使用代理</option><option value="socks5">SOCKS5</option><option value="http">HTTP CONNECT</option><option value="ssh_jump">SSH 跳板机</option>
-                  </select>
+                  <SelectMenu
+                    value={proxyType() || ""}
+                    ariaLabel="代理类型"
+                    options={[
+                      { value: "", label: "不使用代理", description: "直接连接目标主机" },
+                      { value: "socks5", label: "SOCKS5", description: "通过 SOCKS5 代理连接" },
+                      { value: "http", label: "HTTP CONNECT", description: "通过 HTTP 隧道代理连接" },
+                      { value: "ssh_jump", label: "SSH 跳板机", description: "通过已保存的 SSH 资产跳转" },
+                    ]}
+                    onChange={value => setProxyType(value as ConnectionConfig["proxy_type"] | "")}
+                  />
                 </label>
                 <Show when={proxyType() === "ssh_jump"}>
-                  <label class="ssh-field"><span>跳板资产</span><select value={jumpConnectionId()} onChange={event => setJumpConnectionId(event.currentTarget.value)}>
-                    <option value="">请选择已保存的 SSH 连接</option>
-                    <For each={connectionStore.state.connections.filter(connection => connection.protocol === "ssh" && connection.id !== props.connection?.id)}>{connection => (
-                      <option value={connection.id}>{connection.name} · {connection.host}:{connection.port}</option>
-                    )}</For>
-                  </select></label>
+                  <label class="ssh-field"><span>跳板资产</span>
+                    <SelectMenu
+                      value={jumpConnectionId()}
+                      ariaLabel="跳板资产"
+                      placeholder="请选择已保存的 SSH 连接"
+                      options={connectionStore.state.connections
+                        .filter(connection => connection.protocol === "ssh" && connection.id !== props.connection?.id)
+                        .map(connection => ({ value: connection.id, label: connection.name, description: `${connection.host}:${connection.port}` }))}
+                      onChange={setJumpConnectionId}
+                    />
+                  </label>
                   <p class="ssh-proxy-note">先连接并校验跳板机，再通过 SSH direct-tcpip 通道连接目标；仅支持单级跳板。</p>
                 </Show>
                 <Show when={proxyType() === "socks5" || proxyType() === "http"}>
@@ -474,45 +628,65 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
             <Show when={activeTab() === "advanced"}>
               <div class="ssh-tab-panel">
                 <label class="ssh-field"><span>终端编码</span>
-                  <select value={encoding()} onChange={event => setEncoding(event.currentTarget.value)}>
-                    <For each={protocol() === "local" ? LOCAL_ENCODINGS : ENCODINGS}>{item => (
-                      <option value={item}>{item === "auto" ? "自动（UTF-8，推荐）" : item}</option>
-                    )}</For>
-                  </select>
+                  <SelectMenu
+                    value={encoding()}
+                    ariaLabel="终端编码"
+                    options={(protocol() === "local" ? LOCAL_ENCODINGS : ENCODINGS).map(item => ({
+                      value: item,
+                      label: item === "auto" ? "自动（UTF-8，推荐）" : item,
+                    }))}
+                    onChange={setEncoding}
+                  />
                 </label>
                 <Show when={protocol() !== "local"}>
                   <label class="ssh-field"><span>连接超时（秒）</span><input type="number" min="5" max="120" value={timeout()} onInput={event => setTimeout(Number(event.currentTarget.value))} /></label>
                 </Show>
-                <Show when={protocol() === "mysql"}>
+                <Show when={isDatabase()}>
                   <label class="ssh-field"><span>SSL 模式</span>
-                    <select value={sslMode()} onChange={event => setSslMode(event.currentTarget.value)}>
-                      <option value="disabled">禁用</option>
-                      <option value="required">要求 SSL（校验证书和主机名）</option>
-                      <option value="skip_verify">要求 SSL（跳过证书校验）</option>
-                    </select>
+                    <SelectMenu
+                      value={sslMode()}
+                      ariaLabel="SSL 模式"
+                      options={[
+                        { value: "disabled", label: "禁用", description: "仅使用普通连接" },
+                        { value: "prefer", label: "优先使用 SSL", description: "服务器支持时自动加密" },
+                        { value: "required", label: "要求 SSL（校验证书和主机名）", description: "严格校验证书与主机名" },
+                        { value: "skip_verify", label: "要求 SSL（跳过证书校验）", description: "加密连接但不校验证书" },
+                      ]}
+                      onChange={setSslMode}
+                    />
                   </label>
                 </Show>
               </div>
             </Show>
 
+              </div>
+            </main>
           </div>
 
-          <Show when={testResult()}>
-            <div class={`ssh-test-result ${testResult()!.startsWith("success:") ? "success" : "error"}`}>
-              {testResult()!.replace(/^(success|error):/, "")}
+          <footer class="connect-modal-footer">
+            <div class="connect-modal-feedback">
+              <button type="button" class="connect-test-button" disabled={!isValid() || testing() || saving()} onClick={handleTest}>
+                <Icon name={testing() ? "refresh" : "play"} size={14} class={testing() ? "spin" : ""} />
+                {testing() ? "正在测试…" : proxyType() ? "测试代理链路" : "测试连接"}
+              </button>
+              <Show when={testResult()}>
+                <div class={`connect-status-pill ${testResult()!.startsWith("success:") ? "success" : "error"}`}>
+                  <Icon name={testResult()!.startsWith("success:") ? "check" : "info"} size={13} />
+                  <span>{testResult()!.replace(/^(success|error):/, "")}</span>
+                </div>
+              </Show>
+              <Show when={saveError()}>
+                <div class="connect-status-pill error"><Icon name="info" size={13} /><span>保存失败：{saveError()}</span></div>
+              </Show>
+              <Show when={!isValid() && touched().size > 0}>
+                <div class="connect-validation-hint"><Icon name="info" size={13} /><span>{validationHint()}</span></div>
+              </Show>
             </div>
-          </Show>
-          <Show when={saveError()}><div class="ssh-test-result error">保存失败：{saveError()}</div></Show>
-          <Show when={!isValid()}><div class="ssh-validation-summary">
-            {!name().trim() ? "请填写连接名称" : !host().trim() ? "请填写主机地址" : protocol() === "mysql" && !username().trim() ? "请填写 MySQL 用户名" : protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id ? "请填写 SSH 密码" : "请检查连接配置"}
-          </div></Show>
-
-          <footer class="ssh-config-actions">
-            <button type="button" class="ssh-test-button" disabled={!isValid() || testing() || saving()} onClick={handleTest}>
-              {testing() ? "测试中..." : proxyType() ? "测试代理链路" : "测试连接"}
-            </button>
-            <button type="submit" class="ssh-save-secondary" disabled={!isValid() || saving()}>{saving() ? "保存中…" : "保存"}</button>
-            <button type="button" class="ssh-save-button" disabled={!isValid() || saving()} onClick={() => void submit("save-connect")}>{saving() ? "处理中…" : "保存并连接"}</button>
+            <div class="connect-modal-actions">
+              <button type="button" class="connect-cancel-button" onClick={props.onCancel}>取消</button>
+              <button type="submit" class="connect-save-button secondary" disabled={!isValid() || saving()}>{saving() ? "保存中…" : "保存"}</button>
+              <button type="button" class="connect-save-button primary" disabled={!isValid() || saving()} onClick={() => void submit("save-connect")}>{saving() ? "处理中…" : "保存并连接"}</button>
+            </div>
           </footer>
         </form>
       </div>

@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { api, type SshKeyRecord } from "../utils/api";
 import { feedback } from "../stores/feedbackStore";
+import { Icon } from "./Icon";
 import "./SshKeyPicker.css";
 
 interface Props {
@@ -165,7 +166,7 @@ export const SshKeyPicker: Component<Props> = (props) => {
                 <button type="button" onClick={() => changeSort(field)}>
                   <span>{label}</span>
                   <span class={`sort-mark ${sortField() === field ? "active" : ""}`}>
-                    {sortField() === field && !sortAsc() ? "⌄" : "⌃"}
+                    <Show when={sortField() === field}><Icon name={sortAsc() ? "chevronUp" : "chevronDown"} size={12} /></Show>
                   </span>
                 </button>
               )}</For>

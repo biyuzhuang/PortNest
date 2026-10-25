@@ -1,11 +1,12 @@
 import { Component, createSignal, onMount, onCleanup, Show, For, createEffect, createMemo } from "solid-js";
-import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import packageInfo from "../package.json";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ServerOverview } from "./components/ServerOverview";
-import { refitTerminal } from "./components/TerminalView";
+import { readTerminalTranscript, refitTerminal } from "./components/TerminalView";
 import { getOverviewSettings } from "./stores/dashboardStore";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { TerminalView } from "./components/TerminalView";
@@ -15,7 +16,9 @@ import { SshKeyPicker } from "./components/SshKeyPicker";
 import { CommandBroadcast } from "./components/CommandBroadcast";
 import { TunnelPanel } from "./components/TunnelPanel";
 import { FeedbackHost } from "./components/FeedbackHost";
-import { MysqlWorkspace } from "./components/MysqlWorkspace";
+import { TextContextMenu } from "./components/TextContextMenu";
+import { AIAssistant, type AssistantMode } from "./components/AIAssistant";
+import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { ProtocolIcon } from "./components/ProtocolIcon";
 import { Icon } from "./components/Icon";
 import { openSettingsWindow } from "./utils/settingsWindow";
@@ -23,8 +26,9 @@ import { connectionStore } from "./stores/connectionStore";
 import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
 import { uiStore } from "./stores/uiStore";
+import { aiContextStore } from "./stores/aiContextStore";
 import { feedback } from "./stores/feedbackStore";
-import { api, localShellDisplayName, parseLocalProfile, ProtocolInfo, SshApiError, type ConnectionRecord, type ConnectionConfig, type TunnelRuntimeInfo } from "./utils/api";
+import { api, isDatabaseProtocol, localShellDisplayName, parseLocalProfile, ProtocolInfo, SshApiError, type ConnectionRecord, type ConnectionConfig, type TunnelRuntimeInfo } from "./utils/api";
 import "./App.css";
 
 type ContextMenuState = {
@@ -46,6 +50,7 @@ const App: Component = () => {
   const [showNewFolderDialog, setShowNewFolderDialog] = createSignal(false);
   const [newFolderName, setNewFolderName] = createSignal("");
   const [newFolderParentId, setNewFolderParentId] = createSignal<string | null>(null);
+  const [newFolderTouched, setNewFolderTouched] = createSignal(false);
   const [editingConnection, setEditingConnection] = createSignal<ConnectionConfig | null>(null);
   const [newConnectionDefaultFolderId, setNewConnectionDefaultFolderId] = createSignal<string | undefined>(undefined);
   const [newConnectionDefaultProtocol, setNewConnectionDefaultProtocol] = createSignal<string>("ssh");
@@ -56,11 +61,14 @@ const App: Component = () => {
   const setActiveSessionId = sessionStore.setActiveSessionId;
   const [assetListActive, setAssetListActive] = createSignal(false);
   const [rightPanelWidth, setRightPanelWidth] = createSignal(Number(localStorage.getItem("portnest-right-panel-width")) || 390);
-  const [sidebarWidth, setSidebarWidth] = createSignal(Number(localStorage.getItem("portnest-sidebar-width")) || 292);
+  const [sidebarWidth, setSidebarWidth] = createSignal(Number(localStorage.getItem("portnest-sidebar-width")) || 286);
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
+  const [showAIAssistant, setShowAIAssistant] = createSignal(false);
+  const [aiAssistantMode, setAiAssistantMode] = createSignal<AssistantMode>("general");
   const [showCloseConfirm, setShowCloseConfirm] = createSignal(false);
+  const [saveCloseChoice, setSaveCloseChoice] = createSignal(false);
   const [isWindowMaximized, setIsWindowMaximized] = createSignal(false);
   const [appVersion, setAppVersion] = createSignal(packageInfo.version);
   const [showCommandComposer, setShowCommandComposer] = createSignal(false);
@@ -94,26 +102,59 @@ const App: Component = () => {
   let allowWindowClose = false;
   let unlistenWindowClose: (() => void) | undefined;
 
-  const requestWindowClose = () => setShowCloseConfirm(true);
-  const confirmWindowClose = async () => {
+  const closeActionStorageKey = "portnest-window-close-action";
+  const rememberedCloseAction = (): "close" | "fold" | null => {
+    const action = localStorage.getItem(closeActionStorageKey);
+    return action === "close" || action === "fold" ? action : null;
+  };
+  const openCloseConfirm = () => {
+    setSaveCloseChoice(rememberedCloseAction() !== null);
+    setShowCloseConfirm(true);
+  };
+  const saveClosePreference = (action: "close" | "fold") => {
+    if (saveCloseChoice()) localStorage.setItem(closeActionStorageKey, action);
+    else localStorage.removeItem(closeActionStorageKey);
+  };
+  const confirmWindowClose = async (remember = true) => {
+    if (remember) saveClosePreference("close");
     allowWindowClose = true;
     setShowCloseConfirm(false);
     if (isTauriRuntime()) {
-      const mainWindow = getCurrentWindow();
       unlistenWindowClose?.();
       unlistenWindowClose = undefined;
-      const auxiliaryWindows = (await getAllWindows()).filter(appWindow => appWindow.label !== mainWindow.label);
-      for (const auxiliaryWindow of auxiliaryWindows) {
-        try {
-          await auxiliaryWindow.close();
-        } catch (error) {
-          console.warn(`[window] unable to close auxiliary window ${auxiliaryWindow.label}`, error);
-        }
+      try {
+        await invoke("quit_app");
+      } catch (error) {
+        console.error("[window] unable to quit application", error);
+        await getCurrentWindow().destroy().catch(destroyError => {
+          console.error("[window] unable to destroy main window", destroyError);
+        });
       }
-      await mainWindow.close();
       return;
     }
     window.close();
+  };
+  const foldWindow = async (remember = true) => {
+    if (remember) saveClosePreference("fold");
+    setShowCloseConfirm(false);
+    if (!isTauriRuntime()) return;
+    try {
+      const mainWindow = getCurrentWindow();
+      await mainWindow.setSkipTaskbar(true);
+      await mainWindow.hide();
+    } catch (error) {
+      console.warn("[window] unable to fold window to tray", error);
+    }
+  };
+  const openAIAssistant = (mode: AssistantMode = "general") => {
+    setAiAssistantMode(mode);
+    setShowAIAssistant(true);
+  };
+  const requestWindowClose = () => {
+    const action = rememberedCloseAction();
+    if (action === "close") { void confirmWindowClose(false); return; }
+    if (action === "fold") { void foldWindow(false); return; }
+    openCloseConfirm();
   };
   const toggleWindowMaximize = async () => {
     if (!isTauriRuntime()) return;
@@ -126,11 +167,20 @@ const App: Component = () => {
     if (!isTauriRuntime()) return;
     const appWindow = getCurrentWindow();
     let unlistenResize: (() => void) | undefined;
+    // First launch: choose a working size from the monitor work area instead
+    // of relying on a fixed 1280x800 window that may overflow smaller screens.
+    if (localStorage.getItem("portnest-window-fit-v3") !== "1") {
+      const width = Math.max(960, Math.min(1800, Math.round(window.screen.availWidth * 0.94)));
+      const height = Math.max(600, Math.min(1100, Math.round(window.screen.availHeight * 0.90)));
+      void appWindow.setSize(new LogicalSize(width, height))
+        .then(() => appWindow.center())
+        .finally(() => localStorage.setItem("portnest-window-fit-v3", "1"));
+    }
     void appWindow.isMaximized().then(setIsWindowMaximized);
     void appWindow.onCloseRequested(event => {
       if (allowWindowClose) return;
       event.preventDefault();
-      setShowCloseConfirm(true);
+      requestWindowClose();
     }).then(unlisten => { unlistenWindowClose = unlisten; });
     void appWindow.onResized(() => {
       void appWindow.isMaximized().then(setIsWindowMaximized);
@@ -199,7 +249,7 @@ const App: Component = () => {
     initTheme();
 
     if (!isTauriRuntime()) {
-      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }, { id: "mysql", name: "MySQL" }]);
+      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }, { id: "mysql", name: "MySQL" }, { id: "postgresql", name: "PostgreSQL" }]);
       sessionStore.hydrate([]);
       return;
     }
@@ -210,7 +260,7 @@ const App: Component = () => {
 
     try {
       const supportedProtocols = await api.getProtocols();
-      setProtocols(supportedProtocols.filter(protocol => ["ssh", "local", "mysql"].includes(protocol.id)));
+      setProtocols(supportedProtocols.filter(protocol => ["ssh", "local", "mysql", "postgresql"].includes(protocol.id)));
     } catch (e) {
       console.error("Failed to get protocols:", e);
     }
@@ -228,6 +278,9 @@ const App: Component = () => {
     if (modifier && event.key.toLowerCase() === "k") {
       event.preventDefault(); setQuickQuery(""); setShowQuickSwitcher(true); return;
     }
+    if (modifier && !event.shiftKey && event.key.toLowerCase() === "n") {
+      event.preventDefault(); handleNewConnection(); return;
+    }
     if (showQuickSwitcher() && event.key === "Escape") { event.preventDefault(); setShowQuickSwitcher(false); return; }
     const element = event.target as HTMLElement | null;
     if (element?.matches("input, textarea, select, [contenteditable=true]")) return;
@@ -236,6 +289,9 @@ const App: Component = () => {
     }
     if (modifier && event.shiftKey && event.key.toLowerCase() === "t") {
       event.preventDefault(); sessionStore.restoreClosed(); setAssetListActive(false); return;
+    }
+    if (modifier && event.shiftKey && event.key.toLowerCase() === "a") {
+      event.preventDefault(); openAIAssistant("general"); return;
     }
     if (event.ctrlKey && event.key === "Tab" && sessions().length > 1) {
       event.preventDefault();
@@ -393,10 +449,10 @@ const App: Component = () => {
           sessionStore.update(sessionId, { status: "error", error: String(e), shellId: undefined });
         }
       })();
-    } else if (conn.protocol === "mysql") {
+    } else if (isDatabaseProtocol(conn.protocol)) {
       const sessionId = createSession(conn);
       try {
-        await api.mysqlConnect(conn.id);
+        await api.databaseConnect(conn.id);
         sessionStore.update(sessionId, { status: "connected", error: undefined, viewMode: "database" });
       } catch (e) {
         sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" });
@@ -418,8 +474,8 @@ const App: Component = () => {
         console.error("[closeSessionResources] disconnectShell failed:", session.id, e);
       }
     }
-    if (session.connection.protocol === "mysql" && !remainingSessions.some(item => item.connection.id === session.connection.id)) {
-      try { await api.mysqlDisconnect(session.connection.id); } catch (e) { console.error("[mysql] disconnect failed", e); }
+    if (isDatabaseProtocol(session.connection.protocol) && !remainingSessions.some(item => item.connection.id === session.connection.id)) {
+      try { await api.databaseDisconnect(session.connection.id); } catch (e) { console.error("[database] disconnect failed", e); }
     }
 
     // The active SFTP channel is owned by RightPanel and shares this Shell's
@@ -511,9 +567,9 @@ const App: Component = () => {
     const session = sessions().find(s => s.id === sessionId);
     setTabContextMenu(null);
     if (!session) return;
-    if (session.connection.protocol === "mysql") {
+    if (isDatabaseProtocol(session.connection.protocol)) {
       sessionStore.update(sessionId, { status: "connecting", error: undefined });
-      try { await api.mysqlConnect(session.connection.id); sessionStore.update(sessionId, { status: "connected", viewMode: "database" }); }
+      try { await api.databaseConnect(session.connection.id); sessionStore.update(sessionId, { status: "connected", viewMode: "database" }); }
       catch (e) { sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" }); }
       return;
     }
@@ -664,8 +720,8 @@ const App: Component = () => {
       void openShellForSession(newSessionId, session.connection).catch(error => {
         sessionStore.update(newSessionId, { status: "error", error: String(error), shellId: undefined });
       });
-    } else if (session.connection.protocol === "mysql") {
-      void api.mysqlConnect(session.connection.id)
+    } else if (isDatabaseProtocol(session.connection.protocol)) {
+      void api.databaseConnect(session.connection.id)
         .then(() => sessionStore.update(newSessionId, { status: "connected", viewMode: "database" }))
         .catch(error => sessionStore.update(newSessionId, { status: "error", error: String(error), viewMode: "database" }));
     }
@@ -689,9 +745,9 @@ const App: Component = () => {
     }
   };
 
-  const handleNewConnection = (folderId?: string) => {
+  const handleNewConnection = (folderId?: string, protocol?: string) => {
     setNewConnectionDefaultFolderId(folderId);
-    setNewConnectionDefaultProtocol(uiStore.assetFilter() === "database" ? "mysql" : "ssh");
+    setNewConnectionDefaultProtocol(protocol || (uiStore.assetFilter() === "database" ? "mysql" : "ssh"));
     setEditingConnection(null);
     setShowForm(true);
   };
@@ -762,14 +818,42 @@ const App: Component = () => {
     setShowForm(true);
   };
 
-  const handleCreateFolder = async () => {
+  const folderNameError = () => {
     const name = newFolderName().trim();
-    if (!name) return;
+    if (!name) return "请输入文件夹名称";
+    if (name.length > 64) return "文件夹名称不能超过 64 个字符";
+    const parentId = newFolderParentId();
+    if (connectionStore.state.folders.some(folder => folder.parentId === parentId && folder.name.trim().toLowerCase() === name.toLowerCase())) {
+      return "当前目录已存在同名文件夹";
+    }
+    return "";
+  };
+
+  const folderBreadcrumb = (folderId: string | null) => {
+    if (!folderId) return "资产列表";
+    const parts: string[] = [];
+    let current = connectionStore.state.folders.find(folder => folder.id === folderId);
+    const visited = new Set<string>();
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      parts.unshift(current.name);
+      current = current.parentId
+        ? connectionStore.state.folders.find(folder => folder.id === current!.parentId)
+        : undefined;
+    }
+    return ["资产列表", ...parts].join(" / ");
+  };
+
+  const handleCreateFolder = async () => {
+    setNewFolderTouched(true);
+    const name = newFolderName().trim();
+    if (!name || folderNameError()) return;
     try {
       await connectionStore.addFolder(name, newFolderParentId());
       setShowNewFolderDialog(false);
       setNewFolderName("");
       setNewFolderParentId(null);
+      setNewFolderTouched(false);
     } catch (e) {
       console.error("Create folder error:", e);
       feedback.error("创建文件夹失败: " + e);
@@ -779,6 +863,7 @@ const App: Component = () => {
   const handleNewFolder = (parentId?: string) => {
     setNewFolderParentId(parentId ?? null);
     setNewFolderName("");
+    setNewFolderTouched(false);
     setShowNewFolderDialog(true);
   };
 
@@ -814,13 +899,31 @@ const App: Component = () => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = sidebarWidth();
-    const onMouseMove = (moveEvent: MouseEvent) => setSidebarWidth(Math.min(480, Math.max(220, startWidth + moveEvent.clientX - startX)));
-    const onMouseUp = () => {
-      localStorage.setItem("portnest-sidebar-width", String(sidebarWidth()));
+    const collapseWidth = 50;
+    let collapsed = false;
+    const finish = () => {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+    };
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (collapsed) return;
+      const nextWidth = Math.min(480, startWidth + moveEvent.clientX - startX);
+      if (nextWidth <= collapseWidth) {
+        collapsed = true;
+        setSidebarWidth(startWidth);
+        finish();
+        uiStore.setAssetTreeVisible(false);
+        return;
+      }
+      setSidebarWidth(nextWidth);
+    };
+    const onMouseUp = () => {
+      if (!collapsed && sidebarWidth() > collapseWidth) {
+        localStorage.setItem("portnest-sidebar-width", String(sidebarWidth()));
+      }
+      finish();
     };
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
@@ -831,35 +934,71 @@ const App: Component = () => {
   return (
     <div class="app-container">
       <div class="app-titlebar">
-        <span class="titlebar-title" data-tauri-drag-region><b>P</b> PortNest</span>
+        <span class="titlebar-title" data-tauri-drag-region><b>P</b><span>PortNest</span></span>
+        <Show when={activeSession()}>
+          <span class="titlebar-active-connection" data-tauri-drag-region>
+            <ProtocolIcon kind={activeSession()!.connection.protocol} />
+            <span>{activeSession()!.displayName || activeSession()!.connection.name}</span>
+          </span>
+        </Show>
         <div class="titlebar-spacer" data-tauri-drag-region />
-        <div class="titlebar-workspace-status">
-          <span class="status-dot online" /> SSH / SFTP 工作区
-        </div>
-        <div class="titlebar-controls">
+        <div class="titlebar-actions">
+          <button class="titlebar-btn titlebar-quick-switch" title="快速切换 Ctrl+K" aria-label="快速切换" onClick={() => { setQuickQuery(""); setShowQuickSwitcher(true); }}>
+            <Icon name="search" />
+          </button>
+          <button class="titlebar-btn" title="设置" aria-label="设置" onClick={() => void openSettingsWindow()}>
+            <Icon name="settings" />
+          </button>
+          <div class="titlebar-workspace-status">
+            <span class="status-dot online" /> SSH / SFTP
+          </div>
+          <div class="titlebar-controls">
           <div class="app-menu-container">
             <button class="titlebar-btn" onClick={() => setShowAppMenu(!showAppMenu())}>
               <Icon name="more" />
             </button>
             <Show when={showAppMenu()}>
               <div class="app-menu-dropdown">
+                <button class="app-menu-item" onClick={() => { setShowAppMenu(false); handleNewConnection(); }}>
+                  <span class="app-menu-icon"><Icon name="plus" size={14} /></span>
+                  <span class="app-menu-label">新建连接</span>
+                  <span class="app-menu-shortcut">Ctrl+N</span>
+                </button>
+                <button class="app-menu-item" onClick={() => { setShowAppMenu(false); setQuickQuery(""); setShowQuickSwitcher(true); }}>
+                  <span class="app-menu-icon"><Icon name="search" size={14} /></span>
+                  <span class="app-menu-label">快速搜索</span>
+                  <span class="app-menu-shortcut">Ctrl+K</span>
+                </button>
                 <Show when={activeSession()}>
-                  <div class="app-menu-item" onClick={() => { handleBack(); setShowAppMenu(false); }}>
-                    <Icon name="back" /> 关闭当前标签
-                  </div>
+                  <button class="app-menu-item" onClick={() => { handleBack(); setShowAppMenu(false); }}>
+                    <span class="app-menu-icon"><Icon name="back" size={14} /></span>
+                    <span class="app-menu-label">关闭当前标签</span>
+                    <span class="app-menu-shortcut">Ctrl+W</span>
+                  </button>
                 </Show>
-                <div class="app-menu-item" onClick={() => { void openSettingsWindow(); setShowAppMenu(false); }}>
-                  <Icon name="settings" /> 设置
-                </div>
-                <div class="app-menu-item" onClick={() => { setShowSessionTransfer(true); setShowAppMenu(false); }}>
-                  <Icon name="transfer" /> 导入 / 导出会话
-                </div>
-                <div class="app-menu-item" onClick={() => { setShowKeyManager(true); setShowAppMenu(false); }}>
-                  <Icon name="key" /> 密钥管理器
-                </div>
-                <div class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
-                  <Icon name="info" /> 关于
-                </div>
+                <div class="app-menu-divider" />
+                <button class="app-menu-item" onClick={() => { setShowSessionTransfer(true); setShowAppMenu(false); }}>
+                  <span class="app-menu-icon"><Icon name="transfer" size={14} /></span>
+                  <span class="app-menu-label">导入 / 导出会话</span>
+                </button>
+                <button class="app-menu-item" onClick={() => { setShowKeyManager(true); setShowAppMenu(false); }}>
+                  <span class="app-menu-icon"><Icon name="key" size={14} /></span>
+                  <span class="app-menu-label">密钥管理器</span>
+                </button>
+                <button class="app-menu-item" onClick={() => { void openSettingsWindow(); setShowAppMenu(false); }}>
+                  <span class="app-menu-icon"><Icon name="settings" size={14} /></span>
+                  <span class="app-menu-label">设置</span>
+                </button>
+                <div class="app-menu-divider" />
+                <button class="app-menu-item" onClick={() => { setShowAbout(true); setShowAppMenu(false); }}>
+                  <span class="app-menu-icon"><Icon name="info" size={14} /></span>
+                  <span class="app-menu-label">关于 PortNest</span>
+                </button>
+                <button class="app-menu-item" onClick={() => { setShowAppMenu(false); openCloseConfirm(); }}>
+                  <span class="app-menu-icon"><Icon name="close" size={14} /></span>
+                  <span class="app-menu-label">关闭窗口</span>
+                  <span class="app-menu-shortcut">Alt+F4</span>
+                </button>
               </div>
               <div class="app-menu-overlay" onClick={() => setShowAppMenu(false)} />
             </Show>
@@ -875,15 +1014,20 @@ const App: Component = () => {
               <Icon name="close" />
             </button>
           </div>
+          </div>
         </div>
       </div>
-      <div class={`app-body ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() ? "files-layout-stacked" : ""}`}>
+      <div class={`app-body ${showAIAssistant() ? "ai-dock-open" : ""} ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() && !showAIAssistant() ? "files-layout-stacked" : ""}`}>
         <Sidebar
           width={sidebarWidth()}
           onConnect={handleConnect}
           onEdit={handleEdit}
           onDelete={handleDelete}
         onOpenSettings={() => void openSettingsWindow()}
+        onOpenAI={() => { if (showAIAssistant()) setShowAIAssistant(false); else openAIAssistant("general"); }}
+        aiOpen={showAIAssistant()}
+        onCloseAI={() => setShowAIAssistant(false)}
+        onOpenTransfer={() => setShowSessionTransfer(true)}
         onNewConnection={handleNewConnection}
         onNewFolder={handleNewFolder}
         onCopyConnection={handleCopyConnection}
@@ -902,6 +1046,7 @@ const App: Component = () => {
             onDeleteMany={handleDeleteMany}
             onNewConnection={handleNewConnection}
             onNewFolder={() => handleNewFolder()}
+            onOpenTransfer={() => setShowSessionTransfer(true)}
           />
         </main>
       </Show>
@@ -961,41 +1106,41 @@ const App: Component = () => {
               style={{ left: tabContextMenu()!.x + "px", top: tabContextMenu()!.y + "px" }}
             >
               <Show when={["ssh", "local"].includes(tabContextMenuTarget()?.connection.protocol ?? "")}>
-                <div class="tab-context-menu-item" onClick={() => handleReconnect(tabContextMenu()!.sessionId)}>
-                  断开重连
-                </div>
+                <button class="tab-context-menu-item" onClick={() => handleReconnect(tabContextMenu()!.sessionId)}>
+                  <Icon name="refresh" size={14} /><span>断开重连</span>
+                </button>
                 <div class="tab-context-menu-divider" />
               </Show>
-              <div class="tab-context-menu-item" onClick={() => handleRename(tabContextMenu()!.sessionId)}>
-                重命名
-              </div>
-              <div class="tab-context-menu-item" onClick={() => handleCopyConnectionInfo(tabContextMenu()!.sessionId)}>
-                复制连接信息
-              </div>
-              <div class="tab-context-menu-item" onClick={() => handleDuplicateSession(tabContextMenu()!.sessionId)}>
-                复制标签页
-              </div>
+              <button class="tab-context-menu-item" onClick={() => handleRename(tabContextMenu()!.sessionId)}>
+                <Icon name="edit" size={14} /><span>重命名</span>
+              </button>
+              <button class="tab-context-menu-item" onClick={() => handleCopyConnectionInfo(tabContextMenu()!.sessionId)}>
+                <Icon name="copy" size={14} /><span>复制连接信息</span>
+              </button>
+              <button class="tab-context-menu-item" onClick={() => handleDuplicateSession(tabContextMenu()!.sessionId)}>
+                <Icon name="copy" size={14} /><span>复制标签页</span>
+              </button>
               <div class="tab-context-menu-divider" />
-              <div class="tab-context-menu-item" onClick={() => handleCloseOthers(tabContextMenu()!.sessionId)}>
-                关闭其他
-              </div>
-              <div class="tab-context-menu-item" onClick={() => handleCloseRight(tabContextMenu()!.sessionId)}>
-                关闭右侧
-              </div>
-              <div class="tab-context-menu-item" onClick={() => handleCloseAll()}>
-                关闭全部
-              </div>
+              <button class="tab-context-menu-item" onClick={() => handleCloseOthers(tabContextMenu()!.sessionId)}>
+                <Icon name="close" size={14} /><span>关闭其他</span>
+              </button>
+              <button class="tab-context-menu-item" onClick={() => handleCloseRight(tabContextMenu()!.sessionId)}>
+                <Icon name="close" size={14} /><span>关闭右侧</span>
+              </button>
+              <button class="tab-context-menu-item" onClick={() => handleCloseAll()}>
+                <Icon name="close" size={14} /><span>关闭全部</span>
+              </button>
               <div class="tab-context-menu-divider" />
-              <div class="tab-context-menu-item" onClick={() => handleTogglePin(tabContextMenu()!.sessionId)}>
-                {tabContextMenuTarget()?.pinned ? "取消固定" : "固定标签"}
-              </div>
+              <button class="tab-context-menu-item" onClick={() => handleTogglePin(tabContextMenu()!.sessionId)}>
+                <Icon name="pin" size={14} /><span>{tabContextMenuTarget()?.pinned ? "取消固定" : "固定标签"}</span>
+              </button>
               <div class="tab-context-menu-divider" />
-              <div class="tab-context-menu-item" onClick={() => {
+              <button class="tab-context-menu-item" onClick={() => {
                 handleCloseSession(tabContextMenu()!.sessionId);
                 setTabContextMenu(null);
               }}>
-                关闭标签页
-              </div>
+                <Icon name="close" size={14} /><span>关闭标签页</span>
+              </button>
             </div>
             <div class="tab-context-menu-overlay" onClick={() => setTabContextMenu(null)} />
           </Show>
@@ -1010,13 +1155,16 @@ const App: Component = () => {
                   : `${session().connection.username}@${session().connection.host}:${session().connection.port}`}</span>
               </div>
               <div class="session-action-controls">
-                <Show when={session().connection.protocol !== "mysql"}><label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
+                <Show when={!isDatabaseProtocol(session().connection.protocol)}><label>编码<select value={session().encodingOverride || session().encoding || "UTF-8"} disabled={!session().shellId} onChange={event => void handleSetEncoding(session().id, event.currentTarget.value)}>
                   <option>UTF-8</option><option>GBK</option><option>GB2312</option><option>GB18030</option><option>Big5</option><option>Shift-JIS</option><option>EUC-KR</option><option>ISO-8859-1</option><option>Windows-1252</option><option>CP437</option>
                 </select></label></Show>
                 <Show when={session().connection.protocol === "ssh"}>
                   <button onClick={() => { setTunnelConnection(session().connection); setShowTunnels(true); }}>⇄ 隧道 {runningTunnelCount(session().connection.id) || ""}</button>
                 </Show>
-                <Show when={session().connection.protocol !== "mysql"}><button disabled={sessions().filter(item => item.status === "connected").length === 0} aria-expanded={showCommandComposer()} onClick={() => { setShowCommandComposer(value => !value); }}>⌁ 命令广播</button></Show>
+                <Show when={!isDatabaseProtocol(session().connection.protocol)}><button disabled={sessions().filter(item => item.status === "connected").length === 0} aria-expanded={showCommandComposer()} onClick={() => { setShowCommandComposer(value => !value); }}>⌁ 命令广播</button></Show>
+                <button class={`session-ai-action ${isDatabaseProtocol(session().connection.protocol) ? "sql" : "terminal"}`} onClick={() => openAIAssistant(isDatabaseProtocol(session().connection.protocol) ? "sql" : "terminal")}>
+                  <Icon name="sparkles" size={13} /> AI {isDatabaseProtocol(session().connection.protocol) ? "SQL" : "终端"}
+                </button>
                 <button onClick={() => void handleReconnect(session().id)}>↻ 重连</button>
               </div>
             </div>
@@ -1032,6 +1180,7 @@ const App: Component = () => {
                 onDeleteMany={handleDeleteMany}
                 onNewConnection={handleNewConnection}
                 onNewFolder={() => handleNewFolder()}
+                onOpenTransfer={() => setShowSessionTransfer(true)}
               />
             </div>
           </Show>
@@ -1070,10 +1219,10 @@ const App: Component = () => {
                         onEnded={() => handleSessionEnded(session.id)}
                       />
                     )}
-                    <Show when={session.connection.protocol === "mysql" && session.status === "connected"}>
-                      <MysqlWorkspace connection={session.connection} visible={sessionVisible()} onCloseConnection={() => void handleCloseSession(session.id)} />
+                    <Show when={isDatabaseProtocol(session.connection.protocol) && session.status === "connected"}>
+                      <DatabaseWorkspace connection={session.connection} visible={sessionVisible()} onCloseConnection={() => void handleCloseSession(session.id)} />
                     </Show>
-                    <Show when={(session.connection.protocol === "mysql" ? session.status !== "connected" : !session.shellId || session.status !== "connected")}>
+                    <Show when={(isDatabaseProtocol(session.connection.protocol) ? session.status !== "connected" : !session.shellId || session.status !== "connected")}>
                       <div class={`session-state-overlay state-${session.status}`}>
                         <span class={`session-state-icon status-${session.status}`}>{session.status === "connecting" || session.status === "reconnecting" ? "◌" : session.status === "error" ? "!" : "›_"}</span>
                         <h3>{session.status === "restored" ? "会话已从上次工作区恢复"
@@ -1095,12 +1244,12 @@ const App: Component = () => {
               }}
             </For>
           </div>
-           <Show when={showCommandComposer() && activeSession()?.connection.protocol !== "mysql"}>
+           <Show when={showCommandComposer() && !!activeSession() && !isDatabaseProtocol(activeSession()!.connection.protocol)}>
              <div class="command-composer-resizer" aria-hidden="true" onMouseDown={startComposerResize} />
              <CommandBroadcast sessions={sessions()} activeSessionId={activeSessionId()} onClose={() => setShowCommandComposer(false)} height={composerHeight()} />
            </Show>
         </main>
-        <Show when={showRightPanel()}>
+        <Show when={showRightPanel() && !showAIAssistant()}>
           <div class="panel-splitter" onMouseDown={startResize} hidden={uiStore.filesCollapsed()} />
           <RightPanel connection={activeSession()?.connection} sessionId={activeSession()?.id} shellId={activeSession()?.shellId} style={{ width: `${rightPanelWidth()}px` }} />
           <Show when={uiStore.filesCollapsed()}>
@@ -1118,7 +1267,7 @@ const App: Component = () => {
         {/* 服务器概览：SSH 会话激活或面板展开时显示；收起时为右缘精简导轨。
             仅在会话健康（connected）时采集；总开关关闭时整个面板不渲染，
             卸载时取消采集并释放会话租约。 */}
-        <Show when={(showRightPanel() || (activeSession()?.connection.protocol === "ssh" && !uiStore.overviewCollapsed())) && getOverviewSettings().enabled}>
+        <Show when={(showRightPanel() || (activeSession()?.connection.protocol === "ssh" && !uiStore.overviewCollapsed())) && getOverviewSettings().enabled && !showAIAssistant()}>
           <ServerOverview connection={activeSession()?.connection} sessionConnected={activeSession()?.status === "connected"} />
         </Show>
       </Show>
@@ -1142,27 +1291,75 @@ const App: Component = () => {
       </Show>
 
       <Show when={showNewFolderDialog()}>
-        <div class="modal-overlay" onClick={() => setShowNewFolderDialog(false)}>
-          <div class="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>{newFolderParentId() ? "新建子文件夹" : "新建文件夹"}</h3>
-            <Show when={newFolderParentId()}>
-              <p class="folder-parent-hint">
-                创建到：{connectionStore.state.folders.find(folder => folder.id === newFolderParentId())?.name}
-              </p>
-            </Show>
-            <div class="form-group">
-              <input
-                type="text"
-                placeholder="文件夹名称"
-                value={newFolderName()}
-                onInput={(e) => setNewFolderName(e.currentTarget.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
-              />
+        <div class="modal-overlay folder-create-overlay" onClick={() => setShowNewFolderDialog(false)}>
+          <div
+            class="folder-create-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="folder-create-title"
+            onClick={event => event.stopPropagation()}
+            onKeyDown={event => {
+              if (event.key === "Escape") setShowNewFolderDialog(false);
+              if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") {
+                event.preventDefault();
+                void handleCreateFolder();
+              }
+            }}
+          >
+            <header class="folder-create-header">
+              <span class="folder-create-icon"><Icon name="folder" size={22} /></span>
+              <div class="folder-create-heading">
+                <span>{newFolderParentId() ? "子文件夹" : "资产组织"}</span>
+                <h3 id="folder-create-title">{newFolderParentId() ? "新建子文件夹" : "新建文件夹"}</h3>
+                <p>用一个清晰的名称整理连接资产。</p>
+              </div>
+              <button type="button" class="folder-create-close" onClick={() => setShowNewFolderDialog(false)} aria-label="关闭">
+                <Icon name="close" size={16} />
+              </button>
+            </header>
+
+            <div class="folder-create-body">
+              <div class="folder-location-card">
+                <span class="folder-location-icon"><Icon name="folderOpen" size={16} /></span>
+                <div>
+                  <small>创建位置</small>
+                  <strong>{folderBreadcrumb(newFolderParentId())}</strong>
+                </div>
+              </div>
+
+              <label class={`folder-name-field ${newFolderTouched() && folderNameError() ? "invalid" : ""}`}>
+                <span>文件夹名称</span>
+                <div class="folder-name-input">
+                  <Icon name="folder" size={16} />
+                  <input
+                    autofocus
+                    type="text"
+                    maxlength={64}
+                    placeholder="例如：生产环境"
+                    value={newFolderName()}
+                    onInput={event => setNewFolderName(event.currentTarget.value)}
+                    onBlur={() => setNewFolderTouched(true)}
+                  />
+                  <Show when={newFolderName()}>
+                    <button type="button" class="folder-name-clear" onClick={() => setNewFolderName("")} aria-label="清空名称">
+                      <Icon name="close" size={13} />
+                    </button>
+                  </Show>
+                </div>
+                <div class="folder-name-meta">
+                  <span class="folder-name-message">{newFolderTouched() && folderNameError() ? folderNameError() : "名称只用于资产列表展示，不会影响已有连接。"}</span>
+                  <span class="folder-name-count">{newFolderName().length}/64</span>
+                </div>
+              </label>
             </div>
-            <div class="form-actions">
-              <button class="btn-cancel" onClick={() => setShowNewFolderDialog(false)}>取消</button>
-              <button class="btn-save" onClick={handleCreateFolder}>创建</button>
-            </div>
+
+            <footer class="folder-create-footer">
+              <span class="folder-dialog-hint"><kbd>Enter</kbd> 创建 <kbd>Esc</kbd> 关闭</span>
+              <div class="folder-create-actions">
+                <button type="button" class="connect-cancel-button" onClick={() => setShowNewFolderDialog(false)}>取消</button>
+                <button type="button" class="connect-save-button primary" disabled={!!folderNameError()} onClick={() => void handleCreateFolder()}>创建文件夹</button>
+              </div>
+            </footer>
           </div>
         </div>
       </Show>
@@ -1176,7 +1373,7 @@ const App: Component = () => {
               版本 {appVersion()} · 基于 Tauri 2.0 + SolidJS
             </p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
-              支持 SSH、SFTP、本地终端与 MySQL 数据库管理
+              支持 SSH、SFTP、本地终端与 MySQL / PostgreSQL 数据库管理
             </p>
             <div class="form-actions" style={{ "margin-top": "20px" }}>
               <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>
@@ -1186,15 +1383,19 @@ const App: Component = () => {
       </Show>
       <Show when={showCloseConfirm()}>
         <div class="modal-overlay close-confirm-overlay" role="presentation" onClick={() => setShowCloseConfirm(false)}>
-          <div class="modal-content close-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="close-confirm-title" onClick={event => event.stopPropagation()}>
-            <div class="close-confirm-icon"><Icon name="close" size={20} /></div>
-            <div>
-              <h3 id="close-confirm-title">确认退出 PortNest？</h3>
-              <p>关闭应用将结束当前打开的终端与数据库会话。</p>
-            </div>
-            <div class="form-actions">
-              <button class="btn-cancel" onClick={() => setShowCloseConfirm(false)}>取消</button>
-              <button class="btn-save close-confirm-primary" onClick={() => void confirmWindowClose()}>确认退出</button>
+          <div class="close-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="close-confirm-title" aria-describedby="close-confirm-description" onClick={event => event.stopPropagation()}>
+            <h3 id="close-confirm-title" class="close-confirm-title">关闭窗口</h3>
+            <div id="close-confirm-description" class="close-confirm-body">请选择关闭/折叠</div>
+            <div class="close-confirm-footer">
+              <label class="close-confirm-remember">
+                <input type="checkbox" checked={saveCloseChoice()} onChange={event => setSaveCloseChoice(event.currentTarget.checked)} />
+                <span>保存此次选项</span>
+              </label>
+              <div class="close-confirm-actions">
+                <button type="button" class="close-confirm-action close-confirm-cancel" onClick={() => setShowCloseConfirm(false)}>取消</button>
+                <button type="button" class="close-confirm-action close-confirm-exit" onClick={() => void confirmWindowClose()}>关闭</button>
+                <button type="button" class="close-confirm-action close-confirm-fold" title="折叠到系统托盘" onClick={() => void foldWindow()}>折叠</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1222,10 +1423,15 @@ const App: Component = () => {
           </div>
         </div>
       </Show>
+      <Show when={showAIAssistant()}>
+        <AIAssistant connection={activeSession()?.connection} shellId={activeSession()?.shellId} initialMode={aiAssistantMode()} onModeChange={setAiAssistantMode} terminalContext={() => { const session = activeSession(); return session ? readTerminalTranscript(session.id, 160) : ""; }} sqlContext={() => aiContextStore.sqlContext()} onClose={() => setShowAIAssistant(false)} />
+      </Show>
       <FeedbackHost />
+      <TextContextMenu />
       </div>
     </div>
   );
 };
 
 export default App;
+

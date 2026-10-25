@@ -607,7 +607,10 @@ pub async fn mysql_autocomplete(
         "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=? ORDER BY TABLE_NAME, ORDINAL_POSITION",
         (&database,),
     ).await.map_err(|e| e.to_string())?;
-    Ok(rows.into_iter().map(|(table, column)| MysqlAutocompleteItem { table, column }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|(table, column)| MysqlAutocompleteItem { table, column })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -648,7 +651,10 @@ pub async fn mysql_explain_sql(
         .query_iter(format!("EXPLAIN {sql}"))
         .await
         .map_err(|e| e.to_string())?;
-    let column_meta: Vec<Column> = result.columns().map(|columns| columns.to_vec()).unwrap_or_default();
+    let column_meta: Vec<Column> = result
+        .columns()
+        .map(|columns| columns.to_vec())
+        .unwrap_or_default();
     let columns = column_meta
         .iter()
         .map(|column| column.name_str().to_string())
@@ -669,7 +675,9 @@ pub async fn mysql_explain_sql(
         json_plan: None,
         columns,
         rows,
-        message: Some("当前 MySQL 版本不支持 EXPLAIN FORMAT=JSON，已回退为表格执行计划".to_string()),
+        message: Some(
+            "当前 MySQL 版本不支持 EXPLAIN FORMAT=JSON，已回退为表格执行计划".to_string(),
+        ),
     })
 }
 
@@ -1776,65 +1784,70 @@ fn build_row_mutation_sql(
     primary: &[String],
     allowed: &HashSet<String>,
 ) -> Result<(String, Vec<Value>), String> {
-    if values.keys().chain(original.keys()).any(|key| !allowed.contains(key)) {
+    if values
+        .keys()
+        .chain(original.keys())
+        .any(|key| !allowed.contains(key))
+    {
         return Err("请求包含未知字段".to_string());
     }
     let mut params = Vec::new();
-    let sql = if action == "insert" {
-        let columns = values.keys().cloned().collect::<Vec<_>>();
-        if columns.is_empty() {
-            return Err("没有可插入的数据".to_string());
-        }
-        params.extend(columns.iter().map(|key| json_to_value(&values[key])));
-        format!(
-            "INSERT INTO {full} ({}) VALUES ({})",
-            columns
-                .iter()
-                .map(|v| quote_identifier(v))
-                .collect::<Result<Vec<_>, _>>()?
-                .join(","),
-            vec!["?"; columns.len()].join(",")
-        )
-    } else {
-        if original.is_empty() {
-            return Err("缺少原始行数据".to_string());
-        }
-        let where_keys = if primary.is_empty() {
-            original.keys().cloned().collect::<Vec<_>>()
-        } else {
-            primary.to_vec()
-        };
-        let where_sql = where_keys
-            .iter()
-            .map(|key| quote_identifier(key).map(|q| format!("{q} <=> ?")))
-            .collect::<Result<Vec<_>, _>>()?
-            .join(" AND ");
-        if action == "delete" {
-            params.extend(where_keys.iter().map(|key| {
-                json_to_value(original.get(key).unwrap_or(&serde_json::Value::Null))
-            }));
-            format!("DELETE FROM {full} WHERE {where_sql} LIMIT 1")
-        } else if action == "update" {
+    let sql =
+        if action == "insert" {
             let columns = values.keys().cloned().collect::<Vec<_>>();
             if columns.is_empty() {
-                return Err("没有需要更新的数据".to_string());
+                return Err("没有可插入的数据".to_string());
             }
             params.extend(columns.iter().map(|key| json_to_value(&values[key])));
-            params.extend(where_keys.iter().map(|key| {
-                json_to_value(original.get(key).unwrap_or(&serde_json::Value::Null))
-            }));
             format!(
-                "UPDATE {full} SET {} WHERE {where_sql} LIMIT 1",
+                "INSERT INTO {full} ({}) VALUES ({})",
                 columns
                     .iter()
-                    .map(|key| quote_identifier(key).map(|q| format!("{q}=?")))
+                    .map(|v| quote_identifier(v))
                     .collect::<Result<Vec<_>, _>>()?
-                    .join(",")
+                    .join(","),
+                vec!["?"; columns.len()].join(",")
             )
         } else {
-            return Err("不支持的行操作".to_string());
-        }
-    };
+            if original.is_empty() {
+                return Err("缺少原始行数据".to_string());
+            }
+            let where_keys = if primary.is_empty() {
+                original.keys().cloned().collect::<Vec<_>>()
+            } else {
+                primary.to_vec()
+            };
+            let where_sql = where_keys
+                .iter()
+                .map(|key| quote_identifier(key).map(|q| format!("{q} <=> ?")))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(" AND ");
+            if action == "delete" {
+                params.extend(where_keys.iter().map(|key| {
+                    json_to_value(original.get(key).unwrap_or(&serde_json::Value::Null))
+                }));
+                format!("DELETE FROM {full} WHERE {where_sql} LIMIT 1")
+            } else if action == "update" {
+                let columns = values.keys().cloned().collect::<Vec<_>>();
+                if columns.is_empty() {
+                    return Err("没有需要更新的数据".to_string());
+                }
+                params.extend(columns.iter().map(|key| json_to_value(&values[key])));
+                params.extend(where_keys.iter().map(|key| {
+                    json_to_value(original.get(key).unwrap_or(&serde_json::Value::Null))
+                }));
+                format!(
+                    "UPDATE {full} SET {} WHERE {where_sql} LIMIT 1",
+                    columns
+                        .iter()
+                        .map(|key| quote_identifier(key).map(|q| format!("{q}=?")))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join(",")
+                )
+            } else {
+                return Err("不支持的行操作".to_string());
+            }
+        };
     Ok((sql, params))
 }
 
@@ -1926,14 +1939,8 @@ pub async fn mysql_apply_table_changes(
         .await
         .map_err(|e| e.to_string())?;
     for values in &changes.inserts {
-        let (sql, params) = build_row_mutation_sql(
-            &full,
-            "insert",
-            values,
-            &HashMap::new(),
-            &primary,
-            &allowed,
-        )?;
+        let (sql, params) =
+            build_row_mutation_sql(&full, "insert", values, &HashMap::new(), &primary, &allowed)?;
         tx.exec_drop(sql, Params::Positional(params))
             .await
             .map_err(|e| format!("新增记录失败: {e}"))?;

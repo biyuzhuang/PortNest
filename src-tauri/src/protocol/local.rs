@@ -99,8 +99,8 @@ fn resolve_custom(custom_command: Option<&str>) -> Result<(String, Vec<String>)>
         || program_path.components().count() > 1
         || program.contains('/')
         || program.contains('\\');
-    let exists = program_path.is_file()
-        || (!is_absolute_or_qualified && find_on_path(&program).is_some());
+    let exists =
+        program_path.is_file() || (!is_absolute_or_qualified && find_on_path(&program).is_some());
     if !exists {
         return Err(Error::InvalidConfig(format!(
             "未找到自定义命令的可执行文件: {program}"
@@ -209,7 +209,9 @@ fn system32(name: &str) -> Option<String> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
     let candidate = root.join("System32").join(name);
-    candidate.is_file().then(|| candidate.to_string_lossy().into_owned())
+    candidate
+        .is_file()
+        .then(|| candidate.to_string_lossy().into_owned())
 }
 
 #[cfg(windows)]
@@ -241,7 +243,9 @@ fn resolve_powershell5() -> Result<String> {
 
 #[cfg(not(windows))]
 fn resolve_powershell5() -> Result<String> {
-    Err(Error::InvalidConfig("Windows PowerShell 仅支持 Windows".to_string()))
+    Err(Error::InvalidConfig(
+        "Windows PowerShell 仅支持 Windows".to_string(),
+    ))
 }
 
 fn resolve_pwsh() -> Result<String> {
@@ -310,7 +314,10 @@ pub struct LocalShellHandle {
 }
 
 /// 启动本地终端进程
-pub fn spawn_local_shell(profile: &LocalShellProfile, size: TerminalSize) -> Result<LocalShellHandle> {
+pub fn spawn_local_shell(
+    profile: &LocalShellProfile,
+    size: TerminalSize,
+) -> Result<LocalShellHandle> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -353,7 +360,10 @@ pub fn spawn_local_shell(profile: &LocalShellProfile, size: TerminalSize) -> Res
                 }
                 Ok(count) => count,
             };
-            if tx.send(LocalShellOutput::Data(buffer[..count].to_vec())).is_err() {
+            if tx
+                .send(LocalShellOutput::Data(buffer[..count].to_vec()))
+                .is_err()
+            {
                 // 接收方已关闭：终止子进程
                 let mut guard = thread_child.lock();
                 if let Some(child) = guard.as_mut() {
@@ -554,5 +564,4 @@ mod tests {
         );
         handle.close().await.expect("close local shell");
     }
-
 }

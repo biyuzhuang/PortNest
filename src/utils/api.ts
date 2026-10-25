@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type SshErrorCode = "AUTHENTICATION" | "HOST_KEY" | "ENCODING" | "PORT_IN_USE" | "FORWARD_REJECTED" | "PROXY" | "REMOTE_CLOSED" | "SSH_ERROR";
 
@@ -134,6 +134,15 @@ export interface FolderRecord {
   parent_id: string | null;
   sort_order: number;
   created_at: number;
+}
+
+export interface SessionImportResult {
+  folders: number;
+  connections: number;
+  skipped: number;
+  password_required: number;
+  private_key_required: number;
+  warnings: string[];
 }
 
 export interface AIAnalyzeResult {
@@ -404,6 +413,27 @@ export interface MysqlTableChangeSet {
   updates: Array<{ values: Record<string, unknown>; original: Record<string, unknown> }>;
   deletes: Array<Record<string, unknown>>;
 }
+
+// 通用数据库工作区类型。保留 MySQL 旧名称以兼容已有代码，同时为新数据库
+// 协议提供语义中性的别名，避免 UI 与某一种数据库耦合。
+export type DatabaseInfo = MysqlDatabaseInfo;
+export type DatabaseCharsetInfo = MysqlCharsetInfo;
+export type DatabaseSqlImportResult = MysqlSqlImportResult;
+export type DatabaseSqlExportResult = MysqlSqlExportResult;
+export type DatabaseTableInfo = MysqlTableInfo;
+export type DatabaseColumnInfo = MysqlColumnInfo;
+export type DatabaseIndexInfo = MysqlIndexInfo;
+export type DatabaseColumnDefinition = MysqlColumnDefinition;
+export type DatabaseIndexDefinition = MysqlIndexDefinition;
+export type DatabaseTableDefinition = MysqlTableDefinition;
+export type DatabaseAutocompleteItem = MysqlAutocompleteItem;
+export type DatabaseExplainResult = MysqlExplainResult;
+export type DatabaseTableChangeSet = MysqlTableChangeSet;
+
+/** 支持数据库管理工作区的协议。新增数据库时只需扩展此集合。 */
+export const DATABASE_PROTOCOLS = ["mysql", "postgresql"] as const;
+export const isDatabaseProtocol = (protocol?: string): boolean =>
+  !!protocol && (DATABASE_PROTOCOLS as readonly string[]).includes(protocol);
 export interface ChatMessage {
   role: string;
   content: string;
@@ -412,6 +442,67 @@ export interface ChatMessage {
 export interface ChatResponse {
   message: ChatMessage;
   analysis?: AIAnalyzeResult;
+}
+
+export interface AIProviderConfig {
+  enabled: boolean;
+  provider: string;
+  protocol: "openai_chat" | "anthropic" | "ollama" | string;
+  endpoint: string;
+  api_key: string;
+  model: string;
+  display_name: string;
+  context_window: number;
+  max_output: number;
+  temperature?: number | null;
+  custom_headers: Record<string, string>;
+}
+
+export interface AIChatMessage {
+  role: "user" | "assistant" | "system" | string;
+  content: string;
+}
+
+export interface AIChatRequest {
+  mode: "general" | "terminal" | "sql" | string;
+  messages: AIChatMessage[];
+  connection_id?: string | null;
+  user_context?: string | null;
+}
+
+export interface AIChatResponse {
+  content: string;
+  provider: string;
+  model: string;
+}
+
+export interface AIChatStreamEvent {
+  kind: "start" | "delta" | "done" | "error" | string;
+  delta?: string | null;
+  provider?: string | null;
+  model?: string | null;
+}
+
+export interface AiToolAuditRecord {
+  id: string;
+  created_at: number;
+  connection_id?: string | null;
+  mode: string;
+  tool_name: string;
+  payload: string;
+  risk: string;
+  status: string;
+  result?: string | null;
+}
+
+export interface AiToolAuditRequest {
+  connection_id?: string | null;
+  mode: string;
+  tool_name: string;
+  payload: string;
+  risk: string;
+  status: string;
+  result?: string | null;
 }
 
 export interface CommandVariable { name: string; default_value?: string; choices?: string[]; sensitive?: boolean }
@@ -526,6 +617,19 @@ export const api = {
   async chatWithAI(connectionId: string, message: string): Promise<ChatResponse> {
     return invoke("chat_with_ai", { connectionId, message });
   },
+  async aiGetConfig(): Promise<AIProviderConfig | null> { return invoke("ai_get_config"); },
+  async aiSaveConfig(config: AIProviderConfig): Promise<void> { return invoke("ai_save_config", { config }); },
+  async aiTestConfig(config: AIProviderConfig): Promise<string> { return invoke("ai_test_config", { config }); },
+  async aiListModels(config: AIProviderConfig): Promise<string[]> { return invoke("ai_list_models", { config }); },
+  async aiChat(request: AIChatRequest): Promise<AIChatResponse> { return invoke("ai_chat", { request }); },
+  async aiChatStream(request: AIChatRequest, onEvent: (event: AIChatStreamEvent) => void): Promise<void> {
+    const channel = new Channel<AIChatStreamEvent>();
+    channel.onmessage = onEvent;
+    return invoke("ai_chat_stream", { request, onEvent: channel });
+  },
+  async aiAuditTool(request: AiToolAuditRequest): Promise<AiToolAuditRecord> { return invoke("ai_audit_tool", { request }); },
+  async aiListToolAudit(limit = 50): Promise<AiToolAuditRecord[]> { return invoke("ai_list_tool_audit", { limit }); },
+  async aiClearToolAudit(): Promise<void> { return invoke("ai_clear_tool_audit"); },
 
   // SFTP operations
   async openSftp(connectionId: string): Promise<{ sftp_id: string }> {
@@ -584,6 +688,33 @@ export const api = {
   async mysqlImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("mysql_import_csv", { connectionId, database, table, csv }); },
   async mysqlImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<MysqlSqlImportResult> { return invoke("mysql_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
   async mysqlExportSql(connectionId: string, path: string, database: string): Promise<MysqlSqlExportResult> { return invoke("mysql_export_sql", { connectionId, options: { path, database } }); },
+
+  // 通用数据库 API：MySQL / PostgreSQL 共用同一套方法，后端按连接协议分派。
+  async databaseConnect(connectionId: string): Promise<void> { return invoke("database_connect", { connectionId }); },
+  async databaseDisconnect(connectionId: string): Promise<void> { return invoke("database_disconnect", { connectionId }); },
+  async databaseListDatabases(connectionId: string): Promise<DatabaseInfo[]> { return invoke("database_list_databases", { connectionId }); },
+  async databaseListCharsets(connectionId: string): Promise<DatabaseCharsetInfo[]> { return invoke("database_list_charsets", { connectionId }); },
+  async databaseListTables(connectionId: string, database: string): Promise<DatabaseTableInfo[]> { return invoke("database_list_tables", { connectionId, database }); },
+  async databaseListColumns(connectionId: string, database: string, table: string): Promise<DatabaseColumnInfo[]> { return invoke("database_list_columns", { connectionId, database, table }); },
+  async databaseListIndexes(connectionId: string, database: string, table: string): Promise<DatabaseIndexInfo[]> { return invoke("database_list_indexes", { connectionId, database, table }); },
+  async databaseExecuteSql(connectionId: string, sql: string, database?: string): Promise<QueryResult> { return invoke("database_execute_sql", { connectionId, sql, database: database || null }); },
+  async databaseCancelQuery(connectionId: string): Promise<void> { return invoke("database_cancel_query", { connectionId }); },
+  async databaseAutocomplete(connectionId: string, database: string): Promise<DatabaseAutocompleteItem[]> { return invoke("database_autocomplete", { connectionId, database }); },
+  async databaseExplainSql(connectionId: string, sql: string, database?: string): Promise<DatabaseExplainResult> { return invoke("database_explain_sql", { connectionId, sql, database: database || null }); },
+  async databaseSaveSql(path: string, sql: string): Promise<void> { return invoke("database_save_sql", { path, sql }); },
+  async databaseFetchRows(connectionId: string, database: string, table: string, page = 1, pageSize = 100): Promise<QueryResult> { return invoke("database_fetch_rows", { connectionId, database, table, page, pageSize }); },
+  async databaseCreateDatabase(connectionId: string, name: string, charset = "utf8mb4", collation?: string): Promise<void> { return invoke("database_create_database", { connectionId, name, charset, collation: collation || null }); },
+  async databaseDropDatabase(connectionId: string, database: string): Promise<void> { return invoke("database_drop_database", { connectionId, database }); },
+  async databaseCreateTable(connectionId: string, definition: DatabaseTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("database_create_table", { connectionId, definition }); },
+  async databasePreviewTable(connectionId: string, definition: DatabaseTableDefinition): Promise<string[]> { return invoke("database_preview_table", { connectionId, definition }); },
+  async databaseApplyTable(connectionId: string, definition: DatabaseTableDefinition, preview?: string[]): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("database_apply_table", { connectionId, definition, preview: preview && preview.length ? preview : null }); },
+  async databaseTableAction(connectionId: string, database: string, table: string, action: "truncate" | "drop" | "rename" | "clone", target?: string): Promise<void> { return invoke("database_table_action", { connectionId, database, table, action, target: target || null }); },
+  async databaseShowCreate(connectionId: string, database: string, table: string): Promise<string> { return invoke("database_show_create", { connectionId, database, table }); },
+  async databaseMutateRow(connectionId: string, database: string, table: string, action: "insert" | "update" | "delete", values: Record<string, unknown>, original: Record<string, unknown> = {}): Promise<number> { return invoke("database_mutate_row", { connectionId, database, table, action, mutation: { values, original } }); },
+  async databaseApplyTableChanges(connectionId: string, database: string, table: string, changes: DatabaseTableChangeSet): Promise<number> { return invoke("database_apply_table_changes", { connectionId, database, table, changes }); },
+  async databaseImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("database_import_csv", { connectionId, database, table, csv }); },
+  async databaseImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<DatabaseSqlImportResult> { return invoke("database_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
+  async databaseExportSql(connectionId: string, path: string, database: string): Promise<DatabaseSqlExportResult> { return invoke("database_export_sql", { connectionId, options: { path, database } }); },
 
   async sftpCreateFile(sftpId: string, path: string): Promise<void> {
     return sshInvoke("sftp_create_file", { sftpId, path });
@@ -685,8 +816,16 @@ export const api = {
     return invoke("export_sessions", { includePasswords, includePrivateKeys });
   },
 
-  async importSessions(json: string): Promise<{ folders: number; connections: number }> {
+  async importSessions(json: string): Promise<SessionImportResult> {
     return invoke("import_sessions", { json });
+  },
+
+  async importXshellSessions(sessionDir: string): Promise<SessionImportResult> {
+    return invoke("import_xshell_sessions", { sessionDir });
+  },
+
+  async detectXshellSessionsDir(): Promise<string | null> {
+    return invoke("detect_xshell_sessions_dir");
   },
 
   async updateAssetOrder(connections: AssetOrderItem[], folders: AssetOrderItem[]): Promise<void> {

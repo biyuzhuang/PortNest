@@ -1,5 +1,6 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { api, type ConnectionRecord, type TunnelRule, type TunnelRuntimeInfo } from "../utils/api";
+import { Icon } from "./Icon";
 
 interface TunnelPanelProps {
   connection: ConnectionRecord;
@@ -72,7 +73,7 @@ export const TunnelPanel: Component<TunnelPanelProps> = (props) => {
   return (
     <div class="workspace-drawer-overlay" onClick={props.onClose}>
       <aside class="workspace-drawer tunnel-drawer" onClick={event => event.stopPropagation()}>
-        <header class="workspace-drawer-header"><div><h3>SSH 隧道</h3><p>{props.connection.name}</p></div><button onClick={props.onClose}>×</button></header>
+        <header class="workspace-drawer-header"><div><h3>SSH 隧道</h3><p>{props.connection.name}</p></div><button onClick={props.onClose} aria-label="关闭"><Icon name="close" size={14} /></button></header>
         <div class="tunnel-panel-actions"><span>运行中 <strong>{runtimes().filter(item => item.status === "running").length}</strong></span><button disabled={busyRuleId() !== null || rules().every(rule => !rule.enabled || Boolean(runtimeFor(rule.id)))} onClick={() => void startAll()}>全部启动</button><button disabled={busyRuleId() !== null || runtimes().length === 0} onClick={() => void stopAll()}>全部停止</button></div>
         <Show when={error()}><div class="drawer-error">{error()}</div></Show>
         <Show when={message()}><div class="drawer-message">{message()}</div></Show>

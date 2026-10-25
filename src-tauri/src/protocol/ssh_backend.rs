@@ -11,8 +11,8 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{oneshot, Mutex};
 use tokio::sync::Notify;
+use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
@@ -267,7 +267,9 @@ impl SshSessionPool {
     pub async fn release(&self, key: &str, owner: &str) {
         let session = {
             let mut entries = self.entries.lock().await;
-            let Some(entry) = entries.get_mut(key) else { return };
+            let Some(entry) = entries.get_mut(key) else {
+                return;
+            };
             entry.owners.remove(owner);
             if entry.owners.is_empty() {
                 entries.remove(key).map(|entry| entry.session)
@@ -283,7 +285,9 @@ impl SshSessionPool {
     pub async fn retain(&self, key: &str, owner: String) -> Option<Arc<dyn SshSession>> {
         let mut entries = self.entries.lock().await;
         let entry = entries.get_mut(key)?;
-        if entry.session.status() != SessionStatus::Connected { return None; }
+        if entry.session.status() != SessionStatus::Connected {
+            return None;
+        }
         entry.owners.insert(owner);
         Some(entry.session.clone())
     }
@@ -296,19 +300,24 @@ pub fn session_pool_key(
     options: &ConnectionOptions,
 ) -> String {
     let serialized_options = serde_json::to_string(options).unwrap_or_default();
-    let jump_material = options.proxy.as_ref().and_then(|proxy| proxy.jump.as_ref()).map(|jump| {
-        format!(
-            "{}:{}:{}:{:?}:{}:{}:{}:{}",
-            jump.target.host,
-            jump.target.port,
-            jump.target.username,
-            jump.credential.credential_type,
-            jump.credential.password.as_deref().unwrap_or(""),
-            jump.credential.private_key.as_deref().unwrap_or(""),
-            jump.credential.passphrase.as_deref().unwrap_or(""),
-            serde_json::to_string(&jump.options).unwrap_or_default(),
-        )
-    }).unwrap_or_default();
+    let jump_material = options
+        .proxy
+        .as_ref()
+        .and_then(|proxy| proxy.jump.as_ref())
+        .map(|jump| {
+            format!(
+                "{}:{}:{}:{:?}:{}:{}:{}:{}",
+                jump.target.host,
+                jump.target.port,
+                jump.target.username,
+                jump.credential.credential_type,
+                jump.credential.password.as_deref().unwrap_or(""),
+                jump.credential.private_key.as_deref().unwrap_or(""),
+                jump.credential.passphrase.as_deref().unwrap_or(""),
+                serde_json::to_string(&jump.options).unwrap_or_default(),
+            )
+        })
+        .unwrap_or_default();
     let material = format!(
         "{}\0{}\0{}\0{:?}\0{}\0{}\0{}\0{}\0{}",
         target.host,
@@ -322,7 +331,13 @@ pub fn session_pool_key(
         jump_material,
     );
     let digest = Sha256::digest(material.as_bytes());
-    format!("{connection_id}:{}", digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
+    format!(
+        "{connection_id}:{}",
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
 }
 
 #[derive(Debug, Default)]

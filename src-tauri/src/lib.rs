@@ -10,6 +10,7 @@ pub mod storage;
 pub use error::{Error, Result};
 
 use std::path::PathBuf;
+use tauri::Manager;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -57,6 +58,58 @@ fn init_app_state(app_dir: PathBuf) -> Result<(commands::AppState, LogGuard)> {
     Ok((state, log_guard))
 }
 
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_skip_taskbar(false);
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show_item = MenuItem::with_id(app, "tray-show", "显示 PortNest", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "tray-quit", "退出 PortNest", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+    let tray = if let Some(tray) = app.tray_by_id("main") {
+        tray.set_menu(Some(menu))?;
+        tray
+    } else {
+        let mut builder = TrayIconBuilder::with_id("main")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .tooltip("PortNest");
+        if let Some(icon) = app.default_window_icon() {
+            builder = builder.icon(icon.clone());
+        }
+        builder.build(app)?
+    };
+
+    tray.set_show_menu_on_left_click(false)?;
+    tray.on_menu_event(|app, event| match event.id.as_ref() {
+        "tray-show" => show_main_window(app),
+        "tray-quit" => app.exit(0),
+        _ => {}
+    });
+    tray.on_tray_icon_event(|tray, event| match event {
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } => show_main_window(tray.app_handle()),
+        TrayIconEvent::DoubleClick {
+            button: MouseButton::Left,
+            ..
+        } => show_main_window(tray.app_handle()),
+        _ => {}
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app_dir = app_data_dir();
@@ -81,6 +134,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
+        .setup(|app| {
+            setup_tray(app)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::save_connection,
             commands::get_connections,
@@ -132,7 +189,43 @@ pub fn run() {
             commands::mysql_admin::mysql_import_csv,
             commands::mysql_admin::mysql_import_sql,
             commands::mysql_admin::mysql_export_sql,
+            // Generic database workspace commands: shared by MySQL / PostgreSQL
+            // and designed so future database protocols can reuse the same UI.
+            commands::database_admin::database_connect,
+            commands::database_admin::database_disconnect,
+            commands::database_admin::database_list_databases,
+            commands::database_admin::database_list_charsets,
+            commands::database_admin::database_list_tables,
+            commands::database_admin::database_list_columns,
+            commands::database_admin::database_list_indexes,
+            commands::database_admin::database_execute_sql,
+            commands::database_admin::database_autocomplete,
+            commands::database_admin::database_explain_sql,
+            commands::database_admin::database_cancel_query,
+            commands::database_admin::database_save_sql,
+            commands::database_admin::database_fetch_rows,
+            commands::database_admin::database_create_database,
+            commands::database_admin::database_drop_database,
+            commands::database_admin::database_create_table,
+            commands::database_admin::database_preview_table,
+            commands::database_admin::database_apply_table,
+            commands::database_admin::database_table_action,
+            commands::database_admin::database_show_create,
+            commands::database_admin::database_mutate_row,
+            commands::database_admin::database_apply_table_changes,
+            commands::database_admin::database_import_csv,
+            commands::database_admin::database_import_sql,
+            commands::database_admin::database_export_sql,
             commands::chat_with_ai,
+            commands::ai::ai_get_config,
+            commands::ai::ai_save_config,
+            commands::ai::ai_test_config,
+            commands::ai::ai_list_models,
+            commands::ai::ai_chat,
+            commands::ai::ai_chat_stream,
+            commands::ai::ai_audit_tool,
+            commands::ai::ai_list_tool_audit,
+            commands::ai::ai_clear_tool_audit,
             // SFTP commands
             commands::open_sftp,
             commands::open_sftp_for_shell,
@@ -166,8 +259,12 @@ pub fn run() {
             commands::get_ssh_keys,
             commands::save_ssh_key,
             commands::delete_ssh_key,
+            commands::open_settings_window,
+            commands::quit_app,
             commands::export_sessions,
             commands::import_sessions,
+            commands::import_xshell_sessions,
+            commands::detect_xshell_sessions_dir,
             commands::move_connection_to_folder,
             commands::update_asset_order,
             commands::read_clipboard_text,

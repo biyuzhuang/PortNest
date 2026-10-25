@@ -11,6 +11,7 @@ import { loadTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stor
 import { sessionStore } from "../stores/sessionStore";
 import { pathLinkStore } from "../stores/pathLinkStore";
 import { LineBuffer, evaluateCommandLine, defaultHomePath, type CwdState } from "../utils/shellCwd";
+import { Icon } from "./Icon";
 
 interface TerminalViewProps {
   connection: ConnectionRecord;
@@ -49,6 +50,20 @@ const terminalCursorColors = (backgroundStyle: string, fallbackCursor: string, f
 
 export function getTerminalState(sessionKey: string): TerminalState | undefined {
   return terminalStates.get(sessionKey);
+}
+
+/** Return the visible terminal scrollback as plain text for AI context. */
+export function readTerminalTranscript(sessionKey: string, maxLines = 160): string {
+  const state = terminalStates.get(sessionKey);
+  if (!state) return "";
+  const buffer = state.terminal.buffer.active;
+  const start = Math.max(0, buffer.length - Math.max(1, maxLines));
+  const lines: string[] = [];
+  for (let index = start; index < buffer.length; index += 1) {
+    const line = buffer.getLine(index);
+    if (line) lines.push(line.translateToString(true));
+  }
+  return lines.join("\n").trim();
 }
 
 export function hasTerminalState(sessionKey: string): boolean {
@@ -654,8 +669,8 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
             if (event.key === "Enter") search(event.shiftKey);
             if (event.key === "Escape") { setShowSearch(false); terminalStates.get(props.sessionKey || "")?.terminal.focus(); }
           }} />
-          <button onClick={() => search(true)} title="上一个">↑</button><button onClick={() => search(false)} title="下一个">↓</button>
-          <button onClick={() => setShowSearch(false)} title="关闭">×</button>
+          <button onClick={() => search(true)} title="上一个"><Icon name="chevronUp" size={14} /></button><button onClick={() => search(false)} title="下一个"><Icon name="chevronDown" size={14} /></button>
+          <button onClick={() => setShowSearch(false)} title="关闭"><Icon name="close" size={14} /></button>
         </div>
       </Show>
       <div ref={containerRef} class="terminal-container" />

@@ -4,6 +4,7 @@ import App from "./App";
 import { SettingsModal } from "./components/SettingsModal";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initTheme } from "./stores/themeStore";
+import "./visual-refresh.css";
 
 const isSettingsWindow = new URLSearchParams(window.location.search).get("window") === "settings";
 document.addEventListener("contextmenu", event => event.preventDefault(), { capture: true });
