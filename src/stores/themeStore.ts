@@ -355,6 +355,8 @@ export interface TerminalSettings {
   lineHeight: number;
   letterSpacing: number;
   scrollback: number;
+  highlightEnhancement: boolean;
+  stripedBackground: boolean;
   commandHints: boolean;
   sshHistory: boolean;
   reconnectOnDisconnect: boolean;
@@ -373,6 +375,8 @@ export function getTerminalSettings(): TerminalSettings {
     lineHeight: 1,
     letterSpacing: 0,
     scrollback: 1000,
+    highlightEnhancement: false,
+    stripedBackground: false,
     commandHints: true,
     sshHistory: true,
     reconnectOnDisconnect: false,

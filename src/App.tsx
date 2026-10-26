@@ -6,7 +6,7 @@ import packageInfo from "../package.json";
 import { Sidebar } from "./components/Sidebar";
 import { RightPanel } from "./components/RightPanel";
 import { ServerOverview } from "./components/ServerOverview";
-import { readTerminalTranscript, refitTerminal } from "./components/TerminalView";
+import { readTerminalSelection, readTerminalTranscript, refitTerminal } from "./components/TerminalView";
 import { getOverviewSettings } from "./stores/dashboardStore";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { TerminalView } from "./components/TerminalView";
@@ -166,26 +166,84 @@ const App: Component = () => {
   onMount(() => {
     if (!isTauriRuntime()) return;
     const appWindow = getCurrentWindow();
+    const windowSizeStorageKey = "portnest-window-size-v1";
+    const windowFitStorageKey = "portnest-window-fit-v4";
     let unlistenResize: (() => void) | undefined;
-    // First launch: choose a working size from the monitor work area instead
-    // of relying on a fixed 1280x800 window that may overflow smaller screens.
-    if (localStorage.getItem("portnest-window-fit-v3") !== "1") {
-      const width = Math.max(960, Math.min(1800, Math.round(window.screen.availWidth * 0.94)));
-      const height = Math.max(600, Math.min(1100, Math.round(window.screen.availHeight * 0.90)));
-      void appWindow.setSize(new LogicalSize(width, height))
-        .then(() => appWindow.center())
-        .finally(() => localStorage.setItem("portnest-window-fit-v3", "1"));
-    }
+    let resizeSaveTimer: number | undefined;
+    let windowLayoutReady = false;
+
+    const readSavedWindowSize = () => {
+      try {
+        const raw = localStorage.getItem(windowSizeStorageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as { width?: unknown; height?: unknown };
+        const width = Number(parsed.width);
+        const height = Number(parsed.height);
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 480 || height < 360) return null;
+        return { width: Math.round(width), height: Math.round(height) };
+      } catch {
+        return null;
+      }
+    };
+
+    const persistWindowSize = async () => {
+      if (!windowLayoutReady) return;
+      try {
+        if (await appWindow.isMaximized()) return;
+        const [size, scale] = await Promise.all([appWindow.innerSize(), appWindow.scaleFactor()]);
+        const width = Math.round(size.width / scale);
+        const height = Math.round(size.height / scale);
+        if (width < 480 || height < 360) return;
+        localStorage.setItem(windowSizeStorageKey, JSON.stringify({ width, height }));
+      } catch (error) {
+        console.warn("[window] unable to persist window size", error);
+      }
+    };
+
+    const applyInitialWindowSize = async () => {
+      const saved = readSavedWindowSize();
+      if (saved) {
+        const maxWidth = Math.max(960, Math.min(1880, Math.round(window.screen.availWidth * .98)));
+        const maxHeight = Math.max(600, Math.min(1160, Math.round(window.screen.availHeight * .98)));
+        const width = Math.max(960, Math.min(saved.width, maxWidth));
+        const height = Math.max(600, Math.min(saved.height, maxHeight));
+        await appWindow.setSize(new LogicalSize(width, height));
+        await appWindow.center();
+        return;
+      }
+      if (localStorage.getItem(windowFitStorageKey) !== "1") {
+        const width = Math.max(960, Math.min(1880, Math.round(window.screen.availWidth * 0.96)));
+        const height = Math.max(600, Math.min(1160, Math.round(window.screen.availHeight * 0.93)));
+        await appWindow.setSize(new LogicalSize(width, height));
+        await appWindow.center();
+        localStorage.setItem(windowFitStorageKey, "1");
+      }
+    };
+
+    void applyInitialWindowSize()
+      .catch(error => console.warn("[window] unable to apply initial window size", error))
+      .finally(() => {
+        window.setTimeout(() => { windowLayoutReady = true; }, 450);
+      });
+
     void appWindow.isMaximized().then(setIsWindowMaximized);
     void appWindow.onCloseRequested(event => {
       if (allowWindowClose) return;
+      void persistWindowSize();
       event.preventDefault();
       requestWindowClose();
     }).then(unlisten => { unlistenWindowClose = unlisten; });
     void appWindow.onResized(() => {
       void appWindow.isMaximized().then(setIsWindowMaximized);
+      if (!windowLayoutReady) return;
+      window.clearTimeout(resizeSaveTimer);
+      resizeSaveTimer = window.setTimeout(() => { void persistWindowSize(); }, 450);
     }).then(unlisten => { unlistenResize = unlisten; });
-    onCleanup(() => { unlistenWindowClose?.(); unlistenResize?.(); });
+    onCleanup(() => {
+      window.clearTimeout(resizeSaveTimer);
+      unlistenWindowClose?.();
+      unlistenResize?.();
+    });
   });
 
   const activeSession = () => sessions().find(s => s.id === activeSessionId());
@@ -249,7 +307,7 @@ const App: Component = () => {
     initTheme();
 
     if (!isTauriRuntime()) {
-      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }, { id: "mysql", name: "MySQL" }, { id: "postgresql", name: "PostgreSQL" }]);
+      setProtocols([{ id: "ssh", name: "SSH" }, { id: "local", name: "本地终端" }, { id: "mysql", name: "MySQL" }, { id: "postgresql", name: "PostgreSQL" }, { id: "highgo", name: "HighGo 瀚高数据库" }]);
       sessionStore.hydrate([]);
       return;
     }
@@ -260,7 +318,7 @@ const App: Component = () => {
 
     try {
       const supportedProtocols = await api.getProtocols();
-      setProtocols(supportedProtocols.filter(protocol => ["ssh", "local", "mysql", "postgresql"].includes(protocol.id)));
+      setProtocols(supportedProtocols.filter(protocol => ["ssh", "local", "mysql", "postgresql", "highgo"].includes(protocol.id)));
     } catch (e) {
       console.error("Failed to get protocols:", e);
     }
@@ -301,7 +359,11 @@ const App: Component = () => {
       handleSwitchSession(sessions()[next].id);
     }
   };
-  onMount(() => window.addEventListener("keydown", handleGlobalKeyDown));
+  onMount(() => {
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    const unregisterAgentLauncher = aiContextStore.registerAgentLauncher(mode => openAIAssistant(mode));
+    onCleanup(unregisterAgentLauncher);
+  });
   onCleanup(() => window.removeEventListener("keydown", handleGlobalKeyDown));
 
   onMount(() => {
@@ -1373,7 +1435,7 @@ const App: Component = () => {
               版本 {appVersion()} · 基于 Tauri 2.0 + SolidJS
             </p>
             <p style={{ color: "var(--text-muted)", "font-size": "13px" }}>
-              支持 SSH、SFTP、本地终端与 MySQL / PostgreSQL 数据库管理
+              支持 SSH、SFTP、本地终端与 MySQL / PostgreSQL / 瀚高数据库管理
             </p>
             <div class="form-actions" style={{ "margin-top": "20px" }}>
               <button class="btn-save" onClick={() => setShowAbout(false)}>关闭</button>
@@ -1424,7 +1486,7 @@ const App: Component = () => {
         </div>
       </Show>
       <Show when={showAIAssistant()}>
-        <AIAssistant connection={activeSession()?.connection} shellId={activeSession()?.shellId} initialMode={aiAssistantMode()} onModeChange={setAiAssistantMode} terminalContext={() => { const session = activeSession(); return session ? readTerminalTranscript(session.id, 160) : ""; }} sqlContext={() => aiContextStore.sqlContext()} onClose={() => setShowAIAssistant(false)} />
+        <AIAssistant connection={activeSession()?.connection} shellId={activeSession()?.shellId} initialMode={aiAssistantMode()} onModeChange={setAiAssistantMode} terminalContext={() => { const session = activeSession(); if (!session) return ""; const transcript = readTerminalTranscript(session.id, 160); const selection = readTerminalSelection(session.id); return [selection ? "当前终端选区:\n" + selection : "", transcript ? "最近终端输出:\n" + transcript : ""].filter(Boolean).join("\n\n"); }} sqlContext={() => { const base = aiContextStore.sqlContext(); const selection = aiContextStore.sqlSelection(); return [base, selection ? "当前 SQL 选区:\n" + selection : ""].filter(Boolean).join("\n\n"); }} onClose={() => setShowAIAssistant(false)} />
       </Show>
       <FeedbackHost />
       <TextContextMenu />
@@ -1434,4 +1496,3 @@ const App: Component = () => {
 };
 
 export default App;
-

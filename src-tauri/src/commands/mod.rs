@@ -438,7 +438,8 @@ impl AppState {
         registry.register(crate::protocol::sftp::SftpPlugin::new());
         registry.register(crate::protocol::rdp::RdpPlugin::new());
         registry.register(crate::protocol::mysql::MysqlPlugin::new());
-        registry.register(crate::protocol::pgsql::PgsqlPlugin::new());
+        registry.register(crate::protocol::pgsql::PgsqlPlugin::postgresql());
+        registry.register(crate::protocol::pgsql::PgsqlPlugin::highgo());
         registry.register(crate::protocol::docker::DockerPlugin::new());
     }
 }
@@ -737,7 +738,7 @@ pub async fn save_connection(
             serde_json::Value::String(database.trim().to_string()),
         );
     }
-    if matches!(config.protocol.as_str(), "mysql" | "postgresql") {
+    if matches!(config.protocol.as_str(), "mysql" | "postgresql" | "highgo") {
         if let Some(ssl_mode) = config
             .ssl_mode
             .as_ref()

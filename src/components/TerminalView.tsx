@@ -37,6 +37,10 @@ interface TerminalState {
   lineBuffer: LineBuffer;
   /** 立即执行一次 fit + resizeShell（绕过 ResizeObserver 防抖）。 */
   refit: () => void;
+  /** Recompute command/path decorations for the visible viewport. */
+  refreshHighlights: () => void;
+  /** Dispose timers and decorations owned by the enhancement layer. */
+  cleanupEnhancements: () => void;
 }
 
 const terminalStates = new Map<string, TerminalState>();
@@ -48,11 +52,56 @@ const terminalCursorColors = (backgroundStyle: string, fallbackCursor: string, f
     ? { cursor: "#2563eb", cursorAccent: "#ffffff" }
     : { cursor: fallbackCursor, cursorAccent: fallbackAccent };
 
+const PATH_TOKEN_PATTERN = /(^|[\s"'`([{:=])((?:~|\.{1,2})?\/[^\s"'`<>|]+|[A-Za-z]:\\[^\s"'`<>|]+)/g;
+const COMMAND_TOKEN_PATTERN = /(^|[$#>❯]\s)([A-Za-z0-9_.\/~-]{1,80})(?=\s|$)/g;
+
+type TerminalHighlightRange = { start: number; length: number; kind: "command" | "path" };
+
+/** Find shell-command and path tokens without changing the terminal's input stream. */
+function collectTerminalHighlightRanges(text: string): TerminalHighlightRange[] {
+  const ranges: TerminalHighlightRange[] = [];
+  const addRange = (start: number, rawToken: string, kind: TerminalHighlightRange["kind"]) => {
+    const token = rawToken.replace(/[),.;:!?$]+$/, "");
+    if (!token || start < 0) return;
+    ranges.push({ start, length: token.length, kind });
+  };
+
+  for (const match of text.matchAll(PATH_TOKEN_PATTERN)) {
+    const token = match[2];
+    if (!token) continue;
+    const start = match.index + match[0].lastIndexOf(token);
+    const prefix = text.slice(Math.max(0, start - 8), start).toLowerCase();
+    if (token.startsWith("//") || prefix.endsWith("http:") || prefix.endsWith("https:")) continue;
+    addRange(start, token, "path");
+  }
+  for (const match of text.matchAll(COMMAND_TOKEN_PATTERN)) {
+    const token = match[2];
+    if (!token) continue;
+    addRange(match.index + match[0].lastIndexOf(token), token, "command");
+  }
+
+  // Paths and commands can overlap; keep the first (usually most specific) range.
+  ranges.sort((left, right) => left.start - right.start || right.length - left.length);
+  const result: TerminalHighlightRange[] = [];
+  for (const range of ranges) {
+    if (result.some(existing => range.start < existing.start + existing.length && existing.start < range.start + range.length)) continue;
+    result.push(range);
+    if (result.length >= 160) break;
+  }
+  return result;
+}
+
 export function getTerminalState(sessionKey: string): TerminalState | undefined {
   return terminalStates.get(sessionKey);
 }
 
 /** Return the visible terminal scrollback as plain text for AI context. */
+/** Return the current terminal selection for AI context. */
+export function readTerminalSelection(sessionKey: string): string {
+  const state = terminalStates.get(sessionKey);
+  return state ? state.terminal.getSelection().trim() : "";
+}
+
 export function readTerminalTranscript(sessionKey: string, maxLines = 160): string {
   const state = terminalStates.get(sessionKey);
   if (!state) return "";
@@ -88,6 +137,7 @@ export function disposeAllTerminals() {
       state.readInterval = null;
     }
     state.stopPolling();
+    state.cleanupEnhancements();
     if (state.terminal.element?.isConnected) {
       try {
         state.terminal.dispose();
@@ -102,6 +152,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   let searchInputRef: HTMLInputElement | undefined;
   const [showSearch, setShowSearch] = createSignal(false);
   const [searchTerm, setSearchTerm] = createSignal("");
+  const [terminalSettingsSnapshot, setTerminalSettingsSnapshot] = createSignal(getTerminalSettings());
+  const [terminalRowHeight, setTerminalRowHeight] = createSignal(20);
+  const stripedBackground = () => terminalSettingsSnapshot().stripedBackground;
+  const highlightEnhancement = () => terminalSettingsSnapshot().highlightEnhancement;
 
   const isVisible = () => {
     if (typeof props.visible === "function") {
@@ -111,6 +165,14 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   };
   const isLocal = () => props.connection.protocol === "local";
   const effectiveBackgroundStyle = () => getEffectiveTerminalBackgroundStyle(terminalBackgroundConfig());
+
+  const updateTerminalRowHeight = (state: TerminalState) => {
+    const screen = state.terminal.element?.querySelector<HTMLElement>(".xterm-screen");
+    const screenHeight = screen?.getBoundingClientRect().height ?? 0;
+    if (screenHeight > 0 && state.terminal.rows > 0) {
+      setTerminalRowHeight(Number((screenHeight / state.terminal.rows).toFixed(3)));
+    }
+  };
 
   // 终端 fit：窗口/面板尺寸变化时只调整列数与行数（并同步远端 PTY 的
   // TIOCGWINSZ），字号保持用户设置不变，最大化/还原窗口不改变字体大小。
@@ -123,6 +185,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         state.fitAddon.fit();
         const cols = state.terminal.cols;
         const rows = state.terminal.rows;
+        updateTerminalRowHeight(state);
         if (cols !== prevCols || rows !== prevRows) {
           // Keep the remote PTY in sync with the rendered grid so programs
           //  that query TIOCGWINSZ (top, htop, vim, less, ...) position their
@@ -178,13 +241,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         existingState.readInterval = null;
       }
       existingState.stopPolling();
+      existingState.cleanupEnhancements();
       terminalStates.delete(sessionKey);
     }
 
     const themeConfig = getTerminalThemeConfig();
     const backgroundStyle = effectiveBackgroundStyle();
     const backgroundConfig = terminalBackgroundConfig();
-    const terminalBackground = isLayerBackground(backgroundStyle)
+    const settings = getTerminalSettings();
+    const terminalBackground = isLayerBackground(backgroundStyle) || settings.stripedBackground
       ? "#00000000"
       : backgroundStyle === "solid_light" ? "#ffffff"
       : backgroundStyle === "solid_dark" ? "#1e1e1e"
@@ -199,8 +264,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       themeConfig.cursorAccent,
     );
 
-    const settings = getTerminalSettings();
     const terminal = new Terminal({
+      allowProposedApi: true,
+      allowTransparency: true,
+      minimumContrastRatio: settings.highlightEnhancement ? 4.5 : 1,
       fontFamily: settings.fontFamily,
       fontSize: settings.fontSize,
       lineHeight: settings.lineHeight,
@@ -243,6 +310,56 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     terminal.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
 
     terminal.open(containerRef);
+
+    let highlightTimer: number | null = null;
+    const highlightDecorations: Array<{ dispose: () => void }> = [];
+    const clearHighlights = () => {
+      for (const decoration of highlightDecorations.splice(0)) {
+        try { decoration.dispose(); } catch (_) {}
+      }
+    };
+    const refreshHighlights = () => {
+      clearHighlights();
+      if (!getTerminalSettings().highlightEnhancement || !terminal.element?.isConnected) return;
+      const buffer = terminal.buffer.active;
+      if (buffer.type !== "normal") return;
+      const theme = getTerminalThemeConfig();
+      const cursorLine = buffer.baseY + buffer.cursorY;
+      for (let row = 0; row < terminal.rows; row += 1) {
+        const lineIndex = buffer.viewportY + row;
+        const line = buffer.getLine(lineIndex);
+        if (!line) continue;
+        const text = line.translateToString(true);
+        if (!text) continue;
+        for (const range of collectTerminalHighlightRanges(text)) {
+          if (range.start >= terminal.cols) continue;
+          try {
+            const marker = terminal.registerMarker(lineIndex - cursorLine);
+            if (!marker) continue;
+            const decoration = terminal.registerDecoration({
+              marker,
+              x: range.start,
+              width: Math.max(1, Math.min(range.length, terminal.cols - range.start)),
+              foregroundColor: range.kind === "path" ? theme.blue : theme.cyan,
+              layer: "top",
+            });
+            if (decoration) highlightDecorations.push(decoration);
+            else marker.dispose();
+          } catch (error) {
+            console.warn("[TerminalView] highlight decoration failed:", error);
+          }
+        }
+      }
+    };
+    const scheduleHighlightRefresh = () => {
+      if (highlightTimer !== null) window.clearTimeout(highlightTimer);
+      highlightTimer = window.setTimeout(() => {
+        highlightTimer = null;
+        refreshHighlights();
+      }, 80);
+    };
+    const onWriteParsedDisposable = terminal.onWriteParsed(scheduleHighlightRefresh);
+    const onScrollDisposable = terminal.onScroll(scheduleHighlightRefresh);
 
     let readTimer: number | null = null;
     let stopped = false;
@@ -536,6 +653,14 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
         stopped = true;
         if (readTimer !== null) window.clearTimeout(readTimer);
       },
+      refreshHighlights,
+      cleanupEnhancements: () => {
+        if (highlightTimer !== null) window.clearTimeout(highlightTimer);
+        highlightTimer = null;
+        onWriteParsedDisposable.dispose();
+        onScrollDisposable.dispose();
+        clearHighlights();
+      },
       resizeObserver,
       initialized: true,
       contentWritten: true,
@@ -546,6 +671,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     };
 
     terminalStates.set(sessionKey, state);
+    scheduleHighlightRefresh();
     void pollShell();
     console.log("[TerminalView] Created new terminal state for:", sessionKey);
 
@@ -579,13 +705,15 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     if (style === "image") void loadTerminalBackgroundImage(backgroundConfig.imageAssetId);
     terminalSettingsRevision();
     terminalThemeRevision();
+    const settings = getTerminalSettings();
+    setTerminalSettingsSnapshot(settings);
     const state = props.sessionKey ? terminalStates.get(props.sessionKey) : undefined;
     if (!state) return;
     const theme = getTerminalThemeConfig();
     const cursorColors = terminalCursorColors(style, theme.cursor, theme.cursorAccent);
     state.terminal.options.theme = {
       ...theme,
-      background: isLayerBackground(style) ? "#00000000"
+      background: isLayerBackground(style) || settings.stripedBackground ? "#00000000"
         : style === "solid_light" ? "#ffffff"
         : style === "solid_dark" ? "#1e1e1e"
         : style === "solid" ? backgroundConfig.solidColor
@@ -594,12 +722,13 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       cursor: cursorColors.cursor,
       cursorAccent: cursorColors.cursorAccent,
     };
-    const settings = getTerminalSettings();
+    state.terminal.options.minimumContrastRatio = settings.highlightEnhancement ? 4.5 : 1;
     state.terminal.options.fontFamily = settings.fontFamily;
     state.terminal.options.fontSize = settings.fontSize;
     state.terminal.options.lineHeight = settings.lineHeight;
     state.terminal.options.letterSpacing = settings.letterSpacing;
     state.terminal.options.scrollback = settings.scrollback;
+    state.refreshHighlights();
     // Let theme/background classes settle before xterm measures its canvas.
     window.requestAnimationFrame(() => {
       if (state.terminal.element?.isConnected) doFit(state);
@@ -624,6 +753,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       const state = terminalStates.get(props.sessionKey);
       if (state) {
         state.stopPolling();
+        state.cleanupEnhancements();
         if (state.readInterval) {
           clearTimeout(state.readInterval);
           state.readInterval = null;
@@ -651,7 +781,7 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
   };
 
   return (
-    <div class={`terminal-view terminal-background-${effectiveBackgroundStyle()}`} style={{
+    <div class={`terminal-view terminal-background-${effectiveBackgroundStyle()}${stripedBackground() ? " terminal-striped" : ""}${highlightEnhancement() ? " terminal-highlight-enhanced" : ""}`} style={{
       "--terminal-solid": effectiveBackgroundStyle() === "theme" ? getTerminalThemeConfig().background
         : effectiveBackgroundStyle() === "solid_light" ? "#ffffff"
         : effectiveBackgroundStyle() === "solid_dark" ? "#1e1e1e"
@@ -661,8 +791,10 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       "--terminal-image-opacity": String(terminalBackgroundConfig().imageOpacity),
       "--terminal-image-overlay": String(terminalBackgroundConfig().imageOverlay),
       "--terminal-image-blur": `${terminalBackgroundConfig().imageBlur}px`,
+      "--terminal-row-height": `${terminalRowHeight()}px`,
     }}>
       <div class="terminal-background-layer" aria-hidden="true" />
+      <div class="terminal-stripes" aria-hidden="true" />
       <Show when={showSearch()}>
         <div class="terminal-search-bar">
           <input ref={searchInputRef} value={searchTerm()} placeholder="搜索终端输出" onInput={event => { setSearchTerm(event.currentTarget.value); search(); }} onKeyDown={event => {

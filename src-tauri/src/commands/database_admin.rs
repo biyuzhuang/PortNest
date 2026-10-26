@@ -30,7 +30,9 @@ pub async fn database_connect(
 ) -> Result<(), String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_connect(state, connection_id).await,
-        "postgresql" => super::postgres_admin::postgres_connect(state, connection_id).await,
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_connect(state, connection_id).await
+        }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
 }
@@ -42,7 +44,9 @@ pub async fn database_disconnect(
 ) -> Result<(), String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_disconnect(state, connection_id).await,
-        "postgresql" => super::postgres_admin::postgres_disconnect(state, connection_id).await,
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_disconnect(state, connection_id).await
+        }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
 }
@@ -54,7 +58,9 @@ pub async fn database_cancel_query(
 ) -> Result<(), String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_cancel_query(state, connection_id).await,
-        "postgresql" => super::postgres_admin::postgres_cancel_query(state, connection_id).await,
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_cancel_query(state, connection_id).await
+        }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
 }
@@ -79,7 +85,9 @@ pub async fn database_list_databases(
 ) -> Result<Vec<MysqlDatabaseInfo>, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_list_databases(state, connection_id).await,
-        "postgresql" => super::postgres_admin::postgres_list_databases(state, connection_id).await,
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_list_databases(state, connection_id).await
+        }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
 }
@@ -91,7 +99,9 @@ pub async fn database_list_charsets(
 ) -> Result<Vec<MysqlCharsetInfo>, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_list_charsets(state, connection_id).await,
-        "postgresql" => super::postgres_admin::postgres_list_charsets(state, connection_id).await,
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_list_charsets(state, connection_id).await
+        }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
 }
@@ -104,7 +114,7 @@ pub async fn database_list_tables(
 ) -> Result<Vec<MysqlTableInfo>, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_list_tables(state, connection_id, database).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_list_tables(state, connection_id, database).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -122,7 +132,7 @@ pub async fn database_list_columns(
         "mysql" => {
             super::mysql_admin::mysql_list_columns(state, connection_id, database, table).await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_list_columns(state, connection_id, database, table)
                 .await
         }
@@ -141,7 +151,7 @@ pub async fn database_list_indexes(
         "mysql" => {
             super::mysql_admin::mysql_list_indexes(state, connection_id, database, table).await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_list_indexes(state, connection_id, database, table)
                 .await
         }
@@ -157,7 +167,7 @@ pub async fn database_autocomplete(
 ) -> Result<Vec<MysqlAutocompleteItem>, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_autocomplete(state, connection_id, database).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_autocomplete(state, connection_id, database).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -173,7 +183,7 @@ pub async fn database_explain_sql(
 ) -> Result<MysqlExplainResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_explain_sql(state, connection_id, sql, database).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_explain_sql(state, connection_id, sql, database).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -201,7 +211,7 @@ pub async fn database_fetch_rows(
             )
             .await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_fetch_rows(
                 state,
                 connection_id,
@@ -225,7 +235,7 @@ pub async fn database_execute_sql(
 ) -> Result<QueryResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_execute_sql(state, connection_id, sql, database).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_execute_sql(state, connection_id, sql, database).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -251,7 +261,7 @@ pub async fn database_create_database(
             )
             .await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_create_database(
                 state,
                 connection_id,
@@ -273,7 +283,7 @@ pub async fn database_drop_database(
 ) -> Result<(), String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_drop_database(state, connection_id, database).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_drop_database(state, connection_id, database).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -288,7 +298,7 @@ pub async fn database_create_table(
 ) -> Result<MysqlDdlResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_create_table(state, connection_id, definition).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_create_table(state, connection_id, definition).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -303,7 +313,7 @@ pub async fn database_preview_table(
 ) -> Result<Vec<String>, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_preview_table(state, connection_id, definition).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_preview_table(state, connection_id, definition).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -321,7 +331,7 @@ pub async fn database_apply_table(
         "mysql" => {
             super::mysql_admin::mysql_apply_table(state, connection_id, definition, preview).await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_apply_table(state, connection_id, definition, preview)
                 .await
         }
@@ -350,7 +360,7 @@ pub async fn database_table_action(
             )
             .await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_table_action(
                 state,
                 connection_id,
@@ -376,7 +386,7 @@ pub async fn database_show_create(
         "mysql" => {
             super::mysql_admin::mysql_show_create(state, connection_id, database, table).await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_show_create(state, connection_id, database, table).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -404,7 +414,7 @@ pub async fn database_mutate_row(
             )
             .await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_mutate_row(
                 state,
                 connection_id,
@@ -438,7 +448,7 @@ pub async fn database_apply_table_changes(
             )
             .await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_apply_table_changes(
                 state,
                 connection_id,
@@ -464,7 +474,7 @@ pub async fn database_import_csv(
         "mysql" => {
             super::mysql_admin::mysql_import_csv(state, connection_id, database, table, csv).await
         }
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_import_csv(state, connection_id, database, table, csv)
                 .await
         }
@@ -480,7 +490,7 @@ pub async fn database_import_sql(
 ) -> Result<MysqlSqlImportResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_import_sql(state, connection_id, options).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_import_sql(state, connection_id, options).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
@@ -495,7 +505,7 @@ pub async fn database_export_sql(
 ) -> Result<MysqlSqlExportResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => super::mysql_admin::mysql_export_sql(state, connection_id, options).await,
-        "postgresql" => {
+        "postgresql" | "highgo" => {
             super::postgres_admin::postgres_export_sql(state, connection_id, options).await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),

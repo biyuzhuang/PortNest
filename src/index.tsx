@@ -2,6 +2,7 @@
 import { render } from "solid-js/web";
 import App from "./App";
 import { SettingsModal } from "./components/SettingsModal";
+import { FeedbackHost } from "./components/FeedbackHost";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initTheme } from "./stores/themeStore";
 import "./visual-refresh.css";
@@ -11,10 +12,13 @@ document.addEventListener("contextmenu", event => event.preventDefault(), { capt
 initTheme();
 render(
   () => isSettingsWindow
-    ? <SettingsModal standalone onClose={() => {
-        if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) void getCurrentWindow().close();
-        else window.close();
-      }} />
+    ? <>
+        <SettingsModal standalone onClose={() => {
+          if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) void getCurrentWindow().close();
+          else window.close();
+        }} />
+        <FeedbackHost />
+      </>
     : <App />,
   document.getElementById("root") as HTMLElement,
 );

@@ -2,6 +2,8 @@ import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup
 import { api, isDatabaseProtocol, type AIChatMessage, type AIProviderConfig, type ConnectionRecord } from "../utils/api";
 import { openSettingsWindow } from "../utils/settingsWindow";
 import { Icon } from "./Icon";
+import { AgentMarkdown } from "./AgentMarkdown";
+import { aiContextStore } from "../stores/aiContextStore";
 import "./AIAssistant.css";
 
 interface AIAssistantProps {
@@ -56,6 +58,19 @@ const AI_ACTIVE_CONVERSATION_STORAGE_KEY = "portnest-ai-active-conversation-v1";
 const AI_PROMPT_PRESETS_STORAGE_KEY = "portnest-ai-prompt-presets-v1";
 const AI_PERMISSIONS_STORAGE_KEY = "portnest-ai-permissions-v1";
 const AI_CONVERSATION_LIMIT = 30;
+
+interface AgentModelOption {
+  key: string;
+  providerId: string;
+  providerLabel: string;
+  model: string;
+  contextWindow: number;
+  maxOutput: number;
+  temperature?: number | null;
+  protocol: string;
+}
+
+const AI_ACTIVE_MODEL_STORAGE_KEY = "portnest-ai-active-model";
 
 const DEFAULT_AI_PERMISSIONS: AISilentPermissions = {
   silentReadFiles: true,
@@ -183,8 +198,6 @@ const SUGGESTIONS: Record<AssistantMode, string[]> = {
   sql: ["帮我优化一条慢查询", "解释当前数据库表结构设计", "生成一个带索引建议的建表 SQL"],
 };
 
-type MessagePart = { type: "text" | "code"; content: string; language?: string };
-
 const visibleAssistantText = (content: string) => {
   const marker = content.indexOf("<portnest_tool_call>");
   return (marker >= 0 ? content.slice(0, marker) : content).trimEnd();
@@ -238,20 +251,6 @@ const toolRisk = (tool: ToolCallState): "low" | "medium" | "high" => {
 const toolTitle = (name: string) =>
   name === "terminal.run" ? "请求执行终端命令" : name === "sql.execute" ? "请求执行 SQL" : "请求执行工具";
 
-const splitMessage = (content: string): MessagePart[] => {
-  const parts: MessagePart[] = [];
-  const pattern = /```([A-Za-z0-9_+-]*)\n?([\s\S]*?)```/g;
-  let lastIndex = 0;
-  for (const match of content.matchAll(pattern)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) parts.push({ type: "text", content: content.slice(lastIndex, index) });
-    parts.push({ type: "code", language: match[1] || undefined, content: match[2].trimEnd() });
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < content.length) parts.push({ type: "text", content: content.slice(lastIndex) });
-  return parts.length ? parts : [{ type: "text", content }];
-};
-
 export const AIAssistant: Component<AIAssistantProps> = (props) => {
   const loadedConversations = loadConversationRecords();
   const requestedMode = props.initialMode || "general";
@@ -269,12 +268,20 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
   const [presetDraft, setPresetDraft] = createSignal<{ title: string; content: string } | null>(null);
   const [modelInfoOpen, setModelInfoOpen] = createSignal(false);
   const [mode, setMode] = createSignal<AssistantMode>(requestedMode || initialConversation.mode);
+  const [taskStartedAt, setTaskStartedAt] = createSignal<number | null>(null);
+  const [taskFinishedAt, setTaskFinishedAt] = createSignal<number | null>(null);
+  const [clock, setClock] = createSignal(Date.now());
+  const [agentPolicy, setAgentPolicy] = createSignal<"ask" | "agent">("agent");
+  const [contextEnabled, setContextEnabled] = createSignal({ terminal: true, sql: true });
+  const [notice, setNotice] = createSignal("");
   const [panelWidth, setPanelWidth] = createSignal(
-    Math.max(50, Math.min(620, Number(localStorage.getItem("portnest-ai-panel-width")) || 390))
+    Math.max(50, Math.min(860, Number(localStorage.getItem("portnest-ai-panel-width")) || 620))
   );
   const [input, setInput] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [config, setConfig] = createSignal<AIProviderConfig | null>(null);
+  const [modelOptions, setModelOptions] = createSignal<AgentModelOption[]>([]);
+  const [selectedModelKey, setSelectedModelKey] = createSignal(localStorage.getItem(AI_ACTIVE_MODEL_STORAGE_KEY) || "");
   const [configLoading, setConfigLoading] = createSignal(true);
   const [error, setError] = createSignal("");
   let nextId = loadedConversations.reduce(
@@ -299,8 +306,11 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
       preset.title.toLowerCase().includes(query) || preset.content.toLowerCase().includes(query)
     );
   });
+  const selectedModel = createMemo(() =>
+    modelOptions().find(option => option.key === selectedModelKey()) || modelOptions()[0] || null
+  );
   const contextWindowLabel = createMemo(() => {
-    const value = config()?.context_window;
+    const value = selectedModel()?.contextWindow || config()?.context_window;
     if (!value) return "--";
     return value >= 1000 ? `${Math.round(value / 1000)}K` : String(value);
   });
@@ -428,6 +438,7 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
   const isReadOnlySql = (sql: string) => /^(select|show|describe|desc|explain)\b/i.test(sql.trim());
 
   const shouldAutoApprove = (tool: Omit<ToolCallState, "status"> | ToolCallState) => {
+    if (agentPolicy() === "ask") return false;
     const currentPermissions = permissions();
     if (currentPermissions.blockUnreferencedAssets && !hasReferencedCurrentAsset()) return false;
     if (tool.name === "terminal.run" && currentPermissions.disableLocalExecution && props.connection?.protocol === "local") return false;
@@ -443,6 +454,9 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
     setConversations(previous => [conversation, ...previous].slice(0, AI_CONVERSATION_LIMIT));
     setActiveConversationId(conversation.id);
     setHistoryOpen(false);
+    setNotice("");
+    setTaskStartedAt(null);
+    setTaskFinishedAt(null);
     setInput("");
     setError("");
     requestAnimationFrame(() => messagesEnd?.scrollIntoView({ behavior: "smooth" }));
@@ -455,6 +469,9 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
     setMode(conversation.mode);
     props.onModeChange?.(conversation.mode);
     setHistoryOpen(false);
+    setNotice("");
+    setTaskStartedAt(null);
+    setTaskFinishedAt(null);
     setError("");
     requestAnimationFrame(() => messagesEnd?.scrollIntoView({ behavior: "smooth" }));
   };
@@ -502,12 +519,163 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
   });
 
   onCleanup(() => window.clearTimeout(persistTimer));
-  const configured = createMemo(() => Boolean(config()?.enabled && config()?.endpoint && config()?.model));
+  const configured = createMemo(() => Boolean(selectedModel()));
   const modeInfo = createMemo(() => MODES.find(item => item.id === mode()) || MODES[0]);
+  const contextChips = createMemo(() => {
+    const chips: Array<{
+      id: string;
+      icon: "sparkles" | "terminal" | "database" | "link";
+      label: string;
+      value: string;
+      enabled: boolean;
+      removable: boolean;
+    }> = [];
+    if (props.connection) {
+      chips.push({
+        id: "asset",
+        icon: isDatabaseProtocol(props.connection.protocol) ? "database" : "terminal",
+        label: "当前资产",
+        value: props.connection.name,
+        enabled: true,
+        removable: false,
+      });
+    }
+    if (mode() === "terminal") {
+      const terminalContext = props.terminalContext?.() || "";
+      chips.push({
+        id: "terminal",
+        icon: "terminal",
+        label: "终端上下文",
+        value: terminalContext.includes("当前终端选区") ? "选区 + 最近输出" : props.shellId ? "当前会话最近输出" : "未绑定终端会话",
+        enabled: contextEnabled().terminal && Boolean(props.shellId),
+        removable: true,
+      });
+      if (terminalContext.includes("当前终端选区")) {
+        chips.push({
+          id: "terminal-selection",
+          icon: "link",
+          label: "终端选区",
+          value: "已附带选中文本",
+          enabled: contextEnabled().terminal,
+          removable: false,
+        });
+      }
+    }
+    if (mode() === "sql") {
+      const context = props.sqlContext?.() || "";
+      const lines = context.split("\n");
+      const database = lines.find(line => line.startsWith("当前数据库: "))?.slice("当前数据库: ".length) || "未选择数据库";
+      const object = lines.find(line => line.startsWith("当前对象: "))?.slice("当前对象: ".length) || "当前 SQL 编辑器";
+      chips.push({
+        id: "sql",
+        icon: "database",
+        label: "SQL 上下文",
+        value: database + " · " + object,
+        enabled: contextEnabled().sql && Boolean(context),
+        removable: true,
+      });
+      if (context.includes("当前 SQL 选区:")) {
+        chips.push({
+          id: "sql-selection",
+          icon: "link",
+          label: "SQL 选区",
+          value: "已附带选中 SQL",
+          enabled: contextEnabled().sql,
+          removable: false,
+        });
+      }
+    }
+    if (activePreset()) {
+      chips.push({
+        id: "preset",
+        icon: "sparkles",
+        label: "提示词预设",
+        value: activePreset()!.title,
+        enabled: true,
+        removable: false,
+      });
+    }
+    return chips;
+  });
+  const elapsedSeconds = createMemo(() => {
+    const start = taskStartedAt();
+    if (!start) return 0;
+    return Math.max(0, Math.round(((taskFinishedAt() || clock()) - start) / 1000));
+  });
+  const toolCalls = createMemo(() => messages().flatMap(message => message.toolCall ? [message.toolCall] : []));
+  const taskStatus = createMemo<"idle" | "running" | "waiting" | "error" | "done">(() => {
+    if (loading()) return "running";
+    if (toolCalls().some(tool => tool.status === "pending")) return "waiting";
+    if (toolCalls().some(tool => tool.status === "running")) return "running";
+    if (toolCalls().some(tool => tool.status === "error")) return "error";
+    if (taskStartedAt()) return "done";
+    return "idle";
+  });
+  const taskStatusText = createMemo(() => {
+    if (taskStatus() === "running") return "正在执行";
+    if (taskStatus() === "waiting") return "等待确认";
+    if (taskStatus() === "error") return "执行失败";
+    if (taskStatus() === "done") return "工作完毕";
+    return "准备就绪";
+  });
+  const toggleContext = (key: "terminal" | "sql") => {
+    setContextEnabled(previous => ({ ...previous, [key]: !previous[key] }));
+  };
+  const applySqlDraft = (sql: string) => {
+    if (!aiContextStore.applySQLDraft(sql)) {
+      setError("当前没有可写回的 SQL 编辑器，请先打开数据库查询标签。");
+      return;
+    }
+    setNotice("SQL 已写入编辑器草稿，可在编辑器中继续修改或执行。");
+    window.setTimeout(() => setNotice(""), 2200);
+  };
   const scrollToBottom = () => requestAnimationFrame(() => messagesEnd?.scrollIntoView({ behavior: "smooth" }));
+  const buildAgentModelOptions = (configs: AIProviderConfig[]): AgentModelOption[] =>
+    configs.flatMap(config => {
+      if (!config.enabled || !config.endpoint.trim()) return [];
+      const models = config.models.filter(model => model.enabled && model.model.trim());
+      const fallback = config.model.trim()
+        ? [{
+            model: config.model,
+            enabled: true,
+            context_window: config.context_window,
+            max_output: config.max_output,
+            temperature: config.temperature,
+          }]
+        : [];
+      return (models.length > 0 ? models : fallback).map(model => ({
+        key: `${config.id}::${model.model}`,
+        providerId: config.id,
+        providerLabel: config.display_name || config.provider || "自定义供应商",
+        model: model.model,
+        contextWindow: model.context_window,
+        maxOutput: model.max_output,
+        temperature: model.temperature,
+        protocol: config.protocol,
+      }));
+    });
+  const applyModelOptions = (options: AgentModelOption[]) => {
+    setModelOptions(options);
+    const preferred = localStorage.getItem(AI_ACTIVE_MODEL_STORAGE_KEY) || selectedModelKey();
+    const next = options.find(option => option.key === preferred) || options[0] || null;
+    setSelectedModelKey(next?.key || "");
+    if (next) localStorage.setItem(AI_ACTIVE_MODEL_STORAGE_KEY, next.key);
+    else localStorage.removeItem(AI_ACTIVE_MODEL_STORAGE_KEY);
+  };
+  const selectAgentModel = (option: AgentModelOption) => {
+    setSelectedModelKey(option.key);
+    localStorage.setItem(AI_ACTIVE_MODEL_STORAGE_KEY, option.key);
+    setModelInfoOpen(false);
+    setNotice(`已切换模型：${option.providerLabel} / ${option.model}`);
+    window.setTimeout(() => setNotice(""), 2200);
+  };
   const loadConfig = () => {
-    void api.aiGetConfig()
-      .then(value => { setConfig(value); setError(""); })
+    void Promise.all([api.aiGetConfig(), api.aiGetConfigs()])
+      .then(([value, configs]) => {
+        setConfig(value);
+        applyModelOptions(buildAgentModelOptions(configs));
+        setError("");
+      })
       .catch(value => setError(String(value)))
       .finally(() => setConfigLoading(false));
   };
@@ -528,7 +696,8 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
       conversation.id === conversationId ? { ...conversation, mode: mode() } : conversation
     ));
     window.addEventListener("focus", loadConfig);
-    onCleanup(() => window.removeEventListener("focus", loadConfig));
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    onCleanup(() => { window.removeEventListener("focus", loadConfig); window.clearInterval(timer); });
   });
 
   const startPanelResize = (event: MouseEvent) => {
@@ -540,7 +709,7 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
     document.body.style.userSelect = "none";
     const onMove = (move: MouseEvent) => {
       if (closed) return;
-      const nextWidth = Math.min(620, startWidth + move.clientX - startX);
+      const nextWidth = Math.min(860, startWidth + move.clientX - startX);
       if (nextWidth <= closeWidth) {
         closed = true;
         stop();
@@ -564,7 +733,7 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
   const runAssistant = async (conversation: ChatItem[]) => {
     let assistantId: number | null = null;
     let assistantContent = "";
-    setError(""); setLoading(true); scrollToBottom();
+    setError(""); setNotice(""); setTaskStartedAt(previous => previous && !taskFinishedAt() ? previous : Date.now()); setTaskFinishedAt(null); setLoading(true); scrollToBottom();
     const appendAssistantDelta = (delta: string) => {
       if (!delta) return;
       if (assistantId === null) {
@@ -581,15 +750,16 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
         ...(preset ? [{ role: "system", content: preset.content }] : []),
         ...conversation.map(message => ({ role: message.role, content: message.apiContent ?? message.content })),
       ];
+      const terminalContext = mode() === "terminal" && contextEnabled().terminal ? props.terminalContext?.() || "" : "";
+      const sqlContext = mode() === "sql" && contextEnabled().sql ? props.sqlContext?.() || "" : "";
+      const policyContext = "[Agent 策略] " + (agentPolicy() === "agent" ? "允许在权限范围内多步执行，提交前确认" : "只回答问题，不自动执行任何工具");
       await api.aiChatStream({
         mode: mode(),
         messages: apiMessages,
         connection_id: props.connection?.id ?? null,
-        user_context: mode() === "terminal"
-          ? props.terminalContext?.().slice(-16000) || null
-          : mode() === "sql"
-            ? props.sqlContext?.().slice(-16000) || null
-            : null,
+        user_context: [policyContext, terminalContext.slice(-16000), sqlContext.slice(-16000)].filter(Boolean).join("\n\n") || null,
+        provider_id: selectedModel()?.providerId ?? null,
+        model: selectedModel()?.model ?? null,
       }, event => {
         if (event.kind === "delta" && event.delta) appendAssistantDelta(event.delta);
       });
@@ -616,6 +786,7 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
       }
       setError(String(value));
     } finally {
+      setTaskFinishedAt(Date.now());
       setLoading(false);
       scrollToBottom();
     }
@@ -629,6 +800,9 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
     const nextMessages = [...messages(), userMessage];
     setMessages(nextMessages);
     setInput("");
+    setNotice("");
+    setTaskStartedAt(null);
+    setTaskFinishedAt(null);
     await runAssistant(nextMessages);
   };
 
@@ -746,14 +920,49 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
       aria-label="PortNest AI 协作面板"
     >
       <div class="ai-assistant-resizer" onMouseDown={startPanelResize} title="拖动调整 AI 面板宽度" aria-hidden="true" />
-        <button
-          class={`ai-conversation-drawer-toggle ${historyOpen() ? "open" : ""}`}
-          title={historyOpen() ? "收起会话列表" : "展开会话列表"}
-          aria-label={historyOpen() ? "收起会话列表" : "展开会话列表"}
-          onClick={() => setHistoryOpen(value => !value)}
-        >
-          <Icon name={historyOpen() ? "arrowLeft" : "arrowRight"} size={13} />
-        </button>
+      <header class="agent-topbar">
+        <div class="agent-topbar-title">
+          <span class="agent-brand-mark"><Icon name="sparkles" size={16} /></span>
+          <div>
+            <span>PortNest Agent</span>
+            <strong>{modeInfo().label}</strong>
+          </div>
+        </div>
+        <div class="agent-topbar-actions">
+          <button class={historyOpen() ? "active" : ""} onClick={() => setHistoryOpen(value => !value)} title="会话列表" aria-label="会话列表"><Icon name="list" size={14} /></button>
+          <button onClick={startNewConversation} title="新建会话" aria-label="新建会话"><Icon name="plus" size={14} /></button>
+          <button onClick={props.onClose} title="关闭 Agent" aria-label="关闭 Agent"><Icon name="close" size={14} /></button>
+        </div>
+      </header>
+      <nav class="agent-mode-tabs" aria-label="Agent 模式">
+        <For each={MODES}>{item => (
+          <button class={mode() === item.id ? "active" : ""} onClick={() => applyMode(item.id)}>
+            <span class="agent-mode-icon"><Icon name={item.icon} size={14} /></span>
+            <span><strong>{item.label}</strong><small>{item.description}</small></span>
+          </button>
+        )}</For>
+      </nav>
+      <div class="agent-context-bar">
+        <For each={contextChips()}>{chip => (
+          <button
+            class={`agent-context-chip ${chip.enabled ? "" : "disabled"} ${chip.removable ? "removable" : ""}`}
+            onClick={() => { if (chip.id === "terminal" || chip.id === "sql") toggleContext(chip.id); }}
+            title={chip.removable ? "点击启用或停用该上下文" : chip.value}
+          >
+            <Icon name={chip.icon} size={12} />
+            <span>{chip.label}</span>
+            <em>{chip.value}</em>
+            <Show when={chip.removable}><Icon name={chip.enabled ? "check" : "plus"} size={11} /></Show>
+          </button>
+        )}</For>
+      </div>
+      <div class="agent-task-strip">
+        <span class={`agent-task-dot ${taskStatus()}`} />
+        <strong>{taskStatusText()}</strong>
+        <Show when={taskStartedAt()}><span>{elapsedSeconds()}s</span></Show>
+        <Show when={toolCalls().length > 0}><span>· {toolCalls().length} 个工具调用</span></Show>
+        <div class={`agent-task-progress ${taskStatus() === "running" ? "running" : ""}`}><i /></div>
+      </div>
 
         <Show when={historyOpen()}>
           <div class="ai-conversation-drawer-scrim" onClick={() => setHistoryOpen(false)} />
@@ -817,11 +1026,12 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
                 <span class="ai-message-avatar">{message.role === "user" ? "你" : <Icon name="sparkles" size={14} />}</span>
                 <div class="ai-message-body">
                   <Show when={message.content.trim()}>
-                    <For each={splitMessage(message.content)}>{part => (
-                      <Show when={part.type === "code"} fallback={<div class="ai-message-text">{part.content}</div>}>
-                        <pre class="ai-code-block"><Show when={part.language}><span>{part.language}</span></Show><code>{part.content}</code></pre>
-                      </Show>
-                    )}</For>
+                    <div class="ai-message-text">
+                      <AgentMarkdown
+                        content={message.content}
+                        onApplySql={props.connection && isDatabaseProtocol(props.connection.protocol) ? applySqlDraft : undefined}
+                      />
+                    </div>
                   </Show>
                   <Show when={message.toolCall}>{tool => (
                     <div class={`ai-tool-card risk-${toolRisk(tool())} status-${tool().status}`}>
@@ -831,6 +1041,16 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
                         <em class={`ai-tool-risk risk-${toolRisk(tool())}`}>{toolRisk(tool()) === "high" ? "高风险" : toolRisk(tool()) === "medium" ? "需注意" : "低风险"}</em>
                       </div>
                       <pre class="ai-tool-payload"><code>{toolPayload(tool())}</code></pre>
+                      <div class="agent-artifact-toolbar">
+                        <span>{tool().name === "sql.execute" ? "SQL Draft" : "Command Artifact"}</span>
+                        <div>
+                          <Show when={tool().name === "sql.execute" && props.connection && isDatabaseProtocol(props.connection.protocol)}>
+                            <button onClick={() => applySqlDraft(toolPayload(tool()))}>写入 SQL 草稿</button>
+                          </Show>
+                          <Show when={tool().status === "success"}><em class="success">执行成功</em></Show>
+                          <Show when={tool().status === "error"}><em class="error">执行失败</em></Show>
+                        </div>
+                      </div>
                       <Show when={tool().status === "pending"}>
                         <Show when={tool().confirmingRisk} fallback={
                           <div class="ai-tool-actions">
@@ -869,6 +1089,7 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
           <div ref={messagesEnd} />
         </main>
         <Show when={error()}><div class="ai-assistant-error"><Icon name="info" size={14} /><span>{error()}</span></div></Show>
+        <Show when={notice()}><div class="ai-assistant-notice"><Icon name="check" size={14} /><span>{notice()}</span></div></Show>
 
         <footer class="ai-composer">
           <Show when={activePreset()}>{preset => (
@@ -887,9 +1108,13 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
             />
             <div class="ai-composer-bottom">
               <div class="ai-composer-left">
+                <div class="agent-policy-switch" role="group" aria-label="Agent 运行策略">
+                  <button class={agentPolicy() === "ask" ? "active" : ""} onClick={() => setAgentPolicy("ask")} title="只回答问题，不自动执行工具">问答</button>
+                  <button class={agentPolicy() === "agent" ? "active" : ""} onClick={() => setAgentPolicy("agent")} title="在权限范围内进行多步任务">Agent</button>
+                </div>
                 <button class="ai-add-model" onClick={toggleModelInfoPopover} title={`模型与上下文 · ${contextWindowLabel()}`}>
                   <Icon name={configured() ? "sparkles" : "plus"} size={13} />
-                  <span>{configured() ? (config()?.display_name || config()?.model || "模型") : "添加模型"}</span>
+                  <span>{configured() ? (selectedModel() ? `${selectedModel()!.providerLabel} / ${selectedModel()!.model}` : "选择模型") : "添加模型"}</span>
                 </button>
                 <button class="ai-composer-icon-button" onClick={() => loadConfig()} title="刷新模型配置">
                   <Icon name="refresh" size={13} />
@@ -987,25 +1212,40 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
           </Show>
 
           <Show when={modelInfoOpen()}>
-            <div class="ai-model-popover">
+            <div class="ai-model-popover agent-model-popover">
               <header>
-                <span><strong>上下文窗口</strong><small>当前模型与上下文配置</small></span>
+                <span><strong>模型与上下文</strong><small>切换当前 Agent 使用的模型</small></span>
                 <button title="关闭" aria-label="关闭" onClick={() => setModelInfoOpen(false)}><Icon name="close" size={12} /></button>
               </header>
-              <Show when={configured()} fallback={
+              <Show when={modelOptions().length > 0} fallback={
                 <div class="ai-model-empty">
                   <span>--</span>
-                  <p>暂无模型配置，请先到设置中添加 LLM 模型</p>
+                  <p>暂无可用模型，请先到设置中添加并启用模型</p>
                   <button onClick={() => void openSettingsWindow("aiModels")}><Icon name="plus" size={12} />添加模型</button>
                 </div>
               }>
-                <div class="ai-model-grid">
-                  <div><span>模型</span><strong>{config()?.display_name || config()?.model || "--"}</strong></div>
-                  <div><span>上下文窗口</span><strong>{contextWindowLabel()}</strong></div>
-                  <div><span>最大输出</span><strong>{config()?.max_output ? `${Math.round(config()!.max_output / 1000)}K` : "--"}</strong></div>
-                  <div><span>接口协议</span><strong>{config()?.protocol || "--"}</strong></div>
+                <div class="agent-model-list">
+                  <For each={modelOptions()}>{option => (
+                    <button class={`agent-model-row ${selectedModelKey() === option.key ? "active" : ""}`} onClick={() => selectAgentModel(option)}>
+                      <span class="agent-model-row-icon"><Icon name="sparkles" size={12} /></span>
+                      <span class="agent-model-row-copy">
+                        <strong>{option.model}</strong>
+                        <small>{option.providerLabel} · {Math.round(option.contextWindow / 1000)}K 上下文</small>
+                      </span>
+                      <Show when={selectedModelKey() === option.key}><span class="agent-model-row-check"><Icon name="check" size={11} /></span></Show>
+                    </button>
+                  )}</For>
                 </div>
-                <footer><button onClick={() => void openSettingsWindow("aiModels")}><Icon name="settings" size={12} />模型设置</button></footer>
+                <div class="ai-model-grid">
+                  <div><span>供应商</span><strong>{selectedModel()?.providerLabel || "--"}</strong></div>
+                  <div><span>上下文窗口</span><strong>{contextWindowLabel()}</strong></div>
+                  <div><span>最大输出</span><strong>{selectedModel()?.maxOutput ? `${Math.round(selectedModel()!.maxOutput / 1000)}K` : "--"}</strong></div>
+                  <div><span>接口协议</span><strong>{selectedModel()?.protocol || "--"}</strong></div>
+                </div>
+                <footer>
+                  <button onClick={loadConfig}><Icon name="refresh" size={12} />刷新模型</button>
+                  <button onClick={() => void openSettingsWindow("aiModels")}><Icon name="settings" size={12} />模型设置</button>
+                </footer>
               </Show>
             </div>
           </Show>
@@ -1013,8 +1253,3 @@ export const AIAssistant: Component<AIAssistantProps> = (props) => {
     </section>
   );
 };
-
-
-
-
-

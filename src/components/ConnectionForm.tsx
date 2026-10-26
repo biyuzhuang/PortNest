@@ -1,6 +1,6 @@
 import { Component, For, Index, Show, createSignal, onMount } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { api, isDatabaseProtocol, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
+import { api, isDatabaseProtocol, isPostgresCompatibleProtocol, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
 import { Icon } from "./Icon";
@@ -21,9 +21,9 @@ type TabType = "general" | "tunnel" | "proxy" | "advanced";
 const COLORS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#32b4d4", "#2589e8", "#9b51e0", "#8e8e93"];
 const ENCODINGS = ["UTF-8", "GBK", "GB2312", "GB18030", "Big5", "Shift-JIS", "EUC-KR", "ISO-8859-1", "Windows-1252", "CP437"];
 const LOCAL_ENCODINGS = ["auto", ...ENCODINGS];
-const DEFAULT_DATABASE_PORT: Record<string, number> = { mysql: 3306, postgresql: 5432 };
+const DEFAULT_DATABASE_PORT: Record<string, number> = { mysql: 3306, postgresql: 5432, highgo: 5432 };
 const databasePort = (protocol?: string) => DEFAULT_DATABASE_PORT[protocol || ""] || 22;
-const protocolLabel = (protocol: string) => protocol === "postgresql" ? "PostgreSQL" : protocol === "mysql" ? "MySQL" : protocol === "local" ? "本地终端" : "SSH";
+const protocolLabel = (protocol: string) => protocol === "highgo" ? "HighGo 瀚高数据库" : protocol === "postgresql" ? "PostgreSQL" : protocol === "mysql" ? "MySQL" : protocol === "local" ? "本地终端" : "SSH";
 
 export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
@@ -58,7 +58,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [encoding, setEncoding] = createSignal(props.connection?.encoding || "UTF-8");
   const [timeout, setTimeout] = createSignal((props.connection?.timeout_ms || 30000) / 1000);
   const [database, setDatabase] = createSignal(props.connection?.database || "");
-  const [sslMode, setSslMode] = createSignal(props.connection?.ssl_mode || ((props.connection?.protocol || props.defaultProtocol) === "postgresql" ? "prefer" : "disabled"));
+  const [sslMode, setSslMode] = createSignal(props.connection?.ssl_mode || (isPostgresCompatibleProtocol(props.connection?.protocol || props.defaultProtocol) ? "prefer" : "disabled"));
   const [folderId, setFolderId] = createSignal(props.connection?.folder_id || props.defaultFolderId || "");
   const [tunnelRules, setTunnelRules] = createSignal<TunnelRule[]>(props.connection?.tunnel_rules || []);
 
@@ -78,7 +78,9 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       ? "关系型数据库"
       : id === "postgresql"
         ? "关系型数据库"
-        : "远程终端与文件传输";
+        : id === "highgo"
+          ? "瀚高 PostgreSQL 兼容数据库"
+          : "远程终端与文件传输";
   const modalTitle = () => props.connection?.id
     ? `编辑 ${protocolLabel(protocol())} 连接`
     : `新建 ${protocolLabel(protocol())} 连接`;
@@ -110,7 +112,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
       if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
       setAuthType("password");
       setPort(databasePort(next));
-      setSslMode(next === "postgresql" ? "prefer" : "disabled");
+      setSslMode(isPostgresCompatibleProtocol(next) ? "prefer" : "disabled");
       return;
     }
     if (encoding() === "auto") setEncoding("UTF-8");
@@ -310,7 +312,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                 <small>选择协议后配置对应参数</small>
               </div>
               <div class="connect-protocol-list">
-                <For each={props.protocols.filter(item => ["ssh", "local", "mysql", "postgresql"].includes(item.id))}>{item => (
+                <For each={props.protocols.filter(item => ["ssh", "local", "mysql", "postgresql", "highgo"].includes(item.id))}>{item => (
                   <button
                     type="button"
                     class={`connect-protocol-card ${protocol() === item.id ? "active" : ""}`}
@@ -465,7 +467,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       <Show when={isDatabase()}>
                         <label class="ssh-field">
                           <span>默认数据库</span>
-                          <input value={database()} placeholder={protocol() === "postgresql" ? "可留空，默认使用用户名同名数据库" : "可留空，连接后选择"} onInput={event => setDatabase(event.currentTarget.value)} />
+                          <input value={database()} placeholder={isPostgresCompatibleProtocol(protocol()) ? "可留空，默认使用用户名同名数据库" : "可留空，连接后选择"} onInput={event => setDatabase(event.currentTarget.value)} />
                         </label>
                       </Show>
                     </div>

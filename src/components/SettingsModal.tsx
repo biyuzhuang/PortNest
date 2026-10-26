@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
   themeMode, setThemeMode, type ThemeMode, terminalThemes, getTerminalTheme,
   getTerminalThemePreferences, setTerminalThemePreferences, effectiveTheme, getTerminalSettings, setTerminalSettings,
@@ -9,6 +9,7 @@ import { uiStore } from "../stores/uiStore";
 import { REFRESH_OPTIONS, getOverviewSettings, setOverviewSettings } from "../stores/dashboardStore";
 import { clearTerminalBackgroundImage, loadTerminalBackgroundImage, saveTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stores/terminalBackgroundStore";
 import { Icon } from "./Icon";
+import { AIProviderIcon } from "./AIProviderIcon";
 import { TextContextMenu } from "./TextContextMenu";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -16,9 +17,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
-import { api, type AIProviderConfig, type AiToolAuditRecord } from "../utils/api";
+import { api, type AIProviderConfig, type AIProviderModel } from "../utils/api";
 import packageInfo from "../../package.json";
 import { templateStore } from "../stores/templateStore";
+import { feedback } from "../stores/feedbackStore";
 import "./SettingsModal.css";
 
 interface SettingsModalProps { onClose: () => void; standalone?: boolean; }
@@ -55,23 +57,30 @@ const AI_PROVIDER_TEMPLATES: AIProviderTemplate[] = [
   { id: "alibaba", label: "阿里百炼", protocol: "openai_chat", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
   { id: "volcano", label: "火山方舟", protocol: "openai_chat", endpoint: "https://ark.cn-beijing.volces.com/api/v3" },
   { id: "tencent", label: "腾讯云混元", protocol: "openai_chat", endpoint: "https://api.hunyuan.cloud.tencent.com/v1" },
+  { id: "minimax", label: "MiniMax", protocol: "openai_chat", endpoint: "https://api.minimax.chat/v1" },
+  { id: "xiaomi_mimo", label: "小米 MiMo", protocol: "openai_chat", endpoint: "" },
   { id: "ollama", label: "Ollama", protocol: "ollama", endpoint: "http://localhost:11434/v1" },
   { id: "gemini", label: "Gemini", protocol: "gemini", endpoint: "https://generativelanguage.googleapis.com", disabled: true },
   { id: "custom", label: "自定义供应商", protocol: "openai_chat", endpoint: "" },
 ];
 
 const defaultAIProviderConfig = (): AIProviderConfig => ({
+  id: "",
   enabled: false,
   provider: "custom",
   protocol: "openai_chat",
   endpoint: "",
   api_key: "",
   model: "",
+  models: [],
   display_name: "默认模型",
   context_window: 128000,
   max_output: 4096,
   temperature: null,
   custom_headers: {},
+  custom_user_agent: "",
+  proxy_mode: "auto",
+  remark: "",
 });
 
 const Toggle: Component<{ checked: boolean; onChange: (value: boolean) => void }> = (props) => (
@@ -228,6 +237,15 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [storageMessage, setStorageMessage] = createSignal("");
   const [storageBusy, setStorageBusy] = createSignal(false);
   const [aiConfig, setAIConfig] = createSignal<AIProviderConfig>(defaultAIProviderConfig());
+  const [aiProviders, setAIProviders] = createSignal<AIProviderConfig[]>([]);
+  const [activeAIProviderId, setActiveAIProviderId] = createSignal<string | null>(null);
+  const [showAIProviderPicker, setShowAIProviderPicker] = createSignal(false);
+  const [aiProviderSearch, setAIProviderSearch] = createSignal("");
+  const [aiApiKeyVisible, setAIApiKeyVisible] = createSignal(false);
+  const [aiExpandedModel, setAIExpandedModel] = createSignal<string | null>(null);
+  const [aiManualModel, setAIManualModel] = createSignal("");
+  const [aiModelPickerOpen, setAIModelPickerOpen] = createSignal(false);
+  const [aiHeaderRows, setAIHeaderRows] = createSignal<Array<{ key: string; value: string }>>([]);
   const [aiConfigLoading, setAIConfigLoading] = createSignal(false);
   const [aiTesting, setAITesting] = createSignal(false);
   const [aiSaving, setAISaving] = createSignal(false);
@@ -235,8 +253,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [aiSettingsMessage, setAISettingsMessage] = createSignal("");
   const [aiModelOptions, setAIModelOptions] = createSignal<string[]>([]);
   const [aiModelsLoading, setAIModelsLoading] = createSignal(false);
-  const [aiAuditRecords, setAIAuditRecords] = createSignal<AiToolAuditRecord[]>([]);
-  const [aiAuditLoading, setAIAuditLoading] = createSignal(false);
   const readFileViewOptions = (): Record<string, unknown> => {
     try { return JSON.parse(localStorage.getItem("portnest-file-view-options") || "{}"); }
     catch { return {}; }
@@ -261,31 +277,217 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     void loadTerminalBackgroundImage(background().imageAssetId);
     void getVersion().then(setAppVersion).catch(() => setAppVersion(packageInfo.version));
     setAIConfigLoading(true);
-    void api.aiGetConfig()
-      .then(config => { if (config) setAIConfig({ ...defaultAIProviderConfig(), ...config, custom_headers: config.custom_headers || {} }); })
+    void api.aiGetConfigs()
+      .then(configs => {
+        setAIProviders(configs);
+        const first = configs[0];
+        if (first) {
+          setAIConfig({ ...defaultAIProviderConfig(), ...first, custom_headers: first.custom_headers || {} });
+          setActiveAIProviderId(first.id);
+          syncAIHeaderRows(first);
+        }
+      })
       .catch(error => setAISettingsMessage(`读取 AI 配置失败：${String(error)}`))
       .finally(() => setAIConfigLoading(false));
-    void api.aiListToolAudit(30)
-      .then(setAIAuditRecords)
-      .catch(error => console.warn("[ai] failed to load tool audit", error));
     if (isTauriRuntime()) {
       void getCurrentWindow().isMaximized().then(setMaximized).catch(() => undefined);
     }
   });
 
-  const applyAIProviderTemplate = (item: AIProviderTemplate) => {
-    if (item.disabled) return;
-    setAIConfig(previous => ({
-      ...previous,
-      provider: item.id,
-      protocol: item.protocol,
-      endpoint: item.endpoint,
-      display_name: previous.display_name || item.label,
-      model: item.model || previous.model,
-    }));
+  const configuredAIProviderIds = createMemo(() => new Set(aiProviders().map(item => item.provider)));
+  const filteredAIProviderTemplates = createMemo(() => {
+    const query = aiProviderSearch().trim().toLowerCase();
+    return AI_PROVIDER_TEMPLATES.filter(item =>
+      !item.disabled
+      && !configuredAIProviderIds().has(item.id)
+      && (!query || `${item.label} ${item.protocol}`.toLowerCase().includes(query))
+    );
+  });
+
+  const patchAIConfig = (updater: Partial<AIProviderConfig> | ((previous: AIProviderConfig) => AIProviderConfig)) => {
+    const next = typeof updater === "function" ? updater(aiConfig()) : { ...aiConfig(), ...updater };
+    setAIConfig(next);
+    if (next.id) setAIProviders(previous => previous.map(item => item.id === next.id ? next : item));
+    return next;
+  };
+
+  const syncAIHeaderRows = (config: AIProviderConfig) => {
+    setAIHeaderRows(Object.entries(config.custom_headers || {}).map(([key, value]) => ({ key, value })));
+  };
+
+  const commitAIHeaderRows = (rows: Array<{ key: string; value: string }>) => {
+    setAIHeaderRows(rows);
+    const headers: Record<string, string> = {};
+    for (const row of rows) {
+      const key = row.key.trim();
+      if (key) headers[key] = row.value;
+    }
+    patchAIConfig({ custom_headers: headers });
+  };
+
+  const configuredAIModels = () => aiConfig().models || [];
+  const selectedAIModel = () =>
+    configuredAIModels().find(model => model.enabled) || configuredAIModels()[0];
+  const effectiveAIConfig = (): AIProviderConfig => {
+    const model = selectedAIModel();
+    if (!model) return aiConfig();
+    return {
+      ...aiConfig(),
+      model: model.model,
+      context_window: model.context_window,
+      max_output: model.max_output,
+      temperature: model.temperature,
+    };
+  };
+  const persistAIProvider = async (config: AIProviderConfig) => {
+    const saved = await api.aiSaveConfig(config);
+    setAIConfig(saved);
+    setActiveAIProviderId(saved.id);
+    setAIProviders(previous => {
+      const exists = previous.some(item => item.id === saved.id);
+      return exists ? previous.map(item => item.id === saved.id ? saved : item) : [...previous, saved];
+    });
+    return saved;
+  };
+
+  const availableAIModels = () => {
+    const configured = new Set(configuredAIModels().map(model => model.model));
+    return aiModelOptions().filter(model => !configured.has(model));
+  };
+  const addAIModel = async (modelName: string) => {
+    const name = modelName.trim();
+    if (!name || configuredAIModels().some(model => model.model === name)) return;
+    const config = aiConfig();
+    const next: AIProviderConfig = {
+      ...config,
+      models: [...configuredAIModels(), {
+        model: name,
+        enabled: true,
+        context_window: config.context_window,
+        max_output: config.max_output,
+        temperature: config.temperature,
+        supports_tool_calling: true,
+        supports_image_input: false,
+        supports_image_output: false,
+      }],
+      model: name,
+    };
+    try {
+      await persistAIProvider(next);
+      setAIModelPickerOpen(false);
+      feedback.success(`已添加模型 ${name}`);
+    } catch (error) {
+      setAISettingsMessage(`添加模型失败：${String(error)}`);
+    }
+  };
+  const updateAIModelConfig = (modelName: string, patch: Partial<AIProviderModel>) => {
+    const models = configuredAIModels().map(model => model.model === modelName ? { ...model, ...patch } : model);
+    patchAIConfig({ models });
+  };
+
+  const toggleAIModel = async (modelName: string, enabled: boolean) => {
+    const models = configuredAIModels().map(model => model.model === modelName ? { ...model, enabled } : model);
+    const active = models.find(model => model.enabled) || models[0];
+    try {
+      await persistAIProvider({ ...aiConfig(), models, model: active?.model || "" });
+    } catch (error) {
+      setAISettingsMessage(`更新模型状态失败：${String(error)}`);
+    }
+  };
+  const removeAIModel = async (modelName: string) => {
+    const models = configuredAIModels().filter(model => model.model !== modelName);
+    const active = models.find(model => model.enabled) || models[0];
+    try {
+      await persistAIProvider({ ...aiConfig(), models, model: active?.model || "" });
+    } catch (error) {
+      setAISettingsMessage(`删除模型失败：${String(error)}`);
+    }
+  };
+
+  const selectAIProvider = (config: AIProviderConfig) => {
+    setActiveAIProviderId(config.id);
+    setAIConfig({ ...defaultAIProviderConfig(), ...config, custom_headers: config.custom_headers || {} });
     setAITestResult("");
     setAISettingsMessage("");
     setAIModelOptions([]);
+    setAIModelPickerOpen(false);
+    setAIExpandedModel(null);
+    setAIApiKeyVisible(false);
+    syncAIHeaderRows(config);
+  };
+
+  const addAIProvider = async (item: AIProviderTemplate) => {
+    if (item.disabled) return;
+    setShowAIProviderPicker(false);
+    setAIProviderSearch("");
+    const existing = aiProviders().find(config => config.provider === item.id);
+    if (existing) { selectAIProvider(existing); return; }
+    const previousConfig = aiConfig();
+    const previousProviderId = activeAIProviderId();
+    const draft: AIProviderConfig = {
+      ...defaultAIProviderConfig(),
+      enabled: true,
+      provider: item.id,
+      protocol: item.protocol,
+      endpoint: item.endpoint,
+      display_name: item.label,
+      model: item.model || "",
+    };
+    setAIConfig(draft);
+    setActiveAIProviderId(null);
+    setAITestResult("");
+    setAISettingsMessage("");
+    setAIModelOptions([]);
+    setAIModelPickerOpen(false);
+    setAIExpandedModel(null);
+    setAIHeaderRows([]);
+    try {
+      const saved = await api.aiSaveConfig(draft);
+      setAIProviders(previous => [...previous, saved]);
+      selectAIProvider(saved);
+      feedback.success("供应商已添加");
+    } catch (error) {
+      setAIConfig(previousConfig);
+      setActiveAIProviderId(previousProviderId);
+      setAISettingsMessage(`添加供应商失败：${String(error)}`);
+    }
+  };
+
+  const removeAIProvider = async (target: AIProviderConfig = aiConfig()) => {
+    const config = target;
+    if (!config.id) return;
+    if (!await feedback.confirm("确定删除当前供应商吗？", "删除供应商")) return;
+    setAISettingsMessage("");
+    try {
+      await api.aiDeleteConfig(config.id);
+      const remaining = aiProviders().filter(item => item.id !== config.id);
+      setAIProviders(remaining);
+      if (activeAIProviderId() === config.id) {
+        if (remaining[0]) selectAIProvider(remaining[0]);
+        else {
+          setActiveAIProviderId(null);
+          setAIConfig(defaultAIProviderConfig());
+        }
+      }
+      feedback.success("供应商已删除");
+    } catch (error) {
+      setAISettingsMessage(`删除供应商失败：${String(error)}`);
+    }
+  };
+
+  const toggleAIProvider = async (config: AIProviderConfig, enabled: boolean) => {
+    const next = { ...config, enabled };
+    setAIProviders(previous => previous.map(item => item.id === config.id ? next : item));
+    if (aiConfig().id === config.id) setAIConfig(next);
+    try {
+      const saved = await api.aiSaveConfig(next);
+      setAIProviders(previous => previous.map(item => item.id === saved.id ? saved : item));
+      if (aiConfig().id === saved.id) setAIConfig(saved);
+    } catch (error) {
+      setAIProviders(previous => previous.map(item => item.id === config.id ? config : item));
+      if (aiConfig().id === config.id) setAIConfig(config);
+      setAISettingsMessage(`更新供应商状态失败：${String(error)}`);
+    }
   };
 
   const saveAIConfiguration = async () => {
@@ -293,19 +495,14 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     setAISaving(true);
     setAISettingsMessage("");
     try {
-      await api.aiSaveConfig(aiConfig());
-      setAISettingsMessage("模型配置已加密保存");
+      await persistAIProvider(effectiveAIConfig());
+      setAISettingsMessage("供应商配置已加密保存");
     } catch (error) {
       setAISettingsMessage(`保存失败：${String(error)}`);
     } finally {
       setAISaving(false);
     }
   };
-
-  const aiAuditStatusLabel = (status: string) =>
-    status === "success" ? "成功" : status === "error" ? "失败" : status === "rejected" ? "已取消" : "执行中";
-  const formatAIAuditTime = (timestamp: number) =>
-    new Date(timestamp * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 
   const fetchAIModels = async () => {
     if (aiModelsLoading()) return;
@@ -314,34 +511,12 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     try {
       const models = await api.aiListModels(aiConfig());
       setAIModelOptions(models);
-      setAISettingsMessage(`已获取 ${models.length} 个模型，可从模型 ID 输入框中选择`);
+      setAIModelPickerOpen(true);
+      setAISettingsMessage(`已获取 ${models.length} 个可用模型`);
     } catch (error) {
       setAISettingsMessage(`获取模型列表失败：${String(error)}`);
     } finally {
       setAIModelsLoading(false);
-    }
-  };
-
-  const refreshAIAudit = async () => {
-    setAIAuditLoading(true);
-    try {
-      setAIAuditRecords(await api.aiListToolAudit(30));
-    } catch (error) {
-      setAISettingsMessage(`读取工具执行记录失败：${String(error)}`);
-    } finally {
-      setAIAuditLoading(false);
-    }
-  };
-
-  const clearAIAudit = async () => {
-    setAIAuditLoading(true);
-    try {
-      await api.aiClearToolAudit();
-      setAIAuditRecords([]);
-    } catch (error) {
-      setAISettingsMessage(`清空工具执行记录失败：${String(error)}`);
-    } finally {
-      setAIAuditLoading(false);
     }
   };
 
@@ -350,7 +525,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     setAITesting(true);
     setAITestResult("");
     try {
-      const result = await api.aiTestConfig(aiConfig());
+      const result = await api.aiTestConfig(effectiveAIConfig());
       setAITestResult(result || "连接成功");
     } catch (error) {
       setAITestResult(`测试失败：${String(error)}`);
@@ -425,6 +600,8 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
       lineHeight: 1,
       letterSpacing: 0,
       scrollback: 1000,
+      highlightEnhancement: false,
+      stripedBackground: false,
       commandHints: true,
       sshHistory: true,
       reconnectOnDisconnect: false,
@@ -512,6 +689,28 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) void getCurrentWindow().startDragging();
   };
 
+  const handleIsolatedWheel = (event: WheelEvent) => {
+    const container = event.currentTarget as HTMLElement;
+    const delta = event.deltaY;
+    if (!delta) return;
+    if (container.scrollHeight <= container.clientHeight + 1) {
+      event.preventDefault();
+      return;
+    }
+    const atTop = container.scrollTop <= 0 && delta < 0;
+    const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1 && delta > 0;
+    if (atTop || atBottom) event.preventDefault();
+  };
+
+  const aiProviderLabel = (provider: string) =>
+    AI_PROVIDER_TEMPLATES.find(item => item.id === provider)?.label || provider || "自定义供应商";
+  const aiProviderProtocolLabel = (protocol: string) =>
+    protocol === "anthropic" ? "Anthropic Messages" : protocol === "ollama" ? "Ollama" : "OpenAI Chat";
+  const aiProviderModelSummary = (config: AIProviderConfig) => {
+    const models = (config.models || []).filter(model => model.model.trim());
+    return `${models.length} 个模型 / ${models.filter(model => model.enabled).length} 个启用`;
+  };
+
   return (
     <div class={`settings-workspace ${props.standalone ? "standalone" : ""}`}>
       <header class="settings-topbar" onMouseDown={startWindowDrag}>
@@ -557,7 +756,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
           {navItem("version", "版本")}
         </aside>
 
-        <main class="settings-main">
+        <main class={`settings-main ${page() === "aiModels" ? "ai-settings-main" : ""}`}>
           <Show when={page() === "appearance"}>
             <div class="settings-page">
               <div class="settings-page-heading"><h2>外观</h2><p>控制应用主题与终端配色方案。</p></div>
@@ -597,12 +796,13 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <div class="settings-page-heading"><h2>终端</h2><p>调整终端显示、预览和文件列表布局。</p></div>
 
               <section class="settings-terminal-preview-shell">
-                <div class={`terminal-settings-preview settings-terminal-preview terminal-background-${previewBackgroundStyle()}`} style={{
+                <div class={`terminal-settings-preview settings-terminal-preview terminal-background-${previewBackgroundStyle()}${terminalSettings().stripedBackground ? " terminal-striped" : ""}${terminalSettings().highlightEnhancement ? " terminal-highlight-enhanced" : ""}`} style={{
                   color: terminalThemes[currentTerminalTheme()]?.foreground,
                   "font-family": terminalSettings().fontFamily,
                   "font-size": `${terminalSettings().fontSize}px`,
                   "line-height": String(terminalSettings().lineHeight),
                   "letter-spacing": `${terminalSettings().letterSpacing}px`,
+                  "--preview-row-height": `${terminalSettings().fontSize * terminalSettings().lineHeight}px`,
                   "--preview-theme-background": terminalThemes[currentTerminalTheme()]?.background,
                   "--preview-green": terminalThemes[currentTerminalTheme()]?.green,
                   "--preview-blue": terminalThemes[currentTerminalTheme()]?.blue,
@@ -613,7 +813,8 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   "--preview-overlay": String(background().imageOverlay),
                   "--preview-blur": `${background().imageBlur}px`,
                 }}>
-                  <i class="terminal-preview-background" />
+                  <i class="terminal-preview-background" aria-hidden="true" />
+                  <i class="terminal-preview-stripes" aria-hidden="true" />
                   <div><span>user@server</span>:<b>~/app$</b> ls -all</div>
                   <div>total 540</div>
                   <div>drwxr-xr-x 8 deploy deploy 4096 May 25 10:20 .</div>
@@ -666,8 +867,8 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   <label><span><b>终端间距</b></span><input type="number" min="-2" max="8" value={terminalSettings().letterSpacing} onInput={event => updateSetting("letterSpacing", Number(event.currentTarget.value))} /></label>
                 </div>
                 <div class="settings-card">
-                  <label class="settings-row-unavailable"><span><b>终端高亮增强</b><small>增强命令与路径的语法高亮</small></span><DisabledToggle /></label>
-                  <label class="settings-row-unavailable"><span><b>条纹背景</b><small>使用浅色水平条纹区分输出行</small></span><DisabledToggle /></label>
+                  <label><span><b>终端高亮增强</b><small>增强命令与路径的对比度和可读性</small></span><Toggle checked={terminalSettings().highlightEnhancement} onChange={value => updateSetting("highlightEnhancement", value)} /></label>
+                  <label><span><b>条纹背景</b><small>使用浅色水平条纹区分输出行</small></span><Toggle checked={terminalSettings().stripedBackground} onChange={value => updateSetting("stripedBackground", value)} /></label>
                   <label class="settings-row-unavailable"><span><b>WebGL 渲染</b><small>使用 GPU 提升终端渲染性能</small></span><DisabledToggle /></label>
                   <label><span><b>最大缓存行数</b></span><input type="number" min="100" max="100000" value={terminalSettings().scrollback} onChange={event => updateSetting("scrollback", Number(event.currentTarget.value))} /></label>
                 </div>
@@ -818,79 +1019,204 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
 
           <Show when={page() === "aiModels"}>
             <div class="settings-page ai-settings-page">
-              <div class="settings-page-heading"><h2>模型配置</h2><p>使用自己的 API Key 接入大模型，为 PortNest AI 助手提供对话、终端和 SQL 能力。</p></div>
+              <div class="settings-page-heading"><h2>模型配置</h2><p>添加模型供应商配置，聊天页可全局使用。只显示已经添加的供应商。</p></div>
               <div class="ai-config-layout">
                 <aside class="ai-provider-panel">
-                  <div class="ai-provider-panel-head"><strong>供应商</strong><span>选择模板后填写接口信息</span></div>
-                  <div class="ai-provider-list">
-                    <For each={AI_PROVIDER_TEMPLATES}>{item => (
-                      <button type="button" class={`ai-provider-item ${aiConfig().provider === item.id ? "active" : ""}`} disabled={item.disabled} onClick={() => applyAIProviderTemplate(item)}>
-                        <span class="ai-provider-mark">{item.label.slice(0, 1)}</span>
-                        <span class="ai-provider-copy"><strong>{item.label}</strong><small>{item.protocol === "anthropic" ? "Anthropic Messages" : item.protocol === "ollama" ? "Ollama" : "OpenAI Chat"}</small></span>
-                        <Show when={item.disabled}><em>暂不可用</em></Show>
-                      </button>
+                  <div class="ai-provider-panel-head">
+                    <div><strong>供应商</strong><span>添加模型供应商配置，聊天页可全局使用。</span></div>
+                    <button type="button" class="ai-provider-add-button" onClick={() => setShowAIProviderPicker(value => !value)}>＋ 添加</button>
+                    <Show when={showAIProviderPicker()}>
+                      <div class="ai-provider-picker-backdrop" onClick={() => setShowAIProviderPicker(false)}>
+                        <div class="ai-provider-picker" onClick={event => event.stopPropagation()}>
+                          <strong>添加供应商</strong>
+                          <div class="ai-provider-picker-search">
+                            <Icon name="search" size={13} />
+                            <input autofocus value={aiProviderSearch()} placeholder="搜索供应商" onInput={event => setAIProviderSearch(event.currentTarget.value)} />
+                          </div>
+                          <div class="ai-provider-picker-list">
+                            <For each={filteredAIProviderTemplates()}>{item => (
+                              <button type="button" onClick={() => void addAIProvider(item)}>
+                                <AIProviderIcon provider={item.id} size={19} />
+                                <span><b>{item.label}</b><small>{aiProviderProtocolLabel(item.protocol)}</small></span>
+                              </button>
+                            )}</For>
+                            <Show when={filteredAIProviderTemplates().length === 0}>
+                              <div class="ai-provider-picker-empty">没有可添加的供应商</div>
+                            </Show>
+                          </div>
+                        </div>
+                      </div>
+                    </Show>
+                  </div>
+                  <Show when={aiProviders().length === 0}>
+                    <div class="ai-provider-empty">
+                      <strong>还没有供应商</strong>
+                      <span>点击右上角添加按钮，选择供应商后创建配置。</span>
+                    </div>
+                  </Show>
+                  <div class="ai-provider-list" onWheel={handleIsolatedWheel}>
+                    <For each={aiProviders()}>{item => (
+                      <div
+                        class={`ai-provider-card ${activeAIProviderId() === item.id ? "active" : ""}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectAIProvider(item)}
+                        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") selectAIProvider(item); }}
+                      >
+                        <AIProviderIcon provider={item.provider} size={19} />
+                        <div class="ai-provider-copy">
+                          <div class="ai-provider-title">
+                            <strong>{item.display_name || aiProviderLabel(item.provider)}</strong>
+                            <span onClick={event => event.stopPropagation()}><Toggle checked={item.enabled} onChange={value => void toggleAIProvider(item, value)} /></span>
+                          </div>
+                          <small>{aiProviderLabel(item.provider)}</small>
+                          <code>{item.endpoint || "未填写 API Endpoint"}</code>
+                          <span class="ai-provider-model-count">{aiProviderModelSummary(item)}</span>
+                        </div>
+                        <button type="button" class="ai-provider-delete" title="删除供应商" onClick={event => { event.stopPropagation(); void removeAIProvider(item); }}>
+                          <Icon name="trash" size={13} />
+                        </button>
+                      </div>
                     )}</For>
                   </div>
-                  <p class="ai-provider-note">当前版本支持 OpenAI Chat Completions、Anthropic Messages 和 Ollama 兼容协议。</p>
                 </aside>
                 <div class="ai-config-panel">
-                  <Show when={aiConfigLoading()}><div class="settings-note">正在读取已保存的模型配置…</div></Show>
-                  <div class="settings-card ai-config-card">
-                    <label><span><b>启用模型</b><small>关闭后 AI 助手不会调用该配置</small></span><Toggle checked={aiConfig().enabled} onChange={value => setAIConfig(previous => ({ ...previous, enabled: value }))} /></label>
-                    <label><span><b>配置名称</b></span><input value={aiConfig().display_name} placeholder="例如：DeepSeek 日常使用" onInput={event => setAIConfig(previous => ({ ...previous, display_name: event.currentTarget.value }))} /></label>
-                    <label><span><b>协议</b></span>
-                      <select value={aiConfig().protocol} onChange={event => setAIConfig(previous => ({ ...previous, protocol: event.currentTarget.value }))}>
-                        <option value="openai_chat">OpenAI Chat Completions</option>
-                        <option value="anthropic">Anthropic Messages</option>
-                        <option value="ollama">Ollama（OpenAI 兼容）</option>
-                      </select>
-                    </label>
-                    <label><span><b>API Endpoint</b><small>填写基础地址，不要追加 /chat/completions</small></span><input value={aiConfig().endpoint} placeholder="https://api.deepseek.com" onInput={event => setAIConfig(previous => ({ ...previous, endpoint: event.currentTarget.value }))} /></label>
-                    <label><span><b>API Key</b><small>使用本地加密存储，不会同步到云端</small></span><input type="password" value={aiConfig().api_key} placeholder="sk-..." onInput={event => setAIConfig(previous => ({ ...previous, api_key: event.currentTarget.value }))} /></label>
-                    <label><span><b>模型 ID</b><small>必须与服务端实际模型名称一致</small></span>
-                      <div class="ai-model-input-row">
-                        <input list="ai-model-options" value={aiConfig().model} placeholder="例如：deepseek-chat" onInput={event => setAIConfig(previous => ({ ...previous, model: event.currentTarget.value }))} />
-                        <button type="button" class="settings-inline-button" disabled={aiModelsLoading() || aiTesting() || aiSaving()} onClick={() => void fetchAIModels()}>{aiModelsLoading() ? "获取中…" : "获取模型"}</button>
-                        <datalist id="ai-model-options"><For each={aiModelOptions()}>{model => <option value={model} />}</For></datalist>
+                  <Show when={activeAIProviderId()} fallback={
+                    <div class="ai-config-empty">
+                      <span class="ai-config-empty-icon"><Icon name="sparkles" size={22} /></span>
+                      <h3>选择或新增供应商配置</h3>
+                      <p>然后在这里维护凭据和模型。</p>
+                    </div>
+                  }>
+                    <div class="ai-config-panel-heading">
+                      <AIProviderIcon provider={aiConfig().provider} size={21} />
+                      <div><strong>配置详情</strong><span>填写凭据、添加模型，并配置模型参数。</span></div>
+                      <button type="button" class="settings-inline-button danger" onClick={() => void removeAIProvider(aiConfig())}>删除供应商</button>
+                    </div>
+                    <div class="ai-config-scroll" onWheel={handleIsolatedWheel}>
+                    <Show when={aiConfigLoading()}><div class="settings-note">正在读取已保存的模型配置…</div></Show>
+                    <div class="settings-card ai-config-card">
+                      <label><span><b>名称</b></span><input value={aiConfig().display_name} placeholder="例如：DeepSeek 日常使用" onInput={event => patchAIConfig({ display_name: event.currentTarget.value })} /></label>
+                      <label><span><b>API Endpoint</b></span><input value={aiConfig().endpoint} placeholder="https://api.deepseek.com" onInput={event => patchAIConfig({ endpoint: event.currentTarget.value })} /></label>
+                      <label><span><b>API Key</b></span>
+                        <div class="ai-secret-input-row">
+                          <input type={aiApiKeyVisible() ? "text" : "password"} value={aiConfig().api_key} placeholder="sk-..." onInput={event => patchAIConfig({ api_key: event.currentTarget.value })} />
+                          <button type="button" class="settings-inline-button" onClick={() => setAIApiKeyVisible(value => !value)}>{aiApiKeyVisible() ? "隐藏" : "显示"}</button>
+                        </div>
+                      </label>
+                      <label><span><b>协议</b></span>
+                        <select value={aiConfig().protocol} onChange={event => patchAIConfig({ protocol: event.currentTarget.value })}>
+                          <option value="openai_chat">OpenAI Chat Completions</option>
+                          <option value="anthropic">Anthropic Messages</option>
+                          <option value="ollama">Ollama（OpenAI 兼容）</option>
+                        </select>
+                      </label>
+                      <label><span><b>代理</b></span>
+                        <select value={aiConfig().proxy_mode || "auto"} onChange={event => patchAIConfig({ proxy_mode: event.currentTarget.value })}>
+                          <option value="auto">自动（优先使用系统代理）</option>
+                          <option value="none">直连（不使用代理）</option>
+                        </select>
+                      </label>
+                      <div class="ai-header-editor">
+                        <div class="ai-header-editor-head">
+                          <div><strong>自定义 Header</strong><small>覆盖同名请求头，应用于聊天、连接测试和模型列表请求。</small></div>
+                          <button type="button" class="settings-inline-button" onClick={() => commitAIHeaderRows([...aiHeaderRows(), { key: "", value: "" }])}>＋ 添加 Header</button>
+                        </div>
+                        <For each={aiHeaderRows()}>{(row, index) => (
+                          <div class="ai-header-row">
+                            <input value={row.key} placeholder="Header 名称" onInput={event => {
+                              const rows = aiHeaderRows().map((item, itemIndex) => itemIndex === index() ? { ...item, key: event.currentTarget.value } : item);
+                              commitAIHeaderRows(rows);
+                            }} />
+                            <input value={row.value} placeholder="Header 值" onInput={event => {
+                              const rows = aiHeaderRows().map((item, itemIndex) => itemIndex === index() ? { ...item, value: event.currentTarget.value } : item);
+                              commitAIHeaderRows(rows);
+                            }} />
+                            <button type="button" class="ai-header-remove" title="删除 Header" onClick={() => commitAIHeaderRows(aiHeaderRows().filter((_, itemIndex) => itemIndex !== index()))}>
+                              <Icon name="trash" size={12} />
+                            </button>
+                          </div>
+                        )}</For>
                       </div>
-                    </label>
-                    <div class="ai-config-number-grid">
-                      <label><span><b>上下文窗口</b></span><input type="number" min="1000" max="2000000" value={aiConfig().context_window} onInput={event => setAIConfig(previous => ({ ...previous, context_window: Number(event.currentTarget.value) }))} /></label>
-                      <label><span><b>最大输出 Token</b></span><input type="number" min="1" max="200000" value={aiConfig().max_output} onInput={event => setAIConfig(previous => ({ ...previous, max_output: Number(event.currentTarget.value) }))} /></label>
-                      <label><span><b>温度</b></span><input type="number" min="0" max="2" step="0.1" value={aiConfig().temperature ?? ""} placeholder="留空使用默认" onInput={event => setAIConfig(previous => ({ ...previous, temperature: event.currentTarget.value === "" ? null : Number(event.currentTarget.value) }))} /></label>
+                      <label><span><b>自定义 UA</b></span><input value={aiConfig().custom_user_agent || ""} placeholder="Go-http-client/1.1" onInput={event => patchAIConfig({ custom_user_agent: event.currentTarget.value })} /></label>
+                      <label><span><b>备注</b></span><input value={aiConfig().remark || ""} placeholder="可选" onInput={event => patchAIConfig({ remark: event.currentTarget.value })} /></label>
                     </div>
-                  </div>
-                  <div class="ai-config-actions">
-                    <button type="button" class="settings-inline-button" disabled={aiTesting() || aiSaving()} onClick={() => void testAIConfiguration()}>{aiTesting() ? "测试中…" : "测试连接"}</button>
-                    <button type="button" class="ai-save-button" disabled={aiSaving() || aiTesting()} onClick={() => void saveAIConfiguration()}>{aiSaving() ? "保存中…" : "保存配置"}</button>
-                  </div>
-                  <Show when={aiTestResult()}><div class={`ai-test-result ${aiTestResult().startsWith("测试失败") ? "error" : "success"}`}>{aiTestResult()}</div></Show>
-                  <Show when={aiSettingsMessage()}><div class="settings-note">{aiSettingsMessage()}</div></Show>
-                  <p class="settings-note">模型配置用于 PortNest 内的 AI 助手。测试连接不会自动保存，请确认配置后点击保存配置。</p>
-                </div>
-              </div>
-              <h3>工具执行记录</h3>
-              <div class="settings-card ai-audit-card">
-                <div class="ai-audit-toolbar">
-                  <span>最近的 AI 工具调用记录，用于追踪命令和 SQL 执行。</span>
-                  <div>
-                    <button type="button" class="settings-inline-button" disabled={aiAuditLoading()} onClick={() => void refreshAIAudit()}>{aiAuditLoading() ? "刷新中…" : "刷新"}</button>
-                    <button type="button" class="settings-inline-button danger" disabled={aiAuditLoading() || aiAuditRecords().length === 0} onClick={() => void clearAIAudit()}>清空</button>
-                  </div>
-                </div>
-                <Show when={aiAuditRecords().length === 0}>
-                  <div class="ai-audit-empty">暂无工具执行记录</div>
-                </Show>
-                <For each={aiAuditRecords()}>{record => (
-                  <div class="ai-audit-row">
-                    <span class={`ai-audit-status ${record.status}`}>{aiAuditStatusLabel(record.status)}</span>
-                    <div class="ai-audit-main">
-                      <div class="ai-audit-meta"><strong>{record.tool_name}</strong><span>{formatAIAuditTime(record.created_at)} · {record.mode} · {record.risk}</span></div>
-                      <code>{record.payload}</code>
-                      <Show when={record.result}><small>{record.result}</small></Show>
+                    <div class="settings-card ai-config-card ai-model-config-card">
+                      <div class="ai-model-panel-head">
+                        <div><strong>模型</strong><span>聊天页会使用这里启用的模型。</span></div>
+                        <div class="ai-model-panel-actions">
+                          <span class="ai-model-count-badge">{configuredAIModels().filter(model => model.model.trim()).length} 个 / {configuredAIModels().filter(model => model.enabled && model.model.trim()).length} 启用</span>
+                          <button type="button" class="settings-inline-button" disabled={aiModelsLoading()} onClick={() => void fetchAIModels()}>{aiModelsLoading() ? "获取中…" : "获取可用模型"}</button>
+                        </div>
+                      </div>
+                      <Show when={aiModelPickerOpen()}>
+                        <div class="ai-model-available-list">
+                          <div class="ai-model-available-head"><span>可用模型</span><button type="button" onClick={() => setAIModelPickerOpen(false)}>收起</button></div>
+                          <Show when={aiModelsLoading()}><div class="ai-model-empty">正在获取模型列表…</div></Show>
+                          <Show when={!aiModelsLoading() && availableAIModels().length === 0}><div class="ai-model-empty">没有可添加的模型</div></Show>
+                          <For each={availableAIModels()}>{model => (
+                            <button type="button" class="ai-model-available-row" onClick={() => void addAIModel(model)}>
+                              <span>{model}</span><Icon name="plus" size={13} />
+                            </button>
+                          )}</For>
+                        </div>
+                      </Show>
+                      <div class="ai-model-list">
+                        <Show when={configuredAIModels().length === 0}>
+                          <div class="ai-model-empty">暂无模型，请添加模型或手动输入模型 ID。</div>
+                        </Show>
+                        <For each={configuredAIModels()}>{model => (
+                          <div class="ai-model-item">
+                            <div class="ai-model-row">
+                              <span class="ai-model-row-icon"><Icon name="sparkles" size={13} /></span>
+                              <div class="ai-model-row-main"><strong>{model.model}</strong><small>{Math.round(model.context_window / 1000)}K 上下文 · {model.max_output} 输出 Token</small></div>
+                              <button type="button" class="ai-model-configure" title="模型参数" aria-expanded={aiExpandedModel() === model.model} onClick={() => setAIExpandedModel(current => current === model.model ? null : model.model)}>
+                                <Icon name={aiExpandedModel() === model.model ? "chevronUp" : "settings"} size={12} />
+                              </button>
+                              <span onClick={event => event.stopPropagation()}><Toggle checked={model.enabled} onChange={value => void toggleAIModel(model.model, value)} /></span>
+                              <button type="button" class="ai-model-remove" title="删除模型" onClick={() => void removeAIModel(model.model)}><Icon name="trash" size={12} /></button>
+                            </div>
+                            <Show when={aiExpandedModel() === model.model}>
+                              <div class="ai-model-advanced">
+                                <div class="ai-model-advanced-grid">
+                                  <label><span>上下文窗口</span><input type="number" min="1000" max="10000000" value={model.context_window} onInput={event => {
+                                    const value = Number(event.currentTarget.value);
+                                    if (Number.isFinite(value)) updateAIModelConfig(model.model, { context_window: Math.max(1, value) });
+                                  }} /></label>
+                                  <label><span>最大输出 Token</span><input type="number" min="1" max="1000000" value={model.max_output} onInput={event => {
+                                    const value = Number(event.currentTarget.value);
+                                    if (Number.isFinite(value)) updateAIModelConfig(model.model, { max_output: Math.max(1, value) });
+                                  }} /></label>
+                                  <label><span>温度</span><input type="number" min="0" max="2" step="0.1" value={model.temperature ?? ""} placeholder="默认" onInput={event => {
+                                    const value = event.currentTarget.value === "" ? null : Number(event.currentTarget.value);
+                                    updateAIModelConfig(model.model, { temperature: value !== null && Number.isFinite(value) ? value : null });
+                                  }} /></label>
+                                </div>
+                                <div class="ai-model-capabilities">
+                                  <span class="ai-model-capabilities-label">能力</span>
+                                  <div class="ai-model-capability"><Toggle checked={model.supports_tool_calling !== false} onChange={value => updateAIModelConfig(model.model, { supports_tool_calling: value })} /><span>工具调用</span></div>
+                                  <div class="ai-model-capability"><Toggle checked={Boolean(model.supports_image_input)} onChange={value => updateAIModelConfig(model.model, { supports_image_input: value })} /><span>图像输入</span></div>
+                                  <div class="ai-model-capability"><Toggle checked={Boolean(model.supports_image_output)} onChange={value => updateAIModelConfig(model.model, { supports_image_output: value })} /><span>图像输出</span></div>
+                                </div>
+                              </div>
+                            </Show>
+                          </div>
+                        )}</For>
+                      </div>
+                      <div class="ai-model-manual-row">
+                        <input value={aiManualModel()} placeholder="或手动输入模型 ID" onInput={event => setAIManualModel(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter" && aiManualModel().trim()) void addAIModel(aiManualModel()).then(() => setAIManualModel("")); }} />
+                        <button type="button" class="settings-inline-button" disabled={!aiManualModel().trim()} onClick={() => void addAIModel(aiManualModel()).then(() => setAIManualModel(""))}>添加</button>
+                      </div>
                     </div>
-                  </div>
-                )}</For>
+                    <div class="ai-config-actions">
+                      <button type="button" class="settings-inline-button" disabled={aiTesting() || aiSaving()} onClick={() => void testAIConfiguration()}>{aiTesting() ? "测试中…" : "测试连接"}</button>
+                      <button type="button" class="ai-save-button" disabled={aiSaving() || aiTesting()} onClick={() => void saveAIConfiguration()}>{aiSaving() ? "保存中…" : "保存配置"}</button>
+                    </div>
+                    <Show when={aiTestResult()}><div class={`ai-test-result ${aiTestResult().startsWith("测试失败") ? "error" : "success"}`}>{aiTestResult()}</div></Show>
+                    <Show when={aiSettingsMessage()}><div class="settings-note">{aiSettingsMessage()}</div></Show>
+                    </div>
+                  </Show>
+                </div>
               </div>
             </div>
           </Show>

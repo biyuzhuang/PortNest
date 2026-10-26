@@ -212,3 +212,15 @@
 .mysql-json-node { padding-top:2px; padding-bottom:2px; font-family:var(--font-mono); font-size:12px; line-height:1.5; }
 .mysql-json-key { color:var(--accent); }
 .mysql-json-value { color:var(--text-primary); }
+
+.mysql-query-options button.mysql-query-ai {
+  color: #3671e8;
+  background: #edf3ff;
+  border-color: rgba(54, 113, 232, .22);
+  font-weight: 600;
+}
+.mysql-query-options button.mysql-query-ai:hover {
+  color: #2456c4;
+  background: #e3edff;
+  border-color: rgba(54, 113, 232, .38);
+}

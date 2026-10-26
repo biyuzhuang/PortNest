@@ -216,11 +216,13 @@ export const AssetList: Component<AssetListProps> = (props) => {
     { label: "本地终端", icon: "terminal", onSelect: () => props.onNewConnection(folderId() ?? undefined, "local") },
     { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "mysql") },
     { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "postgresql") },
+    { label: "瀚高数据库", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "highgo") },
   ];
 
   const databaseConnectionActions = (): AssetMenuAction[] => [
     { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "mysql") },
     { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "postgresql") },
+    { label: "瀚高数据库", icon: "database", onSelect: () => props.onNewConnection(folderId() ?? undefined, "highgo") },
   ];
 
   const moreActions = (): AssetMenuAction[] => [

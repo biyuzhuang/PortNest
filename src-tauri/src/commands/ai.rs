@@ -1,9 +1,196 @@
 //! AI assistant commands and encrypted provider configuration.
 
 use super::AppState;
-use crate::ai::{AIChatMessage, AIChatRequest, AIChatResponse, AIClient, AIProviderConfig};
+use crate::ai::{
+    AIChatMessage, AIChatRequest, AIChatResponse, AIClient, AIProviderConfig, AIProviderModel,
+};
 
 const AI_CONFIG_SECRET_ID: &str = "ai_provider_config";
+const AI_PROVIDERS_SECRET_ID: &str = "ai_provider_configs";
+
+fn normalize_provider_config(mut config: AIProviderConfig) -> AIProviderConfig {
+    if config.id.trim().is_empty() {
+        config.id = uuid::Uuid::new_v4().to_string();
+    }
+    if config.provider.trim().is_empty() {
+        config.provider = "custom".to_string();
+    }
+    if config.protocol.trim().is_empty() {
+        config.protocol = "openai_chat".to_string();
+    }
+    if config.display_name.trim().is_empty() {
+        config.display_name = if config.provider == "custom" {
+            "自定义供应商".to_string()
+        } else {
+            config.provider.clone()
+        };
+    }
+    if config.proxy_mode.trim().is_empty() {
+        config.proxy_mode = "auto".to_string();
+    }
+    // Migrate the legacy single-model fields into the model list.
+    if config.models.is_empty() && !config.model.trim().is_empty() {
+        config.models.push(AIProviderModel {
+            model: config.model.clone(),
+            enabled: config.enabled,
+            context_window: config.context_window,
+            max_output: config.max_output,
+            temperature: config.temperature,
+            ..AIProviderModel::default()
+        });
+    }
+    let mut seen = std::collections::HashSet::new();
+    config.models.retain(|model| {
+        let name = model.model.trim();
+        !name.is_empty() && seen.insert(name.to_string())
+    });
+    materialize_provider_config(config)
+}
+
+fn materialize_provider_config(mut config: AIProviderConfig) -> AIProviderConfig {
+    if let Some(active_model) = config
+        .models
+        .iter()
+        .find(|model| model.enabled)
+        .or_else(|| config.models.first())
+        .cloned()
+    {
+        config.model = active_model.model;
+        config.context_window = active_model.context_window;
+        config.max_output = active_model.max_output;
+        config.temperature = active_model.temperature;
+    }
+    config
+}
+
+fn validate_provider_draft(config: &AIProviderConfig) -> Result<(), String> {
+    if !config.endpoint.trim().is_empty()
+        && !config.endpoint.trim().starts_with("http://")
+        && !config.endpoint.trim().starts_with("https://")
+    {
+        return Err("API Endpoint 必须以 http:// 或 https:// 开头".to_string());
+    }
+    match config.protocol.as_str() {
+        "openai_chat" | "anthropic" | "ollama" => Ok(()),
+        other => Err(format!("暂不支持的 AI 协议: {other}")),
+    }
+}
+
+fn load_provider_configs(state: &AppState) -> Result<Vec<AIProviderConfig>, String> {
+    if let Some(value) = state
+        .db
+        .get_secret_json(AI_PROVIDERS_SECRET_ID)
+        .map_err(|e| e.to_string())?
+    {
+        let configs = serde_json::from_value::<Vec<AIProviderConfig>>(value)
+            .map_err(|e| format!("读取 AI 供应商配置失败: {e}"))?;
+        return Ok(configs.into_iter().map(normalize_provider_config).collect());
+    }
+
+    // Migrate the legacy single-provider secret into the new provider list.
+    if let Some(value) = state
+        .db
+        .get_secret_json(AI_CONFIG_SECRET_ID)
+        .map_err(|e| e.to_string())?
+    {
+        let config = serde_json::from_value::<AIProviderConfig>(value)
+            .map_err(|e| format!("读取旧版 AI 配置失败: {e}"))
+            .map(normalize_provider_config)?;
+        let configs = vec![config];
+        save_provider_configs(state, &configs)?;
+        return Ok(configs);
+    }
+
+    Ok(Vec::new())
+}
+
+fn save_provider_configs(state: &AppState, configs: &[AIProviderConfig]) -> Result<(), String> {
+    let value = serde_json::to_value(configs).map_err(|e| e.to_string())?;
+    state
+        .db
+        .save_secret_json(AI_PROVIDERS_SECRET_ID, &value)
+        .map_err(|e| e.to_string())
+}
+
+fn active_provider_config(configs: &[AIProviderConfig]) -> Option<AIProviderConfig> {
+    let normalized: Vec<AIProviderConfig> = configs
+        .iter()
+        .cloned()
+        .map(normalize_provider_config)
+        .collect();
+    normalized
+        .iter()
+        .find(|config| {
+            config.enabled
+                && !config.endpoint.trim().is_empty()
+                && config
+                    .models
+                    .iter()
+                    .any(|model| model.enabled && !model.model.trim().is_empty())
+        })
+        .cloned()
+        .or_else(|| normalized.first().cloned())
+}
+
+fn load_active_provider_config(state: &AppState) -> Result<AIProviderConfig, String> {
+    let configs = load_provider_configs(state)?;
+    let config = active_provider_config(&configs)
+        .ok_or_else(|| "尚未配置 AI 模型，请先在 设置 → AI → 模型配置 中完成配置".to_string())?;
+    validate_config(&config)?;
+    Ok(config)
+}
+
+/// Resolve the provider/model requested by the Agent model switcher.
+/// When no override is supplied, keep the legacy first-enabled-provider behavior.
+fn resolve_chat_provider_config(
+    state: &AppState,
+    provider_id: Option<&str>,
+    model_name: Option<&str>,
+) -> Result<AIProviderConfig, String> {
+    let requested_provider = provider_id.filter(|value| !value.trim().is_empty());
+    let requested_model = model_name.filter(|value| !value.trim().is_empty());
+    let mut config = if let Some(requested_provider) = requested_provider {
+        let configs = load_provider_configs(state)?;
+        let config = configs
+            .into_iter()
+            .map(normalize_provider_config)
+            .find(|config| config.id == requested_provider)
+            .ok_or_else(|| "所选 AI 供应商不存在，请重新选择模型".to_string())?;
+        if !config.enabled {
+            return Err("所选 AI 供应商已停用，请重新选择模型".to_string());
+        }
+        config
+    } else if let Some(requested_model) = requested_model {
+        let configs = load_provider_configs(state)?;
+        let config = configs
+            .into_iter()
+            .map(normalize_provider_config)
+            .find(|config| {
+                config.enabled
+                    && config.models.iter().any(|model| model.enabled && model.model == requested_model)
+            })
+            .ok_or_else(|| "所选模型未在任何已启用供应商中启用".to_string())?;
+        config
+    } else {
+        load_active_provider_config(state)?
+    };
+
+    if let Some(requested_model) = requested_model {
+        let selected = config
+            .models
+            .iter()
+            .find(|model| model.enabled && model.model == requested_model)
+            .cloned()
+            .ok_or_else(|| format!("模型 {requested_model} 未在当前供应商中启用"))?;
+        config.model = selected.model;
+        config.context_window = selected.context_window;
+        config.max_output = selected.max_output;
+        config.temperature = selected.temperature;
+    }
+
+    validate_config(&config)?;
+    Ok(config)
+}
 
 fn system_prompt(
     mode: &str,
@@ -161,38 +348,53 @@ pub async fn ai_list_models(config: AIProviderConfig) -> Result<Vec<String>, Str
 }
 
 #[tauri::command]
+pub async fn ai_get_configs(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<AIProviderConfig>, String> {
+    load_provider_configs(&state)
+}
+
+/// 返回当前用于 AI 助手对话的供应商配置（第一个已启用且模型完整的配置）。
+#[tauri::command]
 pub async fn ai_get_config(
     state: tauri::State<'_, AppState>,
 ) -> Result<Option<AIProviderConfig>, String> {
-    let value = state
-        .db
-        .get_secret_json(AI_CONFIG_SECRET_ID)
-        .map_err(|e| e.to_string())?;
-    match value {
-        Some(value) => serde_json::from_value(value)
-            .map(Some)
-            .map_err(|e| format!("读取 AI 配置失败: {e}")),
-        None => Ok(None),
-    }
+    let configs = load_provider_configs(&state)?;
+    Ok(active_provider_config(&configs))
 }
 
 #[tauri::command]
 pub async fn ai_save_config(
     state: tauri::State<'_, AppState>,
     config: AIProviderConfig,
-) -> Result<(), String> {
-    validate_config(&config)?;
-    let value = serde_json::to_value(config).map_err(|e| e.to_string())?;
-    state
-        .db
-        .save_secret_json(AI_CONFIG_SECRET_ID, &value)
-        .map_err(|e| e.to_string())
+) -> Result<AIProviderConfig, String> {
+    validate_provider_draft(&config)?;
+    let config = normalize_provider_config(config);
+    let mut configs = load_provider_configs(&state)?;
+    if let Some(index) = configs.iter().position(|item| item.id == config.id) {
+        configs[index] = config.clone();
+    } else {
+        configs.push(config.clone());
+    }
+    save_provider_configs(&state, &configs)?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn ai_delete_config(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    let mut configs = load_provider_configs(&state)?;
+    let previous_len = configs.len();
+    configs.retain(|config| config.id != id);
+    if configs.len() == previous_len {
+        return Err("供应商配置不存在".to_string());
+    }
+    save_provider_configs(&state, &configs)
 }
 
 #[tauri::command]
 pub async fn ai_test_config(config: AIProviderConfig) -> Result<String, String> {
+    let mut config = materialize_provider_config(config);
     validate_config(&config)?;
-    let mut config = config;
     config.enabled = true;
     let client = AIClient::new();
     let messages = vec![AIChatMessage {
@@ -214,15 +416,7 @@ pub async fn ai_chat(
     if request.messages.is_empty() {
         return Err("消息不能为空".to_string());
     }
-    let config = state
-        .db
-        .get_secret_json(AI_CONFIG_SECRET_ID)
-        .map_err(|e| e.to_string())?
-        .map(serde_json::from_value::<AIProviderConfig>)
-        .transpose()
-        .map_err(|e| format!("读取 AI 配置失败: {e}"))?
-        .ok_or_else(|| "尚未配置 AI 模型，请先在 设置 → AI → 模型配置 中完成配置".to_string())?;
-    validate_config(&config)?;
+    let config = resolve_chat_provider_config(&state, request.provider_id.as_deref(), request.model.as_deref())?;
     let context = connection_context(&state, request.connection_id.as_deref())?;
     let system = system_prompt(
         request.mode.as_str(),
@@ -264,15 +458,7 @@ pub async fn ai_chat_stream(
     if request.messages.is_empty() {
         return Err("消息不能为空".to_string());
     }
-    let config = state
-        .db
-        .get_secret_json(AI_CONFIG_SECRET_ID)
-        .map_err(|e| e.to_string())?
-        .map(serde_json::from_value::<AIProviderConfig>)
-        .transpose()
-        .map_err(|e| format!("读取 AI 配置失败: {e}"))?
-        .ok_or_else(|| "尚未配置 AI 模型，请先在 设置 → AI → 模型配置 中完成配置".to_string())?;
-    validate_config(&config)?;
+    let config = resolve_chat_provider_config(&state, request.provider_id.as_deref(), request.model.as_deref())?;
     let context = connection_context(&state, request.connection_id.as_deref())?;
     let system = system_prompt(
         request.mode.as_str(),
@@ -365,4 +551,69 @@ pub async fn ai_list_tool_audit(
 #[tauri::command]
 pub async fn ai_clear_tool_audit(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.db.clear_ai_tool_audit().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider(id: &str, enabled: bool, model: &str) -> AIProviderConfig {
+        AIProviderConfig {
+            id: id.to_string(),
+            enabled,
+            provider: "custom".to_string(),
+            endpoint: "https://example.com/v1".to_string(),
+            model: model.to_string(),
+            ..AIProviderConfig::default()
+        }
+    }
+
+    #[test]
+    fn normalizes_missing_provider_id() {
+        let normalized = normalize_provider_config(provider("", false, ""));
+        assert!(!normalized.id.trim().is_empty());
+    }
+
+    #[test]
+    fn prefers_first_enabled_and_complete_provider() {
+        let configs = vec![
+            provider("disabled", false, "model-a"),
+            provider("incomplete", true, ""),
+            provider("ready", true, "model-b"),
+        ];
+        let active = active_provider_config(&configs).expect("active provider");
+        assert_eq!(active.id, "ready");
+    }
+
+    #[test]
+    fn materializes_first_enabled_model_from_model_list() {
+        let mut config = provider("provider", true, "legacy-model");
+        config.models = vec![
+            AIProviderModel {
+                model: "model-a".to_string(),
+                enabled: false,
+                ..AIProviderModel::default()
+            },
+            AIProviderModel {
+                model: "model-b".to_string(),
+                enabled: true,
+                context_window: 200_000,
+                max_output: 8_192,
+                temperature: Some(0.2),
+                ..AIProviderModel::default()
+            },
+        ];
+        let normalized = normalize_provider_config(config);
+        assert_eq!(normalized.model, "model-b");
+        assert_eq!(normalized.context_window, 200_000);
+        assert_eq!(normalized.max_output, 8_192);
+        assert_eq!(normalized.temperature, Some(0.2));
+    }
+
+    #[test]
+    fn falls_back_to_first_provider_when_none_are_ready() {
+        let configs = vec![provider("first", false, ""), provider("second", true, "")];
+        let active = active_provider_config(&configs).expect("fallback provider");
+        assert_eq!(active.id, "first");
+    }
 }

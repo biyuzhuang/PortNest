@@ -5369,3 +5369,17 @@ body { font-size: 15px; }
   border-color: color-mix(in srgb, var(--error) 78%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 17%, transparent);
 }
+
+/* Optional terminal row striping. The layer sits below xterm's transparent
+   canvas, so it does not affect xterm's measured column/row geometry. */
+.terminal-stripes { display: none; }
+.terminal-view.terminal-striped .terminal-stripes {
+  display: block;
+  position: absolute;
+  z-index: 0;
+  inset: 4px 8px;
+  pointer-events: none;
+  background-image: linear-gradient(to bottom, transparent 50%, rgba(127, 140, 160, .10) 50%);
+  background-size: 100% calc(var(--terminal-row-height, 20px) * 2);
+  background-position: 0 0;
+}

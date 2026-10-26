@@ -85,34 +85,78 @@ pub enum IssueSeverity {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
+pub struct AIProviderModel {
+    /// 服务端实际模型 ID。
+    pub model: String,
+    pub enabled: bool,
+    pub context_window: u64,
+    pub max_output: u32,
+    pub temperature: Option<f64>,
+    pub supports_tool_calling: bool,
+    pub supports_image_input: bool,
+    pub supports_image_output: bool,
+}
+
+impl Default for AIProviderModel {
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+            enabled: true,
+            context_window: 128_000,
+            max_output: 4096,
+            temperature: None,
+            supports_tool_calling: true,
+            supports_image_input: false,
+            supports_image_output: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct AIProviderConfig {
+    /// 供应商配置的唯一标识；旧版单配置迁移时自动生成。
+    pub id: String,
     pub enabled: bool,
     pub provider: String,
     pub protocol: String,
     pub endpoint: String,
     pub api_key: String,
+    /// 兼容旧版单模型配置；聊天时会使用 models 中启用的首个模型。
     pub model: String,
+    pub models: Vec<AIProviderModel>,
     pub display_name: String,
     pub context_window: u64,
     pub max_output: u32,
     pub temperature: Option<f64>,
     pub custom_headers: std::collections::HashMap<String, String>,
+    /// 自定义 User-Agent；为空时使用 reqwest 默认值。
+    pub custom_user_agent: String,
+    /// auto = 跟随系统代理，none = 直连。
+    pub proxy_mode: String,
+    /// 仅供界面展示的备注。
+    pub remark: String,
 }
 
 impl Default for AIProviderConfig {
     fn default() -> Self {
         Self {
+            id: String::new(),
             enabled: false,
             provider: "custom".to_string(),
             protocol: "openai_chat".to_string(),
             endpoint: "https://api.openai.com/v1".to_string(),
             api_key: String::new(),
             model: String::new(),
+            models: Vec::new(),
             display_name: "默认模型".to_string(),
             context_window: 128_000,
             max_output: 4096,
             temperature: None,
             custom_headers: std::collections::HashMap::new(),
+            custom_user_agent: String::new(),
+            proxy_mode: "auto".to_string(),
+            remark: String::new(),
         }
     }
 }
@@ -131,6 +175,12 @@ pub struct AIChatRequest {
     pub connection_id: Option<String>,
     #[serde(default)]
     pub user_context: Option<String>,
+    /// Optional provider override used by the Agent model switcher.
+    #[serde(default)]
+    pub provider_id: Option<String>,
+    /// Optional model override within the selected provider.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -152,6 +202,17 @@ impl AIClient {
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
         }
+    }
+
+    fn client_for(&self, config: &AIProviderConfig) -> Result<reqwest::Client> {
+        if config.proxy_mode.trim().eq_ignore_ascii_case("none") {
+            return reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .no_proxy()
+                .build()
+                .map_err(|e| Error::ProtocolError(format!("创建 AI HTTP 客户端失败: {e}")));
+        }
+        Ok(self.client.clone())
     }
 
     pub async fn complete(
@@ -241,8 +302,8 @@ impl AIClient {
         if let Some(temperature) = config.temperature {
             body["temperature"] = serde_json::json!(temperature.clamp(0.0, 2.0));
         }
-        let mut request = self
-            .client
+        let client = self.client_for(config)?;
+        let mut request = client
             .post(endpoint)
             .header("Content-Type", "application/json");
         if !config.api_key.trim().is_empty() {
@@ -252,6 +313,9 @@ impl AIClient {
             if !key.trim().is_empty() {
                 request = request.header(key, value);
             }
+        }
+        if !config.custom_user_agent.trim().is_empty() {
+            request = request.header("User-Agent", config.custom_user_agent.trim());
         }
         let response = request
             .json(&body)
@@ -344,8 +408,8 @@ impl AIClient {
         if let Some(temperature) = config.temperature {
             body["temperature"] = serde_json::json!(temperature.clamp(0.0, 1.0));
         }
-        let mut request = self
-            .client
+        let client = self.client_for(config)?;
+        let mut request = client
             .post(endpoint)
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01");
@@ -356,6 +420,9 @@ impl AIClient {
             if !key.trim().is_empty() {
                 request = request.header(key, value);
             }
+        }
+        if !config.custom_user_agent.trim().is_empty() {
+            request = request.header("User-Agent", config.custom_user_agent.trim());
         }
         let response = request
             .json(&body)
@@ -447,7 +514,8 @@ impl AIClient {
             "anthropic" => (endpoint_with_path(&config.endpoint, "/models"), false),
             other => return Err(Error::InvalidConfig(format!("暂不支持的 AI 协议: {other}"))),
         };
-        let mut request = self.client.get(endpoint);
+        let client = self.client_for(config)?;
+        let mut request = client.get(endpoint);
         if headers {
             if !config.api_key.trim().is_empty() {
                 request =
@@ -463,6 +531,9 @@ impl AIClient {
             if !key.trim().is_empty() {
                 request = request.header(key, value);
             }
+        }
+        if !config.custom_user_agent.trim().is_empty() {
+            request = request.header("User-Agent", config.custom_user_agent.trim());
         }
         let response = request
             .send()
@@ -533,8 +604,8 @@ impl AIClient {
         if let Some(temperature) = config.temperature {
             body["temperature"] = serde_json::json!(temperature.clamp(0.0, 2.0));
         }
-        let mut request = self
-            .client
+        let client = self.client_for(config)?;
+        let mut request = client
             .post(endpoint)
             .header("Content-Type", "application/json");
         if !config.api_key.trim().is_empty() {
@@ -544,6 +615,9 @@ impl AIClient {
             if !key.trim().is_empty() {
                 request = request.header(key, value);
             }
+        }
+        if !config.custom_user_agent.trim().is_empty() {
+            request = request.header("User-Agent", config.custom_user_agent.trim());
         }
         let response = request
             .json(&body)
@@ -602,8 +676,8 @@ impl AIClient {
         if let Some(temperature) = config.temperature {
             body["temperature"] = serde_json::json!(temperature.clamp(0.0, 1.0));
         }
-        let mut request = self
-            .client
+        let client = self.client_for(config)?;
+        let mut request = client
             .post(endpoint)
             .header("Content-Type", "application/json")
             .header("anthropic-version", "2023-06-01");
@@ -614,6 +688,9 @@ impl AIClient {
             if !key.trim().is_empty() {
                 request = request.header(key, value);
             }
+        }
+        if !config.custom_user_agent.trim().is_empty() {
+            request = request.header("User-Agent", config.custom_user_agent.trim());
         }
         let response = request
             .json(&body)

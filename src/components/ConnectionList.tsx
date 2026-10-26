@@ -20,6 +20,7 @@ export const ConnectionList: Component<ConnectionListProps> = (props) => {
       case "sftp": return "↑↓";
       case "mysql": return "DB";
       case "postgresql": return "PG";
+      case "highgo": return "HG";
       default: return "?";
     }
   };
@@ -32,6 +33,7 @@ export const ConnectionList: Component<ConnectionListProps> = (props) => {
       case "sftp": return "#fbbf24";
       case "mysql": return "#f472b6";
       case "postgresql": return "#3b82f6";
+      case "highgo": return "#14b8a6";
       default: return "#9ca3af";
     }
   };

@@ -1,6 +1,6 @@
-import { Component, For, Index, Show as SolidShow, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Component, For, Index, Show as SolidShow, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, type ConnectionRecord, type DatabaseCharsetInfo, type DatabaseColumnDefinition, type DatabaseColumnInfo, type DatabaseIndexDefinition, type DatabaseIndexInfo, type DatabaseAutocompleteItem, type DatabaseExplainResult, type DatabaseTableChangeSet, type DatabaseTableDefinition, type DatabaseTableInfo, type QueryResult } from "../utils/api";
+import { api, isPostgresCompatibleProtocol, type ConnectionRecord, type DatabaseCharsetInfo, type DatabaseColumnDefinition, type DatabaseColumnInfo, type DatabaseIndexDefinition, type DatabaseIndexInfo, type DatabaseAutocompleteItem, type DatabaseExplainResult, type DatabaseTableChangeSet, type DatabaseTableDefinition, type DatabaseTableInfo, type QueryResult } from "../utils/api";
 import { feedback } from "../stores/feedbackStore";
 import { aiContextStore } from "../stores/aiContextStore";
 import { formatSql } from "../utils/sqlFormat";
@@ -26,7 +26,7 @@ const csvCell = (value: unknown) => {
 const blankDesigner = (database: string): DatabaseTableDefinition => ({ database, name: "new_table", engine: "InnoDB", charset: "utf8mb4", comment: "", columns: [{ name: "id", column_type: "BIGINT", nullable: false, auto_increment: true, comment: "" }], indexes: [{ name: "PRIMARY", kind: "PRIMARY", columns: [{ name: "id", direction: "ASC" }] }] });
 
 export const DatabaseWorkspace: Component<Props> = props => {
-  const databaseLabel = () => props.connection.protocol === "postgresql" ? "PostgreSQL" : "MySQL";
+  const databaseLabel = () => props.connection.protocol === "highgo" ? "瀚高数据库 (HighGo)" : props.connection.protocol === "postgresql" ? "PostgreSQL" : "MySQL";
   const [databases, setDatabases] = createSignal<Array<{ name: string; charset?: string; collation?: string }>>([]);
   const [tables, setTables] = createSignal<Record<string, DatabaseTableInfo[]>>({});
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
@@ -61,6 +61,18 @@ export const DatabaseWorkspace: Component<Props> = props => {
     ];
     if (tab.kind === "query") {
       lines.push("当前 SQL:", tab.sql || "（空查询）");
+      if (tab.result) {
+        lines.push(`结果列: ${tab.result.columns.join(", ")}`);
+        lines.push(`结果行数: ${tab.result.rows.length}${tab.result.truncated ? "（已截断）" : ""}`);
+        if (tab.result.rows.length > 0) {
+          lines.push("结果预览:");
+          lines.push(...tab.result.rows.slice(0, 5).map(row => {
+            const record: Record<string, unknown> = {};
+            tab.result!.columns.forEach((column, index) => { record[column] = row.values[index]; });
+            return JSON.stringify(record).slice(0, 900);
+          }));
+        }
+      }
     } else if (tab.kind === "table") {
       lines.push(`数据表: ${tab.table}`, `当前视图: ${tab.section}`);
       if (tab.columns.length > 0) {
@@ -145,7 +157,22 @@ export const DatabaseWorkspace: Component<Props> = props => {
     const [columns, indexes, rows] = await run(() => Promise.all([api.databaseListColumns(props.connection.id, database, table), api.databaseListIndexes(props.connection.id, database, table), api.databaseFetchRows(props.connection.id, database, table, 1, 100)]));
     setTabs(items => [...items, { id, kind: "table", title: table, database, table, section, page: 1, columns, indexes, rows, designer: section === "design" ? makeDesigner(database, table, columns, indexes) : null, preview: [], dirty: false }]); setActiveId(id);
   };
-  const newQuery = (database = activeDatabase()) => { const number = queryCounter() + 1; setQueryCounter(number); const id = `query:${number}:${Date.now()}`; setTabs(items => [...items, { id, kind: "query", title: `查询 ${number}`, database, sql: "SELECT 1;", result: null, dirty: false }]); setActiveId(id); };
+  const newQuery = (database = activeDatabase()) => { const number = queryCounter() + 1; setQueryCounter(number); const id = `query:${number}:${Date.now()}`; setTabs(items => [...items, { id, kind: "query", title: `查询 ${number}`, database, sql: "SELECT 1;", result: null, dirty: false }]); setActiveId(id); return id; };
+
+  onMount(() => {
+    const cleanup = aiContextStore.registerSQLDraftApplier(sql => {
+      if (!props.visible) return false;
+      const tab = activeTab();
+      if (tab?.kind === "query") {
+        patchTab(tab.id, { sql, dirty: true });
+        return true;
+      }
+      const id = newQuery(tab?.database || activeDatabase());
+      patchTab(id, { sql, dirty: true });
+      return true;
+    });
+    onCleanup(cleanup);
+  });
   const newTable = (database: string) => { const id = `new-table:${database}:${Date.now()}`; setTabs(items => [...items, { id, kind: "table", title: "新建表", database, table: "new_table", section: "design", page: 1, columns: [], indexes: [], rows: null, designer: blankDesigner(database), preview: [], dirty: true, isNew: true }]); setActiveId(id); };
 
   const closeTab = async (id: string) => {
@@ -296,7 +323,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
 
 const StructureView: Component<{ columns: DatabaseColumnInfo[]; indexes: DatabaseIndexInfo[] }> = props => <div class="mysql-panel"><h3>字段</h3><table><thead><tr><th>名称</th><th>类型</th><th>NULL</th><th>键</th><th>默认值</th><th>附加</th><th>注释</th></tr></thead><tbody><For each={props.columns}>{item => <tr><td>{item.name}</td><td>{item.column_type}</td><td>{item.nullable ? "YES" : "NO"}</td><td>{item.key}</td><td>{item.default_value ?? "NULL"}</td><td>{item.extra}</td><td>{item.comment}</td></tr>}</For></tbody></table><h3>索引</h3><table><thead><tr><th>名称</th><th>唯一</th><th>字段</th><th>顺序</th></tr></thead><tbody><For each={props.indexes}>{item => <tr><td>{item.name}</td><td>{item.unique ? "YES" : "NO"}</td><td>{item.column}</td><td>{item.sequence}</td></tr>}</For></tbody></table></div>;
 
-const DesignerView: Component<{ protocol: string; definition: DatabaseTableDefinition; preview: string[]; onChange: (value: DatabaseTableDefinition) => void; onPreview: () => void; onApply: () => void }> = props => { const column = (index: number, patch: Partial<DatabaseColumnDefinition>) => props.onChange({ ...props.definition, columns: props.definition.columns.map((item, i) => i === index ? { ...item, ...patch } : item) }); return <div class="mysql-designer"><div class="designer-options"><label>表名<input value={props.definition.name} onInput={event => props.onChange({ ...props.definition, name: event.currentTarget.value })} /></label><Show when={props.protocol !== "postgresql"}><label>引擎<input value={props.definition.engine || "InnoDB"} onInput={event => props.onChange({ ...props.definition, engine: event.currentTarget.value })} /></label><label>字符集<input value={props.definition.charset || "utf8mb4"} onInput={event => props.onChange({ ...props.definition, charset: event.currentTarget.value })} /></label></Show></div><div class="mysql-panel-actions"><button onClick={() => props.onChange({ ...props.definition, columns: [...props.definition.columns, { name: `column_${props.definition.columns.length + 1}`, column_type: "VARCHAR(255)", nullable: true, auto_increment: false, comment: "" }] })}>＋字段</button><button onClick={() => props.onChange({ ...props.definition, indexes: [...props.definition.indexes, { name: `idx_${props.definition.indexes.length + 1}`, kind: "INDEX", columns: [] }] })}>＋索引</button><button onClick={props.onPreview}>预览 SQL</button><button class="primary" onClick={props.onApply}>应用设计</button></div><table><thead><tr><th>字段</th><th>类型</th><th>NULL</th><th>默认值</th><th>自增</th><th>注释</th><th /></tr></thead><tbody><For each={props.definition.columns}>{(item, index) => <tr><td><input value={item.name} onInput={event => column(index(), { name: event.currentTarget.value })} /></td><td><input value={item.column_type} onInput={event => column(index(), { column_type: event.currentTarget.value })} /></td><td><input type="checkbox" checked={item.nullable} onChange={event => column(index(), { nullable: event.currentTarget.checked })} /></td><td><input value={item.default_value || ""} onInput={event => column(index(), { default_value: event.currentTarget.value || undefined })} /></td><td><input type="checkbox" checked={item.auto_increment} onChange={event => column(index(), { auto_increment: event.currentTarget.checked })} /></td><td><input value={item.comment} onInput={event => column(index(), { comment: event.currentTarget.value })} /></td><td><button onClick={() => props.onChange({ ...props.definition, columns: props.definition.columns.filter((_, i) => i !== index()) })}>删除</button></td></tr>}</For></tbody></table><h3>索引</h3><table><thead><tr><th>名称</th><th>类型</th><th>字段（逗号分隔）</th><th /></tr></thead><tbody><For each={props.definition.indexes}>{(item, index) => <tr><td><input value={item.name} disabled={item.kind === "PRIMARY"} onInput={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, name: event.currentTarget.value } : v) })} /></td><td><select value={item.kind} onChange={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, kind: event.currentTarget.value as DatabaseIndexDefinition["kind"], name: event.currentTarget.value === "PRIMARY" ? "PRIMARY" : v.name } : v) })}><option value="PRIMARY">主键</option><option value="UNIQUE">唯一</option><option value="INDEX">普通</option></select></td><td><input value={item.columns.map(v => v.name).join(",")} onInput={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, columns: event.currentTarget.value.split(",").map(name => ({ name: name.trim(), direction: "ASC" })).filter(v => v.name) } : v) })} /></td><td><button onClick={() => props.onChange({ ...props.definition, indexes: props.definition.indexes.filter((_, i) => i !== index()) })}>删除</button></td></tr>}</For></tbody></table><Show when={props.preview.length}><h3>DDL 预览</h3><pre>{props.preview.join(";\n\n")}</pre></Show></div> };
+const DesignerView: Component<{ protocol: string; definition: DatabaseTableDefinition; preview: string[]; onChange: (value: DatabaseTableDefinition) => void; onPreview: () => void; onApply: () => void }> = props => { const column = (index: number, patch: Partial<DatabaseColumnDefinition>) => props.onChange({ ...props.definition, columns: props.definition.columns.map((item, i) => i === index ? { ...item, ...patch } : item) }); return <div class="mysql-designer"><div class="designer-options"><label>表名<input value={props.definition.name} onInput={event => props.onChange({ ...props.definition, name: event.currentTarget.value })} /></label><Show when={!isPostgresCompatibleProtocol(props.protocol)}><label>引擎<input value={props.definition.engine || "InnoDB"} onInput={event => props.onChange({ ...props.definition, engine: event.currentTarget.value })} /></label><label>字符集<input value={props.definition.charset || "utf8mb4"} onInput={event => props.onChange({ ...props.definition, charset: event.currentTarget.value })} /></label></Show></div><div class="mysql-panel-actions"><button onClick={() => props.onChange({ ...props.definition, columns: [...props.definition.columns, { name: `column_${props.definition.columns.length + 1}`, column_type: "VARCHAR(255)", nullable: true, auto_increment: false, comment: "" }] })}>＋字段</button><button onClick={() => props.onChange({ ...props.definition, indexes: [...props.definition.indexes, { name: `idx_${props.definition.indexes.length + 1}`, kind: "INDEX", columns: [] }] })}>＋索引</button><button onClick={props.onPreview}>预览 SQL</button><button class="primary" onClick={props.onApply}>应用设计</button></div><table><thead><tr><th>字段</th><th>类型</th><th>NULL</th><th>默认值</th><th>自增</th><th>注释</th><th /></tr></thead><tbody><For each={props.definition.columns}>{(item, index) => <tr><td><input value={item.name} onInput={event => column(index(), { name: event.currentTarget.value })} /></td><td><input value={item.column_type} onInput={event => column(index(), { column_type: event.currentTarget.value })} /></td><td><input type="checkbox" checked={item.nullable} onChange={event => column(index(), { nullable: event.currentTarget.checked })} /></td><td><input value={item.default_value || ""} onInput={event => column(index(), { default_value: event.currentTarget.value || undefined })} /></td><td><input type="checkbox" checked={item.auto_increment} onChange={event => column(index(), { auto_increment: event.currentTarget.checked })} /></td><td><input value={item.comment} onInput={event => column(index(), { comment: event.currentTarget.value })} /></td><td><button onClick={() => props.onChange({ ...props.definition, columns: props.definition.columns.filter((_, i) => i !== index()) })}>删除</button></td></tr>}</For></tbody></table><h3>索引</h3><table><thead><tr><th>名称</th><th>类型</th><th>字段（逗号分隔）</th><th /></tr></thead><tbody><For each={props.definition.indexes}>{(item, index) => <tr><td><input value={item.name} disabled={item.kind === "PRIMARY"} onInput={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, name: event.currentTarget.value } : v) })} /></td><td><select value={item.kind} onChange={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, kind: event.currentTarget.value as DatabaseIndexDefinition["kind"], name: event.currentTarget.value === "PRIMARY" ? "PRIMARY" : v.name } : v) })}><option value="PRIMARY">主键</option><option value="UNIQUE">唯一</option><option value="INDEX">普通</option></select></td><td><input value={item.columns.map(v => v.name).join(",")} onInput={event => props.onChange({ ...props.definition, indexes: props.definition.indexes.map((v, i) => i === index() ? { ...v, columns: event.currentTarget.value.split(",").map(name => ({ name: name.trim(), direction: "ASC" })).filter(v => v.name) } : v) })} /></td><td><button onClick={() => props.onChange({ ...props.definition, indexes: props.definition.indexes.filter((_, i) => i !== index()) })}>删除</button></td></tr>}</For></tbody></table><Show when={props.preview.length}><h3>DDL 预览</h3><pre>{props.preview.join(";\n\n")}</pre></Show></div> };
 
 type SavedQuery = { sql: string; database: string; savedAt: number };
 const historyKey = (protocol: string) => `portnest.database.${protocol}.queryHistory`;
@@ -361,6 +388,8 @@ const QueryPanel: Component<{
   const [explainLoading, setExplainLoading] = createSignal(false);
   const [explainResult, setExplainResult] = createSignal<DatabaseExplainResult | null>(null);
 
+  onCleanup(() => aiContextStore.setSQLSelection(""));
+
   createEffect(() => {
     const database = props.tab.database;
     if (database === loadedDatabase) return;
@@ -373,7 +402,9 @@ const QueryPanel: Component<{
     if (!textarea) return;
     const start = textarea.selectionStart ?? 0;
     const end = textarea.selectionEnd ?? 0;
-    setSelectedSql(end > start ? textarea.value.slice(start, end) : "");
+    const selection = end > start ? textarea.value.slice(start, end) : "";
+    setSelectedSql(selection);
+    aiContextStore.setSQLSelection(selection);
   };
   const currentSql = () => selectedSql().trim() ? selectedSql() : props.tab.sql;
   const recordHistory = (sql: string) => {
@@ -481,6 +512,7 @@ const QueryPanel: Component<{
       <button onClick={beautify}>美化 SQL</button>
       <button onClick={() => void saveSql()}>保存 SQL</button>
       <button onClick={() => void runExplain()} disabled={explainLoading()}>{explainLoading() ? "生成计划中..." : "执行计划"}</button>
+      <button class="mysql-query-ai" onClick={() => aiContextStore.openAgent("sql")} title="打开 SQL Agent">✦ AI</button>
       <button onClick={props.onToggleReadOnly} class={props.readOnly ? "mysql-readonly" : ""}>{props.readOnly ? "只读模式" : "可写模式"}</button>
       <button onClick={() => { setHistoryOpen(value => !value); setFavoritesOpen(false); }}>历史</button>
       <button onClick={() => { setFavoritesOpen(value => !value); setHistoryOpen(false); }}>收藏</button>

@@ -101,8 +101,8 @@ fn load_connection_config(
         .into_iter()
         .find(|item| item.id == connection_id)
         .ok_or_else(|| "连接不存在".to_string())?;
-    if connection.protocol != "postgresql" {
-        return Err("该连接不是 PostgreSQL 连接".to_string());
+    if !matches!(connection.protocol.as_str(), "postgresql" | "highgo") {
+        return Err("该连接不是 PostgreSQL / 瀚高数据库连接".to_string());
     }
     let credential = state
         .db
@@ -176,7 +176,7 @@ async fn client_for(
         Duration::from_millis(config.timeout_ms),
     )
     .await
-    .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
+    .map_err(|e| format!("数据库连接失败: {e}"))?;
     let token = client.cancel_token();
     state.postgres_manager.insert_client(key.clone(), client);
     state
@@ -185,7 +185,7 @@ async fn client_for(
     state
         .postgres_manager
         .client(&key)
-        .ok_or_else(|| "PostgreSQL 客户端初始化失败".to_string())
+        .ok_or_else(|| "数据库客户端初始化失败".to_string())
 }
 
 async fn query_raw(
@@ -647,7 +647,7 @@ pub async fn postgres_list_charsets(
         .unwrap_or("UTF8");
     Ok(vec![MysqlCharsetInfo {
         name: encoding.to_string(),
-        description: "PostgreSQL 服务器编码".to_string(),
+        description: "数据库服务器编码".to_string(),
         default_collation: String::new(),
         collations: Vec::new(),
     }])
@@ -658,6 +658,23 @@ async fn list_tables_impl(
     connection_id: &str,
     database: &str,
 ) -> Result<Vec<MysqlTableInfo>, String> {
+    let engine_label = state
+        .db
+        .get_connections()
+        .ok()
+        .and_then(|connections| {
+            connections
+                .into_iter()
+                .find(|connection| connection.id == connection_id)
+        })
+        .map(|connection| {
+            if connection.protocol == "highgo" {
+                "HighGo"
+            } else {
+                "PostgreSQL"
+            }
+        })
+        .unwrap_or("PostgreSQL");
     let sql = "SELECT n.nspname, c.relname, \
         CASE WHEN c.relkind IN ('r','p') THEN 'BASE TABLE' ELSE 'VIEW' END, \
         COALESCE(obj_description(c.oid, 'pg_class'), ''), \
@@ -682,7 +699,7 @@ async fn list_tables_impl(
                     .and_then(Value::as_str)
                     .unwrap_or("BASE TABLE")
                     .to_string(),
-                engine: Some("PostgreSQL".to_string()),
+                engine: Some(engine_label.to_string()),
                 rows: row.get(4).and_then(Value::as_u64),
                 comment: row
                     .get(3)
@@ -1033,7 +1050,7 @@ pub async fn postgres_table_action(
                 quote_identifier(&target_name)?
             )
         }
-        other => return Err(format!("不支持的 PostgreSQL 表操作: {other}")),
+        other => return Err(format!("不支持的数据库表操作: {other}")),
     };
     query_raw(&state, &connection_id, Some(&database), &sql).await?;
     Ok(())

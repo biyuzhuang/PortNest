@@ -446,9 +446,10 @@ impl PgClient {
     }
 }
 
-/// PostgreSQL 连接句柄
+/// PostgreSQL 系数据库连接句柄。PostgreSQL 与瀚高数据库共用该实现。
 pub struct PgsqlConnectionHandle {
     id: Uuid,
+    protocol_id: &'static str,
     client: tokio::sync::Mutex<PgClient>,
     remote_addr: (String, u16),
     connected_at: Instant,
@@ -458,12 +459,14 @@ pub struct PgsqlConnectionHandle {
 impl PgsqlConnectionHandle {
     pub fn new(
         id: Uuid,
+        protocol_id: &'static str,
         client: PgClient,
         remote_addr: (String, u16),
         server_version: Option<String>,
     ) -> Self {
         Self {
             id,
+            protocol_id,
             client: tokio::sync::Mutex::new(client),
             remote_addr,
             connected_at: Instant::now(),
@@ -478,7 +481,7 @@ impl ConnectionHandle for PgsqlConnectionHandle {
     }
 
     fn protocol(&self) -> &'static str {
-        "postgresql"
+        self.protocol_id
     }
 
     fn is_connected(&self) -> bool {
@@ -498,29 +501,47 @@ impl ConnectionHandle for PgsqlConnectionHandle {
     }
 }
 
-/// PostgreSQL 协议插件
-pub struct PgsqlPlugin;
+/// PostgreSQL 系数据库协议插件。瀚高数据库使用 PostgreSQL 有线协议，
+/// 因此复用同一个客户端实现，仅协议标识与显示名称不同。
+pub struct PgsqlPlugin {
+    protocol_id: &'static str,
+    display_name: &'static str,
+}
 
 impl PgsqlPlugin {
     pub fn new() -> Self {
-        Self
+        Self::postgresql()
+    }
+
+    pub fn postgresql() -> Self {
+        Self {
+            protocol_id: "postgresql",
+            display_name: "PostgreSQL",
+        }
+    }
+
+    pub fn highgo() -> Self {
+        Self {
+            protocol_id: "highgo",
+            display_name: "HighGo 瀚高数据库",
+        }
     }
 }
 
 impl Default for PgsqlPlugin {
     fn default() -> Self {
-        Self::new()
+        Self::postgresql()
     }
 }
 
 #[async_trait]
 impl ProtocolPlugin for PgsqlPlugin {
     fn protocol_id(&self) -> &'static str {
-        "postgresql"
+        self.protocol_id
     }
 
     fn display_name(&self) -> &'static str {
-        "PostgreSQL"
+        self.display_name
     }
 
     fn capabilities(&self) -> Vec<ProtocolCapability> {
@@ -568,6 +589,7 @@ impl ProtocolPlugin for PgsqlPlugin {
         let id = Uuid::new_v4();
         Ok(Box::new(PgsqlConnectionHandle::new(
             id,
+            self.protocol_id,
             client,
             (host.to_string(), port),
             server_version,
@@ -578,7 +600,7 @@ impl ProtocolPlugin for PgsqlPlugin {
         let pgsql_handle = handle
             .as_any()
             .downcast_ref::<PgsqlConnectionHandle>()
-            .ok_or_else(|| Error::ProtocolError("无效的 PostgreSQL 句柄".to_string()))?;
+            .ok_or_else(|| Error::ProtocolError("无效的 PostgreSQL 系数据库句柄".to_string()))?;
         let mut client = pgsql_handle.client.lock().await;
         match client.query("SELECT 1").await {
             Ok(_) => Ok(true),
@@ -590,11 +612,11 @@ impl ProtocolPlugin for PgsqlPlugin {
         let pgsql_handle = handle
             .as_any()
             .downcast_ref::<PgsqlConnectionHandle>()
-            .ok_or_else(|| Error::ProtocolError("无效的 PostgreSQL 句柄".to_string()))?;
+            .ok_or_else(|| Error::ProtocolError("无效的 PostgreSQL 系数据库句柄".to_string()))?;
 
         Ok(ConnectionMetadata {
             session_id: pgsql_handle.id,
-            protocol: "postgresql".to_string(),
+            protocol: pgsql_handle.protocol_id.to_string(),
             server_version: pgsql_handle.server_version.clone(),
             connection_time_ms: pgsql_handle.connected_at.elapsed().as_millis() as u64,
             keepalive_interval: None,

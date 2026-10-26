@@ -1,0 +1,29 @@
+
+> portnest@0.4.0 tauri:dev
+> tauri dev --config src-tauri/tauri.dev.conf.json
+
+
+> portnest@0.4.0 dev
+> vite
+
+
+  VITE v6.4.5  ready in 474 ms
+
+  ➜  Local:   http://localhost:1420/
+19:48:40 [vite] (client) hmr update /src/components/SettingsModal.tsx
+19:48:45 [vite] (client) hmr update /src/components/SettingsModal.tsx
+19:48:49 [vite] (client) hmr update /src/components/SettingsModal.css
+19:49:33 [vite] (client) hmr update /src/components/SettingsModal.css
+19:51:25 [vite] (client) hmr update /src/components/SettingsModal.tsx
+19:51:29 [vite] (client) hmr update /src/components/SettingsModal.css
+19:55:00 [vite] (client) hmr update /src/App.tsx
+19:55:16 [vite] (client) hmr update /src/App.tsx
+19:56:57 [vite] (client) hmr update /src/App.tsx, /src/components/SettingsModal.tsx, /src/components/Sidebar.tsx, /src/components/RightPanel.tsx, /src/components/SessionImportExport.tsx, /src/components/SshKeyPicker.tsx, /src/components/ConnectionForm.tsx, /src/components/AssetList.tsx, /src/components/CommandBroadcast.tsx, /src/components/TextContextMenu.tsx, /src/components/TerminalView.tsx, /src/components/FileManager.tsx, /src/components/AIAssistant.tsx, /src/components/ServerOverview.tsx, /src/components/TunnelPanel.tsx, /src/components/DatabaseWorkspace.tsx
+19:57:16 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:19 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:24 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:30 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:32 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:36 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:43 [vite] (client) hmr update /src/components/AIAssistant.tsx
+19:57:47 [vite] (client) hmr update /src/components/AIAssistant.css

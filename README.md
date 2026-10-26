@@ -1,8 +1,8 @@
 # PortNest
 
-PortNest 是一款面向运维、开发和远程管理场景的本地优先桌面工作区。它将 SSH / SFTP、本地终端、MySQL / PostgreSQL 管理、会话资产树和多标签工作区集中在一个应用中，减少在多个工具之间来回切换。
+PortNest 是一款面向运维、开发和远程管理场景的本地优先桌面工作区。它将 SSH / SFTP、本地终端、MySQL / PostgreSQL / 瀚高数据库管理、会话资产树和多标签工作区集中在一个应用中，减少在多个工具之间来回切换。
 
-当前版本支持 SSH、SFTP、本地命令行、MySQL、PostgreSQL 和 BYOK AI 助手。数据库连接复用同一套可扩展管理工作区，并共享统一的主题、会话标签与资产管理体验。
+当前版本支持 SSH、SFTP、本地命令行、MySQL、PostgreSQL、瀚高数据库和 BYOK AI 助手。数据库连接复用同一套可扩展管理工作区，并共享统一的主题、会话标签与资产管理体验。
 
 [下载最新版本](https://github.com/biyuzhuang/PortNest/releases/latest) · [查看 Releases](https://github.com/biyuzhuang/PortNest/releases)
 
@@ -21,6 +21,7 @@ PortNest 是一款面向运维、开发和远程管理场景的本地优先桌�
 - 支持浅色与深色终端配色，可跟随应用主题或使用固定配色
 - 内置 VS Code、Solarized、GitHub、One、Nord、Tokyo Night、Catppuccin、Gruvbox、Monokai 和 Dracula 等多套终端主题
 - 支持字体、字号、行高、字间距、纯色、渐变、本地背景图片和缓存行数设置
+- 支持终端高亮增强与水平条纹背景，命令、路径和彩色输出的可读性更高
 - 支持鼠标选中自动复制、右键粘贴和 `Ctrl+V` 粘贴
 - SSH keepalive、断线识别和可选自动重连
 - 支持本地端口转发、远程端口转发和动态 SOCKS 隧道管理
@@ -52,7 +53,7 @@ PortNest 是一款面向运维、开发和远程管理场景的本地优先桌�
 - 支持搜索、右键菜单、批量选择和批量删除
 - 资产大列表支持 TCP 延迟检测、刷新和延迟列显示切换
 
-### MySQL / PostgreSQL 数据库工作区
+### MySQL / PostgreSQL / 瀚高数据库工作区
 
 - 浏览数据库、数据表、视图及字段结构
 - SQL 编辑、执行与查询结果表格
@@ -61,12 +62,14 @@ PortNest 是一款面向运维、开发和远程管理场景的本地优先桌�
 - 查看建表语句、索引和字段信息
 - 支持 CSV 数据导入、SQL 文件导入和数据库 SQL 导出
 - 数据库树、工具栏、编辑器、结果表和右键菜单完整适配明暗主题
+- PostgreSQL 兼容协议统一复用 PostgreSQL 驱动，已适配瀚高数据库（HighGo）
 - 数据库前端 API 与工作区按协议分派，新增数据库类型时可复用现有 UI
 
 ### AI 助手
 
 - 支持使用自己的 API Key（BYOK）接入大模型，API Key 使用本地加密存储
-- 内置 OpenAI、Claude、DeepSeek、Kimi、GLM、OpenRouter、阿里百炼、火山方舟、腾讯云混元、Ollama 和自定义供应商模板
+- 支持多供应商配置，供应商列表只显示已经添加的配置，可独立启用、测试和删除
+- 内置 OpenAI、Claude、DeepSeek、Kimi、GLM、OpenRouter、MiniMax、小米 MiMo、阿里百炼、火山方舟、腾讯云混元、Ollama 和自定义供应商模板
 - 支持 OpenAI Chat Completions、Anthropic Messages 和 Ollama 兼容协议
 - 提供通用 Agent、终端增强 Agent 和 SQL Agent 三种工作模式
 - 终端增强模式会自动附带当前会话最近 160 行终端输出作为上下文
@@ -165,7 +168,7 @@ src-tauri/target/release/bundle/nsis/
 - [xterm.js](https://xtermjs.org/)：终端渲染
 - Rust `ssh2`：SSH 与 SFTP
 - Rust `mysql_async`：MySQL 连接与数据操作
-- Rust PostgreSQL wire protocol 客户端：PostgreSQL 连接、查询与管理操作
+- Rust PostgreSQL wire protocol 客户端：PostgreSQL 与瀚高数据库连接、查询与管理操作
 - Rust `reqwest`：AI 供应商 API 调用
 - SQLite：本地连接、文件夹和设置数据
 - IndexedDB：终端背景图片本地存储

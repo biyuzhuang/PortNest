@@ -301,11 +301,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     { label: "本地终端", icon: "terminal", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "local") },
     { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "mysql") },
     { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "postgresql") },
+    { label: "瀚高数据库", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "highgo") },
   ];
 
   const databaseConnectionActions = (targetFolderId?: string | null): AssetMenuAction[] => [
     { label: "MySQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "mysql") },
     { label: "PostgreSQL", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "postgresql") },
+    { label: "瀚高数据库", icon: "database", onSelect: () => props.onNewConnection?.(targetFolderId ?? undefined, "highgo") },
   ];
 
   const moreActions = (): AssetMenuAction[] => [
@@ -620,6 +622,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       case "sftp": return "#fbbf24";
       case "mysql": return "#f472b6";
       case "postgresql": return "#3b82f6";
+      case "highgo": return "#14b8a6";
       default: return "#9ca3af";
     }
   };

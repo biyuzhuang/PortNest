@@ -431,9 +431,14 @@ export type DatabaseExplainResult = MysqlExplainResult;
 export type DatabaseTableChangeSet = MysqlTableChangeSet;
 
 /** 支持数据库管理工作区的协议。新增数据库时只需扩展此集合。 */
-export const DATABASE_PROTOCOLS = ["mysql", "postgresql"] as const;
+export const DATABASE_PROTOCOLS = ["mysql", "postgresql", "highgo"] as const;
 export const isDatabaseProtocol = (protocol?: string): boolean =>
   !!protocol && (DATABASE_PROTOCOLS as readonly string[]).includes(protocol);
+
+/** PostgreSQL 系协议：PostgreSQL 与瀚高数据库共用同一套 SQL/管理实现。 */
+export const POSTGRES_COMPATIBLE_PROTOCOLS = ["postgresql", "highgo"] as const;
+export const isPostgresCompatibleProtocol = (protocol?: string): boolean =>
+  !!protocol && (POSTGRES_COMPATIBLE_PROTOCOLS as readonly string[]).includes(protocol);
 export interface ChatMessage {
   role: string;
   content: string;
@@ -444,18 +449,35 @@ export interface ChatResponse {
   analysis?: AIAnalyzeResult;
 }
 
+export interface AIProviderModel {
+  model: string;
+  enabled: boolean;
+  context_window: number;
+  max_output: number;
+  temperature?: number | null;
+  supports_tool_calling: boolean;
+  supports_image_input: boolean;
+  supports_image_output: boolean;
+}
+
 export interface AIProviderConfig {
+  id: string;
   enabled: boolean;
   provider: string;
   protocol: "openai_chat" | "anthropic" | "ollama" | string;
   endpoint: string;
   api_key: string;
+  /** 当前启用模型，后端会与 models 中首个启用项保持同步。 */
   model: string;
+  models: AIProviderModel[];
   display_name: string;
   context_window: number;
   max_output: number;
   temperature?: number | null;
   custom_headers: Record<string, string>;
+  custom_user_agent?: string;
+  proxy_mode?: "auto" | "none" | string;
+  remark?: string;
 }
 
 export interface AIChatMessage {
@@ -468,6 +490,8 @@ export interface AIChatRequest {
   messages: AIChatMessage[];
   connection_id?: string | null;
   user_context?: string | null;
+  provider_id?: string | null;
+  model?: string | null;
 }
 
 export interface AIChatResponse {
@@ -618,7 +642,9 @@ export const api = {
     return invoke("chat_with_ai", { connectionId, message });
   },
   async aiGetConfig(): Promise<AIProviderConfig | null> { return invoke("ai_get_config"); },
-  async aiSaveConfig(config: AIProviderConfig): Promise<void> { return invoke("ai_save_config", { config }); },
+  async aiGetConfigs(): Promise<AIProviderConfig[]> { return invoke("ai_get_configs"); },
+  async aiSaveConfig(config: AIProviderConfig): Promise<AIProviderConfig> { return invoke("ai_save_config", { config }); },
+  async aiDeleteConfig(id: string): Promise<void> { return invoke("ai_delete_config", { id }); },
   async aiTestConfig(config: AIProviderConfig): Promise<string> { return invoke("ai_test_config", { config }); },
   async aiListModels(config: AIProviderConfig): Promise<string[]> { return invoke("ai_list_models", { config }); },
   async aiChat(request: AIChatRequest): Promise<AIChatResponse> { return invoke("ai_chat", { request }); },

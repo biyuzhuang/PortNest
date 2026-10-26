@@ -31,7 +31,7 @@ const setPathLinked = (value: boolean) => {
   localStorage.setItem("portnest-file-view-options", JSON.stringify(options));
 };
 
-const DATABASE_PROTOCOLS = new Set(["mysql", "postgresql"]);
+const DATABASE_PROTOCOLS = new Set(["mysql", "postgresql", "highgo"]);
 
 export const matchesAssetFilter = (protocol: string, filter = assetFilter()) => {
   if (filter === "database") return DATABASE_PROTOCOLS.has(protocol);
