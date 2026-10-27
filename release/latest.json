@@ -1,11 +1,11 @@
 {
+  "version": "0.5.0",
+  "notes": "新增 BYOK AI 助手与 PostgreSQL/瀚高数据库工作区；优化数据库管理、界面视觉和会话体验。",
+  "pub_date": "2026-10-27T05:43:46Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeGE0RkV2TFNqR2E4enRhOTZRT1pxaTc3bHBnRXNsQVE1UEtERGtDNERkSzFoT2RBOFhZYlAxajVRM1J6ckp3QUdoRkZscW1veFkyclh6V3VLZDc5R0FRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMDYwOTQ2CWZpbGU6UG9ydE5lc3RfMC40LjBfeDY0LXNldHVwLmV4ZQpLQ0ZLVms3WERCOWdKVXBsOXBxQTdMSTVzeUJFc25EcFo3b3BGMmlBTzV5NGgzWlFaZjdyMHBHMDAzaUZpNTAwWVFZQWhRZlFJWUNYYVFMcUdJOXZBZz09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.4.0/PortNest_0.4.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeGRlUDdBNGpQU010Rml4RDM5NGRMMkdDbWo4Z0lWSWEwYUVTb1BSYWNZbStIelBPR2FLVEg4UHNOY1M0ellremZPNEduYzRrRWYyOWVuZ3JmRGJYZFE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzMDc5ODE5CWZpbGU6UG9ydE5lc3RfMC41LjBfeDY0LXNldHVwLmV4ZQpLREZieGJ1N3RZVmhjeUxqTzZwbkp1clV5ekcvUEs1Vk9Mem1WOUUrcUZnUm9Od2NoS0NWMGlEa0JTVTRuVnZsczIwTHcyT1JHS0JZQTdXdmcveW1Edz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.5.0/PortNest_0.5.0_x64-setup.exe"
     }
-  },
-  "notes": "PortNest v0.4.0 交付阶段三：SSH 主机状态仪表盘（收起导轨与详细面板、并发只读采集、阈值状态、历史趋势、进程与磁盘挂载、诊断摘要复制、10 秒自动刷新与总开关），终端字号不再随窗口缩放，命令广播窗格高度可拖拽。更换 updater 签名密钥，旧版本需覆盖安装。",
-  "version": "0.4.0",
-  "pub_date": "2026-09-22T07:20:07Z"
+  }
 }
