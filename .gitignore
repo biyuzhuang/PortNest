@@ -14,6 +14,8 @@ docs/*
 *.bak
 *.tmp
 test_write.txt
+.qoder-tmp/
+tauri-dev.*.log
 
 # Misc
 src-tauri/kubernetes.repo

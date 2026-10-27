@@ -1,29 +1,0 @@
-     Running BeforeDevCommand (`npm run dev`)
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-        Info Watching E:\code\PortNest\src-tauri for changes...
-[1m[92m   Compiling[0m portnest v0.4.0 (E:\code\PortNest\src-tauri)
-[1m[96m    Building[0m [=======================> ] 773/774: portnes…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 36.62s
-[1m[93mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m `target\debug\portnest.exe`
-        Info File src-tauri\tauri.conf.json changed. Rebuilding application...
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-[1m[92m   Compiling[0m portnest v0.4.0 (E:\code\PortNest\src-tauri)
-[1m[96m    Building[0m [=======================> ] 771/774: portnes…[1m[96m    Building[0m [=======================> ] 772/774: portnest[1m[96m    Building[0m [=======================> ] 773/774: portnes…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 20.29s
-[1m[93mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m `target\debug\portnest.exe`
-        Info File src-tauri\src\ai\mod.rs changed. Rebuilding application...
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-[1m[92m   Compiling[0m portnest v0.4.0 (E:\code\PortNest\src-tauri)
-[1m[96m    Building[0m [=======================> ] 772/774: portnest        Info File src-tauri\src\commands\ai.rs changed. Rebuilding application...
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-[1m[92m   Compiling[0m portnest v0.4.0 (E:\code\PortNest\src-tauri)
-[1m[96m    Building[0m [=======================> ] 772/774: portnest        Info File src-tauri\src\commands\ai.rs changed. Rebuilding application...
-     Running DevCommand (`cargo  run --no-default-features --color always --`)
-[1m[92m   Compiling[0m portnest v0.4.0 (E:\code\PortNest\src-tauri)
-[1m[96m    Building[0m [=======================> ] 772/774: portnest[1m[96m    Building[0m [=======================> ] 773/774: portnes…                                                            [1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 30.02s
-[1m[93mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
-[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
-[1m[92m     Running[0m `target\debug\portnest.exe`
-[1026/200012.495:ERROR:ui\gfx\win\window_impl.cc:172] Failed to unregister class Chrome_WidgetWin_0. Error = 1412
