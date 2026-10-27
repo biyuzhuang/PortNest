@@ -45,6 +45,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
   }>>({});
   const testedConnections = new Set<string>();
   const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number } | null>(null);
+  const [moreMenu, setMoreMenu] = createSignal<{ x: number; y: number } | null>(null);
   const [connectionMenu, setConnectionMenu] = createSignal<{
     x: number;
     y: number;
@@ -188,6 +189,9 @@ export const AssetList: Component<AssetListProps> = (props) => {
     return <span class="asset-latency online">{state.latency}ms</span>;
   };
 
+  const protocolSkin = (protocol: string) =>
+    protocol === "local" ? "local" : isDatabaseProtocol(protocol) ? "database" : "terminal";
+
   const formatTime = (timestamp?: number) => {
     if (!timestamp) return "—";
     return new Date(timestamp * 1000).toLocaleString("zh-CN", {
@@ -275,9 +279,23 @@ export const AssetList: Component<AssetListProps> = (props) => {
     });
   };
 
+  const openMoreMenu = (event: MouseEvent) => {
+    event.stopPropagation();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setConnectionMenu(null);
+    setContextMenu(null);
+    setMoreMenu({ x: rect.left, y: rect.bottom + 4 });
+  };
+
+  const refreshAssets = () => {
+    void connectionStore.loadConnections();
+    refreshVisibleLatencies();
+  };
+
   const closeMenus = () => {
     setContextMenu(null);
     setConnectionMenu(null);
+    setMoreMenu(null);
   };
 
   const clearSelectionFromBlankArea = (event: MouseEvent) => {
@@ -295,13 +313,13 @@ export const AssetList: Component<AssetListProps> = (props) => {
       <div class="asset-toolbar">
         <div class="asset-toolbar-title">
           <span class="asset-list-icon"><Icon name="list" size={16} /></span>
-          <Show when={currentFolder()} fallback={filterTitle()}>
+          <Show when={currentFolder()} fallback={<span class="asset-toolbar-heading">{filterTitle()}</span>}>
             <button class="asset-breadcrumb" onClick={() => setFolderId(null)}>资产列表</button>
             <span class="asset-breadcrumb-separator">/</span>
-            <span>{currentFolder()?.name}</span>
+            <span class="asset-toolbar-heading">{currentFolder()?.name}</span>
           </Show>
         </div>
-        <div class="asset-selection">已选择 <strong>{selectedConnections().length}</strong> 个连接</div>
+        <div class="asset-selection" classList={{ "is-empty": selectedConnections().length === 0 }}>已选择 <strong>{selectedConnections().length}</strong> 个连接</div>
         <div class="asset-toolbar-actions">
           <label class="asset-search">
             <Icon name="search" size={15} />
@@ -310,13 +328,22 @@ export const AssetList: Component<AssetListProps> = (props) => {
               onInput={event => setQuery(event.currentTarget.value)}
               placeholder="名称, IP, User (Ctrl+F)"
             />
-            <kbd>Ctrl F</kbd>
           </label>
           <button class="asset-icon-button" title="回到资产列表根目录" aria-label="回到资产列表根目录" onClick={() => { setFolderId(null); setQuery(""); }}>
             <Icon name="home" size={16} />
           </button>
-          <button class="asset-icon-button" title="刷新当前列表延迟" aria-label="刷新当前列表延迟" onClick={refreshVisibleLatencies}>
+          <button class="asset-icon-button" title="刷新连接列表" aria-label="刷新连接列表" onClick={refreshAssets}>
             <Icon name="refresh" size={16} />
+          </button>
+          <button class="asset-icon-button asset-ping-toggle" title="测试当前列表延迟" aria-label="测试当前列表延迟" onClick={refreshVisibleLatencies}>
+            <span class="asset-ping-icon"><i /></span>
+          </button>
+          <button class="asset-icon-button asset-primary" title="新建连接" aria-label="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>
+            <Icon name="plus" size={16} />
+          </button>
+          <button class="asset-icon-button asset-folder-add" title="新建文件夹" aria-label="新建文件夹" onClick={props.onNewFolder}>
+            <Icon name="folder" size={16} />
+            <i>+</i>
           </button>
           <button
             class={`asset-icon-button ${showPing() ? "active" : ""}`}
@@ -324,21 +351,17 @@ export const AssetList: Component<AssetListProps> = (props) => {
             aria-label={showPing() ? "隐藏 Ping 延迟" : "显示 Ping 延迟"}
             onClick={togglePingVisibility}
           >
-            <span class="asset-ping-icon"><i /></span>
+            <Icon name={showPing() ? "eye" : "eyeOff"} size={16} />
           </button>
-          <button class="asset-icon-button asset-folder-add" title="新建文件夹" aria-label="新建文件夹" onClick={props.onNewFolder}>
-            <Icon name="folder" size={16} />
-            <i>+</i>
-          </button>
-          <button class="asset-icon-button asset-add-button" title="新建连接" aria-label="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>
-            <Icon name="plus" size={17} />
+          <button class="asset-icon-button" title="更多操作" aria-label="更多操作" onClick={openMoreMenu}>
+            <Icon name="chevronDown" size={16} />
           </button>
         </div>
       </div>
 
       <div class="asset-table" onClick={clearSelectionFromBlankArea}>
         <div class="asset-row asset-table-head">
-          <div>名称 <span>⌃</span></div>
+          <div>名称 <span class="asset-sort-indicator"><Icon name="chevronUp" size={11} /></span></div>
           <div>延迟</div>
           <div>Host</div>
           <div>User</div>
@@ -356,7 +379,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
                 setSelectionAnchorId(null);
               }}
             >
-              <div class="asset-name-cell"><span class="asset-folder-icon">■</span>{folder.name}</div>
+              <div class="asset-name-cell"><span class="asset-folder-icon"><Icon name="folder" size={15} /></span>{folder.name}</div>
               <div>—</div><div>—</div><div>—</div><div>—</div>
               <div>
                 {folderConnectionCount(folder.id)} 个连接
@@ -373,7 +396,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               onDblClick={() => props.onConnect(connection)}
               onContextMenu={(event) => openConnectionMenu(event, connection)}
             >
-              <div class="asset-name-cell"><span class="asset-terminal-icon"><ProtocolIcon kind={isDatabaseProtocol(connection.protocol) ? "database" : "terminal"} /></span>{connection.name}</div>
+              <div class="asset-name-cell"><span class={`asset-terminal-icon protocol-${protocolSkin(connection.protocol)}`}><ProtocolIcon kind={isDatabaseProtocol(connection.protocol) ? "database" : "terminal"} /></span>{connection.name}</div>
               <div>{renderLatency(connection)}</div>
               <div class="asset-mono asset-host-cell"><Icon name="copy" size={11} /><span>{connection.protocol === "local" ? "本机" : `${connection.host}:${connection.port}`}</span></div>
               <div class="asset-mono">{connection.protocol === "local" ? "—" : (connection.username || "—")}</div>
@@ -387,6 +410,9 @@ export const AssetList: Component<AssetListProps> = (props) => {
           <div class="asset-empty">
             <span><ProtocolIcon kind={uiStore.assetFilter() === "database" ? "database" : "terminal"} /></span>
             <strong>{query() ? "没有匹配的连接" : "这里还没有连接"}</strong>
+            <p class="asset-empty-hint">
+              {query() ? "换个关键词试试，或清空搜索查看全部资产" : "新建一个连接，或从其他工具导入现有配置"}
+            </p>
             <button onClick={() => props.onNewConnection(folderId() ?? undefined)}>新建连接</button>
           </div>
         </Show>
@@ -415,6 +441,15 @@ export const AssetList: Component<AssetListProps> = (props) => {
             { label: "更多", icon: "chevronDown", children: moreActions() },
           ]}
           onClose={() => setContextMenu(null)}
+        />
+      </Show>
+
+      <Show when={moreMenu()}>
+        <AssetContextMenu
+          x={moreMenu()!.x}
+          y={moreMenu()!.y}
+          items={moreActions()}
+          onClose={() => setMoreMenu(null)}
         />
       </Show>
 

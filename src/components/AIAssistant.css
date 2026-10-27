@@ -301,22 +301,22 @@
 }
 
 /* AI assistant readability pass */
-.ai-assistant-heading h2 { font-size: 15px; }
-.ai-assistant-heading p { font-size: 10.5px; }
-.ai-assistant-kicker { font-size: 8.5px; }
-.ai-mode-tabs strong { font-size: 11.5px; }
-.ai-mode-tabs small { font-size: 9.5px; }
-.ai-context-chip { font-size: 10.5px; }
-.ai-setup-card h3, .ai-empty-state h3 { font-size: 15px; }
-.ai-setup-card p, .ai-empty-state p { font-size: 11.5px; }
-.ai-setup-card button { font-size: 11.5px; }
-.ai-suggestion-grid button { font-size: 11.5px; }
-.ai-message-text { font-size: 12.5px; line-height: 1.7; }
-.ai-code-block { font-size: 11px; }
-.ai-composer textarea { font-size: 12.5px; }
-.ai-composer-footer span { font-size: 9.5px; }
-.ai-composer-footer button { font-size: 11.5px; }
-.ai-assistant-error, .ai-config-loading { font-size: 11px; }
+.ai-assistant-heading h2 { font-size: 16px; }
+.ai-assistant-heading p { font-size: 12px; }
+.ai-assistant-kicker { font-size: 9.5px; }
+.ai-mode-tabs strong { font-size: 12.5px; }
+.ai-mode-tabs small { font-size: 10.5px; }
+.ai-context-chip { font-size: 11.5px; }
+.ai-setup-card h3, .ai-empty-state h3 { font-size: 16px; }
+.ai-setup-card p, .ai-empty-state p { font-size: 12.5px; }
+.ai-setup-card button { font-size: 12.5px; }
+.ai-suggestion-grid button { font-size: 12.5px; }
+.ai-message-text { font-size: 13.5px; line-height: 1.7; }
+.ai-code-block { font-size: 12px; }
+.ai-composer textarea { font-size: 13.5px; }
+.ai-composer-footer span { font-size: 10.5px; }
+.ai-composer-footer button { font-size: 12.5px; }
+.ai-assistant-error, .ai-config-loading { font-size: 12px; }
 
 /* Confirmed AI tool calls */
 .ai-tool-card {
@@ -516,26 +516,26 @@
 
 .ai-assistant-panel.ai-assistant-dock .ai-assistant-header {
   min-height: 62px;
-  background: linear-gradient(135deg, rgba(79, 124, 255, .1), rgba(20, 184, 166, .035));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--pn-blue) 10%, transparent), color-mix(in srgb, var(--pn-teal) 3.5%, transparent));
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-assistant-mark {
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
-  box-shadow: 0 7px 16px rgba(79, 124, 255, .22);
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--pn-blue) 22%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-assistant-header-actions button:hover {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .09);
+  background: color-mix(in srgb, var(--pn-blue) 9%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs {
   gap: 7px;
   padding: 9px 10px 8px;
   border-bottom: 0;
-  background: linear-gradient(180deg, rgba(79, 124, 255, .035), transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pn-blue) 3.5%, transparent), transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs button {
@@ -549,21 +549,21 @@
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs button:hover {
-  background: rgba(79, 124, 255, .06);
-  border-color: rgba(79, 124, 255, .16);
+  background: color-mix(in srgb, var(--pn-blue) 6%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 16%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs button.active {
   color: var(--pn-blue, var(--accent));
   background: var(--pn-blue-soft, color-mix(in srgb, var(--accent) 10%, var(--bg-primary)));
-  border-color: rgba(79, 124, 255, .25);
-  box-shadow: 0 5px 14px rgba(79, 124, 255, .08);
+  border-color: color-mix(in srgb, var(--pn-blue) 25%, transparent);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pn-blue) 8%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs button:nth-child(2).active {
-  color: var(--pn-teal, #14b8a6);
-  background: linear-gradient(135deg, rgba(20, 184, 166, .14), rgba(14, 165, 233, .045));
-  border-color: rgba(20, 184, 166, .26);
+  color: var(--pn-teal, var(--pn-teal));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--pn-teal) 14%, transparent), color-mix(in srgb, var(--pn-cyan) 4.5%, transparent));
+  border-color: color-mix(in srgb, var(--pn-teal) 26%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-mode-tabs button:nth-child(3).active {
@@ -597,14 +597,14 @@
   margin: 8px 10px 0;
   padding: 10px 11px;
   color: var(--text-secondary);
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .08));
-  border: 1px solid rgba(79, 124, 255, .16);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 8%, transparent));
+  border: 1px solid color-mix(in srgb, var(--pn-blue) 16%, transparent);
   border-radius: 10px;
 }
 
 .ai-mode-summary.mode-terminal {
-  background: linear-gradient(135deg, rgba(20, 184, 166, .12), rgba(14, 165, 233, .035));
-  border-color: rgba(20, 184, 166, .2);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--pn-teal) 12%, transparent), color-mix(in srgb, var(--pn-cyan) 3.5%, transparent));
+  border-color: color-mix(in srgb, var(--pn-teal) 20%, transparent);
 }
 
 .ai-mode-summary.mode-sql {
@@ -623,7 +623,7 @@
   border-radius: 8px;
 }
 
-.ai-mode-summary.mode-terminal .ai-mode-summary-icon { color: var(--pn-teal, #14b8a6); }
+.ai-mode-summary.mode-terminal .ai-mode-summary-icon { color: var(--pn-teal, var(--pn-teal)); }
 .ai-mode-summary.mode-sql .ai-mode-summary-icon { color: var(--pn-amber, #f59e0b); }
 
 .ai-mode-summary > div {
@@ -660,21 +660,21 @@
 .ai-assistant-panel.ai-assistant-dock .ai-chat-area {
   padding: 12px 10px 16px;
   background:
-    radial-gradient(circle at 88% 0%, rgba(20, 184, 166, .045), transparent 28%),
-    linear-gradient(180deg, rgba(79, 124, 255, .025), transparent 150px);
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--pn-teal) 4.5%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--pn-blue) 2.5%, transparent), transparent 150px);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-empty-mark {
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
-  box-shadow: 0 10px 22px rgba(79, 124, 255, .2);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--pn-blue) 20%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-setup-card {
   border-color: var(--pn-card-border, var(--border));
   border-radius: 12px;
-  background: linear-gradient(160deg, rgba(79, 124, 255, .06), var(--bg-secondary) 42%);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--pn-blue) 6%, transparent), var(--bg-secondary) 42%);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-suggestion-grid button {
@@ -684,19 +684,19 @@
 
 .ai-assistant-panel.ai-assistant-dock .ai-suggestion-grid button:hover {
   color: var(--pn-blue, var(--accent));
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .08));
-  border-color: rgba(79, 124, 255, .26);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 8%, transparent));
+  border-color: color-mix(in srgb, var(--pn-blue) 26%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-message.assistant .ai-message-avatar {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .1);
+  background: color-mix(in srgb, var(--pn-blue) 10%, transparent);
   border: 0;
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-message.user .ai-message-avatar {
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
 }
 
@@ -707,12 +707,12 @@
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-message.user .ai-message-text {
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .1));
-  border-color: rgba(79, 124, 255, .16);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 10%, transparent));
+  border-color: color-mix(in srgb, var(--pn-blue) 16%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-composer {
-  background: linear-gradient(180deg, rgba(79, 124, 255, .025), var(--bg-secondary));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pn-blue) 2.5%, transparent), var(--bg-secondary));
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-composer textarea {
@@ -722,20 +722,20 @@
 
 .ai-assistant-panel.ai-assistant-dock .ai-composer textarea:focus {
   border-color: var(--pn-blue, var(--accent));
-  box-shadow: 0 0 0 3px rgba(79, 124, 255, .12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-blue) 12%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-composer-footer button {
   border: 0;
   border-radius: 8px;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
-  box-shadow: 0 5px 14px rgba(79, 124, 255, .2);
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pn-blue) 20%, transparent);
 }
 
 .session-action-controls button.session-ai-action {
   color: var(--pn-violet, #8b5cf6);
-  border-color: rgba(139, 92, 246, .2);
-  background: rgba(139, 92, 246, .07);
+  border-color: color-mix(in srgb, var(--pn-violet) 20%, transparent);
+  background: color-mix(in srgb, var(--pn-violet) 7%, transparent);
 }
 
 .session-action-controls button.session-ai-action.sql {
@@ -746,8 +746,8 @@
 
 .session-action-controls button.session-ai-action:hover {
   color: var(--pn-violet, #8b5cf6);
-  border-color: rgba(139, 92, 246, .38);
-  background: rgba(139, 92, 246, .12);
+  border-color: color-mix(in srgb, var(--pn-violet) 38%, transparent);
+  background: color-mix(in srgb, var(--pn-violet) 12%, transparent);
 }
 
 .session-action-controls button.session-ai-action.sql:hover {
@@ -780,7 +780,7 @@
 /* Conversation history inside the AI side panel */
 .ai-assistant-header-actions button.active {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .1);
+  background: color-mix(in srgb, var(--pn-blue) 10%, transparent);
 }
 
 .ai-conversation-bar {
@@ -788,7 +788,7 @@
   align-items: stretch;
   gap: 6px;
   padding: 8px 10px 0;
-  background: linear-gradient(180deg, rgba(79, 124, 255, .035), transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pn-blue) 3.5%, transparent), transparent);
 }
 
 .ai-conversation-current {
@@ -807,8 +807,8 @@
 }
 
 .ai-conversation-current:hover {
-  border-color: rgba(79, 124, 255, .24);
-  background: rgba(79, 124, 255, .05);
+  border-color: color-mix(in srgb, var(--pn-blue) 24%, transparent);
+  background: color-mix(in srgb, var(--pn-blue) 5%, transparent);
 }
 
 .ai-conversation-current > span:nth-child(2) {
@@ -844,7 +844,7 @@
   flex: 0 0 24px;
   place-items: center;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .1);
+  background: color-mix(in srgb, var(--pn-blue) 10%, transparent);
   border-radius: 7px;
 }
 
@@ -854,15 +854,15 @@
   flex: 0 0 36px;
   place-items: center;
   color: var(--pn-blue, var(--accent));
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .08));
-  border: 1px solid rgba(79, 124, 255, .18);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 8%, transparent));
+  border: 1px solid color-mix(in srgb, var(--pn-blue) 18%, transparent);
   border-radius: 9px;
   cursor: pointer;
 }
 
 .ai-conversation-new:hover {
-  background: rgba(79, 124, 255, .13);
-  border-color: rgba(79, 124, 255, .3);
+  background: color-mix(in srgb, var(--pn-blue) 13%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 30%, transparent);
 }
 
 .ai-conversation-list {
@@ -881,7 +881,7 @@
   gap: 10px;
   padding: 8px 9px 7px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(90deg, rgba(79, 124, 255, .06), rgba(20, 184, 166, .025));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pn-blue) 6%, transparent), color-mix(in srgb, var(--pn-teal) 2.5%, transparent));
 }
 
 .ai-conversation-list > header > span {
@@ -900,8 +900,8 @@
   gap: 4px;
   padding: 0 8px;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .08);
-  border: 1px solid rgba(79, 124, 255, .17);
+  background: color-mix(in srgb, var(--pn-blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-blue) 17%, transparent);
   border-radius: 6px;
   font-size: 9px;
   cursor: pointer;
@@ -926,10 +926,10 @@
   cursor: pointer;
 }
 
-.ai-conversation-item:hover { background: rgba(79, 124, 255, .055); }
+.ai-conversation-item:hover { background: color-mix(in srgb, var(--pn-blue) 5.5%, transparent); }
 
 .ai-conversation-item.active {
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .1));
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 10%, transparent));
   box-shadow: inset 2px 0 0 var(--pn-blue, var(--accent));
 }
 
@@ -1008,8 +1008,8 @@
   margin-bottom: 7px;
   padding: 4px 7px;
   color: var(--pn-violet, #8b5cf6);
-  background: rgba(139, 92, 246, .08);
-  border: 1px solid rgba(139, 92, 246, .17);
+  background: color-mix(in srgb, var(--pn-violet) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-violet) 17%, transparent);
   border-radius: 7px;
   font-size: 9.5px;
 }
@@ -1034,7 +1034,7 @@
   cursor: pointer;
 }
 
-.ai-active-preset button:hover { background: rgba(139, 92, 246, .13); }
+.ai-active-preset button:hover { background: color-mix(in srgb, var(--pn-violet) 13%, transparent); }
 
 .ai-composer-tools {
   display: flex;
@@ -1060,13 +1060,13 @@
 
 .ai-composer-tools > button:hover {
   color: var(--text-secondary);
-  background: rgba(79, 124, 255, .055);
+  background: color-mix(in srgb, var(--pn-blue) 5.5%, transparent);
 }
 
 .ai-composer-tools > button.active {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .09);
-  border-color: rgba(79, 124, 255, .16);
+  background: color-mix(in srgb, var(--pn-blue) 9%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 16%, transparent);
 }
 
 .ai-assistant-panel.ai-assistant-dock .ai-composer-footer {
@@ -1099,7 +1099,7 @@
   gap: 10px;
   padding: 11px 12px 9px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(90deg, rgba(79, 124, 255, .065), rgba(20, 184, 166, .025));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pn-blue) 6.5%, transparent), color-mix(in srgb, var(--pn-teal) 2.5%, transparent));
 }
 
 .ai-permissions-popover > header > span,
@@ -1155,7 +1155,7 @@
   border-radius: 7px;
 }
 
-.ai-permission-row:hover { background: rgba(79, 124, 255, .045); }
+.ai-permission-row:hover { background: color-mix(in srgb, var(--pn-blue) 4.5%, transparent); }
 
 .ai-permission-icon {
   display: grid;
@@ -1164,7 +1164,7 @@
   flex: 0 0 26px;
   place-items: center;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .09);
+  background: color-mix(in srgb, var(--pn-blue) 9%, transparent);
   border-radius: 7px;
 }
 
@@ -1205,7 +1205,7 @@
 }
 
 .ai-permission-switch.on {
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border-color: transparent;
 }
 
@@ -1269,13 +1269,13 @@
 }
 
 .ai-preset-none:hover,
-.ai-preset-item:hover { background: rgba(79, 124, 255, .055); }
+.ai-preset-item:hover { background: color-mix(in srgb, var(--pn-blue) 5.5%, transparent); }
 
 .ai-preset-none.active,
 .ai-preset-item.active {
   color: var(--pn-blue, var(--accent));
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .09));
-  border-color: rgba(79, 124, 255, .13);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 9%, transparent));
+  border-color: color-mix(in srgb, var(--pn-blue) 13%, transparent);
 }
 
 .ai-preset-item-icon {
@@ -1285,7 +1285,7 @@
   flex: 0 0 23px;
   place-items: center;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .09);
+  background: color-mix(in srgb, var(--pn-blue) 9%, transparent);
   border-radius: 6px;
 }
 
@@ -1360,8 +1360,8 @@
   gap: 4px;
   padding: 0 9px;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .07);
-  border: 1px solid rgba(79, 124, 255, .15);
+  background: color-mix(in srgb, var(--pn-blue) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-blue) 15%, transparent);
   border-radius: 6px;
   font-size: 9px;
   cursor: pointer;
@@ -1370,7 +1370,7 @@
 .ai-preset-popover > footer button:hover,
 .ai-preset-editor > footer button:hover,
 .ai-model-empty button:hover,
-.ai-model-popover > footer button:hover { background: rgba(79, 124, 255, .13); }
+.ai-model-popover > footer button:hover { background: color-mix(in srgb, var(--pn-blue) 13%, transparent); }
 
 .ai-preset-editor {
   display: flex;
@@ -1402,7 +1402,7 @@
 
 .ai-preset-editor textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
 .ai-preset-editor input:focus,
-.ai-preset-editor textarea:focus { border-color: rgba(79, 124, 255, .4); box-shadow: 0 0 0 3px rgba(79, 124, 255, .08); }
+.ai-preset-editor textarea:focus { border-color: color-mix(in srgb, var(--pn-blue) 40%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-blue) 8%, transparent); }
 
 .ai-preset-editor > footer {
   display: flex;
@@ -1413,7 +1413,7 @@
 
 .ai-preset-editor > footer button.primary {
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
 }
 
@@ -1530,14 +1530,14 @@
 
 .ai-composer-actionbar .ai-composer-tools > button:hover {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .06);
-  border-color: rgba(79, 124, 255, .2);
+  background: color-mix(in srgb, var(--pn-blue) 6%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 20%, transparent);
 }
 
 .ai-composer-actionbar .ai-composer-tools > button.active {
   color: var(--pn-blue, var(--accent));
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .1));
-  border-color: rgba(79, 124, 255, .26);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 10%, transparent));
+  border-color: color-mix(in srgb, var(--pn-blue) 26%, transparent);
 }
 
 .ai-send-button {
@@ -1548,10 +1548,10 @@
   gap: 5px;
   padding: 0 13px;
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
   border-radius: 8px;
-  box-shadow: 0 5px 14px rgba(79, 124, 255, .18);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pn-blue) 18%, transparent);
   font-size: 10.5px;
   cursor: pointer;
 }
@@ -1626,7 +1626,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 11px 10px 9px;
-  background: linear-gradient(90deg, rgba(79, 124, 255, .075), rgba(20, 184, 166, .03));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pn-blue) 7.5%, transparent), color-mix(in srgb, var(--pn-teal) 3%, transparent));
   border-bottom: 1px solid var(--border);
 }
 
@@ -1646,8 +1646,8 @@
   gap: 4px;
   padding: 0 8px;
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .08);
-  border: 1px solid rgba(79, 124, 255, .17);
+  background: color-mix(in srgb, var(--pn-blue) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pn-blue) 17%, transparent);
   border-radius: 6px;
   font-size: 9px;
   cursor: pointer;
@@ -1683,7 +1683,7 @@
   cursor: pointer;
 }
 
-.ai-conversation-drawer > footer button:hover { color: var(--pn-blue, var(--accent)); border-color: rgba(79, 124, 255, .25); }
+.ai-conversation-drawer > footer button:hover { color: var(--pn-blue, var(--accent)); border-color: color-mix(in srgb, var(--pn-blue) 25%, transparent); }
 
 .ai-assistant-panel.ai-assistant-dock .ai-chat-area {
   padding: 14px 10px 16px;
@@ -1877,8 +1877,8 @@
 
 .ai-add-model:hover {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .06);
-  border-color: rgba(79, 124, 255, .22);
+  background: color-mix(in srgb, var(--pn-blue) 6%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 22%, transparent);
 }
 
 .ai-composer-icon-button {
@@ -1897,14 +1897,14 @@
 
 .ai-composer-icon-button:hover:not(:disabled) {
   color: var(--pn-blue, var(--accent));
-  background: rgba(79, 124, 255, .06);
-  border-color: rgba(79, 124, 255, .22);
+  background: color-mix(in srgb, var(--pn-blue) 6%, transparent);
+  border-color: color-mix(in srgb, var(--pn-blue) 22%, transparent);
 }
 
 .ai-composer-icon-button.active {
   color: var(--pn-blue, var(--accent));
-  background: var(--pn-blue-soft, rgba(79, 124, 255, .1));
-  border-color: rgba(79, 124, 255, .28);
+  background: var(--pn-blue-soft, color-mix(in srgb, var(--pn-blue) 10%, transparent));
+  border-color: color-mix(in srgb, var(--pn-blue) 28%, transparent);
 }
 
 .ai-composer-icon-button:disabled {
@@ -1936,10 +1936,10 @@
   padding: 0;
   place-items: center;
   color: #fff;
-  background: var(--pn-brand-gradient, linear-gradient(135deg, #4f7cff, #6c5ce7));
+  background: var(--pn-brand-gradient, linear-gradient(135deg, var(--pn-blue), var(--pn-violet)));
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 5px 14px rgba(79, 124, 255, .2);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--pn-blue) 20%, transparent);
   cursor: pointer;
 }
 

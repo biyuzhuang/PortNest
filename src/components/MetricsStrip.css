@@ -38,7 +38,7 @@
 }
 
 .metrics-strip-bar.cpu .metrics-strip-fill {
-  background: linear-gradient(to right, var(--accent), #60a5fa);
+  background: linear-gradient(to right, var(--pn-blue), var(--pn-cyan));
 }
 
 .metrics-strip-bar.up .metrics-strip-fill {
@@ -46,11 +46,11 @@
 }
 
 .metrics-strip-bar.down .metrics-strip-fill {
-  background: linear-gradient(to right, var(--accent-hover), #93c5fd);
+  background: linear-gradient(to right, var(--pn-indigo), var(--pn-cyan));
 }
 
 .metrics-strip-bar.mem .metrics-strip-fill {
-  background: linear-gradient(to right, #8b5cf6, #a78bfa);
+  background: linear-gradient(to right, var(--pn-teal), var(--pn-cyan));
 }
 
 .metrics-strip-bar.disk .metrics-strip-fill {

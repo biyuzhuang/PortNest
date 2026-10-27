@@ -947,36 +947,36 @@
 }
 
 /* Settings readability pass */
-.settings-brand, .settings-topbar > strong { font-size: 13.5px; }
-.settings-page-heading h2 { font-size: 20px; }
-.settings-page-heading p { font-size: 12px; line-height: 1.5; }
-.settings-sidebar h4 { font-size: 12.5px; }
-.settings-sidebar button { font-size: 12px; }
-.settings-page h3 { font-size: 12.5px; }
-.settings-page { font-size: 12px; }
-.settings-card label > span { font-size: 12px; }
-.settings-card label > span > small { font-size: 10.5px; line-height: 1.4; }
-.settings-card input, .settings-card select, .settings-card textarea { font-size: 12px; }
-.settings-card-title strong { font-size: 12.5px; }
-.settings-card-title span { font-size: 10.5px; }
-.settings-note { font-size: 11.5px; line-height: 1.5; }
-.settings-footer button { font-size: 12px; }
-.settings-footer span { font-size: 11.5px; }
-.settings-inline-button { font-size: 11.5px; }
-.ai-provider-panel-head strong { font-size: 12.5px; }
-.ai-provider-panel-head span { font-size: 10.5px; }
-.ai-provider-copy strong { font-size: 12px; }
-.ai-provider-copy small { font-size: 10px; }
-.ai-provider-item em { font-size: 9.5px; }
-.ai-provider-note { font-size: 10.5px; }
-.ai-config-actions button { font-size: 12px; }
-.ai-test-result { font-size: 11.5px; }
+.settings-brand, .settings-topbar > strong { font-size: 14px; }
+.settings-page-heading h2 { font-size: 21px; }
+.settings-page-heading p { font-size: 13px; line-height: 1.5; }
+.settings-sidebar h4 { font-size: 13px; }
+.settings-sidebar button { font-size: 13px; }
+.settings-page h3 { font-size: 13px; }
+.settings-page { font-size: 13px; }
+.settings-card label > span { font-size: 13px; }
+.settings-card label > span > small { font-size: 11.5px; line-height: 1.4; }
+.settings-card input, .settings-card select, .settings-card textarea { font-size: 13px; }
+.settings-card-title strong { font-size: 13.5px; }
+.settings-card-title span { font-size: 11.5px; }
+.settings-note { font-size: 12.5px; line-height: 1.5; }
+.settings-footer button { font-size: 13px; }
+.settings-footer span { font-size: 12.5px; }
+.settings-inline-button { font-size: 12.5px; }
+.ai-provider-panel-head strong { font-size: 13.5px; }
+.ai-provider-panel-head span { font-size: 11.5px; }
+.ai-provider-copy strong { font-size: 13px; }
+.ai-provider-copy small { font-size: 11px; }
+.ai-provider-item em { font-size: 10.5px; }
+.ai-provider-note { font-size: 11.5px; }
+.ai-config-actions button { font-size: 13px; }
+.ai-test-result { font-size: 12.5px; }
 .settings-live-preview > header span,
 .settings-card label > span > small,
 .file-preview-row,
 .settings-file-preview-row,
 .settings-file-summary,
-.settings-file-preview-head { font-size: 10.5px; }
+.settings-file-preview-head { font-size: 11.5px; }
 
 .ai-model-input-row {
   display: flex;

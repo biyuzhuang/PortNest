@@ -1,60 +1,23 @@
 import { createSignal } from "solid-js";
 
 export type ThemeMode = "light" | "dark" | "system";
+export type ThemeSkin = "aurora" | "mist" | "ember" | "midnight";
 
-export interface ThemeColors {
-  "--bg-primary": string;
-  "--bg-secondary": string;
-  "--bg-tertiary": string;
-  "--bg-hover": string;
-  "--text-primary": string;
-  "--text-secondary": string;
-  "--text-muted": string;
-  "--accent": string;
-  "--accent-hover": string;
-  "--success": string;
-  "--warning": string;
-  "--error": string;
-  "--border": string;
-  "--border-light": string;
+export interface ThemeSkinOption {
+  id: ThemeSkin;
+  name: string;
+  description: string;
 }
 
-const themes: Record<"light" | "dark", ThemeColors> = {
-  light: {
-    "--bg-primary": "#f3f6fc",
-    "--bg-secondary": "#ffffff",
-    "--bg-tertiary": "#eef3fa",
-    "--bg-hover": "#e5edf9",
-    "--text-primary": "#172033",
-    "--text-secondary": "#5f6d82",
-    "--text-muted": "#93a0b4",
-    "--accent": "#4f7cff",
-    "--accent-hover": "#3d6cf0",
-    "--success": "#10b981",
-    "--warning": "#f59e0b",
-    "--error": "#ef4444",
-    "--border": "#e1e8f3",
-    "--border-light": "#d2dceb",
-  },
-  dark: {
-    "--bg-primary": "#090f1a",
-    "--bg-secondary": "#121b2b",
-    "--bg-tertiary": "#1a2538",
-    "--bg-hover": "#26344d",
-    "--text-primary": "#edf3ff",
-    "--text-secondary": "#9aa8bf",
-    "--text-muted": "#66758c",
-    "--accent": "#6f95ff",
-    "--accent-hover": "#5b84f8",
-    "--success": "#34d399",
-    "--warning": "#fbbf24",
-    "--error": "#f87171",
-    "--border": "#22304a",
-    "--border-light": "#30415e",
-  },
-};
+export const themeSkins: ThemeSkinOption[] = [
+  { id: "aurora", name: "极光紫", description: "紫罗兰主色，淡紫与薄荷渐变" },
+  { id: "mist", name: "晨雾蓝", description: "冷灰蓝表面，青色强调，克制平面" },
+  { id: "ember", name: "暖砂", description: "暖米色表面，珊瑚与琥珀强调" },
+  { id: "midnight", name: "午夜青", description: "深青玻璃质感，冷光强调" },
+];
 
 const STORAGE_KEY = "portnest-theme";
+const SKIN_STORAGE_KEY = "portnest-theme-skin";
 
 function getSystemTheme(): "light" | "dark" {
   if (typeof window !== "undefined" && window.matchMedia) {
@@ -73,7 +36,18 @@ function getStoredTheme(): ThemeMode {
   return "light";
 }
 
+function getStoredSkin(): ThemeSkin {
+  if (typeof localStorage !== "undefined") {
+    const stored = localStorage.getItem(SKIN_STORAGE_KEY);
+    if (stored === "aurora" || stored === "mist" || stored === "ember" || stored === "midnight") {
+      return stored;
+    }
+  }
+  return "aurora";
+}
+
 const [themeMode, setThemeModeInternal] = createSignal<ThemeMode>(getStoredTheme());
+const [themeSkin, setThemeSkinInternal] = createSignal<ThemeSkin>(getStoredSkin());
 const [effectiveTheme, setEffectiveTheme] = createSignal<"light" | "dark">(
   getStoredTheme() === "system" ? getSystemTheme() : getStoredTheme() as "light" | "dark"
 );
@@ -84,7 +58,14 @@ export function setThemeMode(mode: ThemeMode) {
 
   const effective = mode === "system" ? getSystemTheme() : mode;
   setEffectiveTheme(effective);
-  applyTheme(effective);
+  applyTheme(effective, themeSkin());
+  publishAppearance();
+}
+
+export function setThemeSkin(skin: ThemeSkin) {
+  setThemeSkinInternal(skin);
+  localStorage.setItem(SKIN_STORAGE_KEY, skin);
+  applyTheme(effectiveTheme(), skin);
   publishAppearance();
 }
 
@@ -94,19 +75,16 @@ export function toggleTheme() {
   setThemeMode(newTheme);
 }
 
-function applyTheme(theme: "light" | "dark") {
-  const colors = themes[theme];
+const SKINS: ThemeSkin[] = ["aurora", "mist", "ember", "midnight"];
+
+function applyTheme(theme: "light" | "dark", skin: ThemeSkin = getStoredSkin()) {
   const root = document.documentElement;
-
-  Object.entries(colors).forEach(([key, value]) => {
-    root.style.setProperty(key, value);
-  });
-
   root.setAttribute("data-theme", theme);
+  root.setAttribute("data-skin", SKINS.includes(skin) ? skin : "aurora");
 }
 
 export function initTheme() {
-  applyTheme(effectiveTheme());
+  applyTheme(effectiveTheme(), getStoredSkin());
 
   if (typeof window !== "undefined" && window.matchMedia) {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -114,7 +92,7 @@ export function initTheme() {
       if (themeMode() === "system") {
         const newTheme = e.matches ? "dark" : "light";
         setEffectiveTheme(newTheme);
-        applyTheme(newTheme);
+        applyTheme(newTheme, getStoredSkin());
         setTerminalThemeRevision(value => value + 1);
         publishAppearance();
       }
@@ -122,7 +100,7 @@ export function initTheme() {
   }
 }
 
-export { themeMode, effectiveTheme };
+export { themeMode, themeSkin, effectiveTheme };
 
 // Terminal theme presets
 export interface TerminalTheme {
@@ -451,10 +429,12 @@ appearanceChannel?.addEventListener("message", () => {
   setTerminalBackgroundConfigSignal(getStoredTerminalBackgroundConfig());
   setTerminalBackgroundStyleSignal(getStoredTerminalBackgroundConfig().style);
   const mode = getStoredTheme();
+  const skin = getStoredSkin();
   setThemeModeInternal(mode);
+  setThemeSkinInternal(skin);
   const effective = mode === "system" ? getSystemTheme() : mode;
   setEffectiveTheme(effective);
-  applyTheme(effective);
+  applyTheme(effective, skin);
   setTerminalThemeRevision(value => value + 1);
   setTerminalSettingsRevision(value => value + 1);
   setAppearanceRevision(value => value + 1);

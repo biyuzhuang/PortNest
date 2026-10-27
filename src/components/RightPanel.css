@@ -83,12 +83,12 @@
 
 .right-panel-top .file-manager-header .nav-btn {
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .right-panel-top .file-manager-header .path-input {
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 4px;

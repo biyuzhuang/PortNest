@@ -11,7 +11,7 @@ import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
 import { Icon } from "./Icon";
 import { AssetContextMenu, type AssetMenuAction, type AssetMenuHeaderAction } from "./AssetContextMenu";
-import { api, localShellDisplayName, parseLocalProfile } from "../utils/api";
+import { api } from "../utils/api";
 
 interface SidebarProps {
   width?: number;
@@ -508,7 +508,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                       {folderConnectionCount(folder.id)}
                     </span>
                     <span class={`folder-toggle ${expandedFolders().has(folder.id) ? "expanded" : ""}`}>
-                      <Icon name={expandedFolders().has(folder.id) ? "chevronDown" : "chevronRight"} size={14} />
+                      <Icon name="chevronRight" size={14} />
                     </span>
                   </div>
                   <Show when={expandedFolders().has(folder.id)}>
@@ -643,6 +643,10 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
     props.onDragEnded();
   };
 
+  const connectionSummary = props.conn.protocol === "local"
+    ? props.conn.name
+    : `${props.conn.username ? `${props.conn.username}@` : ""}${props.conn.host}:${props.conn.port}`;
+
   return (
     <div
       class={`connection-item ${props.selected ? "selected" : ""} ${props.builtin ? "builtin" : ""} ${props.dragging ? "dragging" : ""}`}
@@ -665,17 +669,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       <span class="conn-icon" style={{ color: getProtocolColor(props.conn.protocol) }}>
         <ProtocolIcon kind={props.conn.protocol} />
       </span>
-      <div class="conn-details">
-        <span class="conn-name">{props.conn.name}</span>
-        <span class="conn-host">
-          {props.conn.protocol === "local"
-            ? `本机 · ${localShellDisplayName(parseLocalProfile(props.conn.options).shell_type)}`
-            : `${props.conn.host}:${props.conn.port}`}
-        </span>
-      </div>
-      <span class="protocol-badge" style={{ "background-color": getProtocolColor(props.conn.protocol) + "20", color: getProtocolColor(props.conn.protocol) }}>
-        {props.conn.protocol.toUpperCase()}
-      </span>
+      <span class="conn-name" title={`${props.conn.name}\n${connectionSummary}`}>{props.conn.name}</span>
     </div>
   );
 };

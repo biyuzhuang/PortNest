@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
-  themeMode, setThemeMode, type ThemeMode, terminalThemes, getTerminalTheme,
+  themeMode, setThemeMode, type ThemeMode, themeSkin, setThemeSkin, themeSkins, type ThemeSkin,
+  terminalThemes, getTerminalTheme,
   getTerminalThemePreferences, setTerminalThemePreferences, effectiveTheme, getTerminalSettings, setTerminalSettings,
   terminalBackgroundConfig, setTerminalBackgroundConfig, getEffectiveTerminalBackgroundStyle, type TerminalBackgroundStyle, type TerminalBackgroundConfig,
   type TerminalSettings,
@@ -763,6 +764,11 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>主题</h3>
               <div class="settings-grid">
                 <div class="settings-card">
+                  <label><span><b>主题风格</b><small>切换整套界面配色与表面质感</small></span>
+                    <select value={themeSkin()} onChange={event => setThemeSkin(event.currentTarget.value as ThemeSkin)}>
+                      <For each={themeSkins}>{skin => <option value={skin.id}>{skin.name}</option>}</For>
+                    </select>
+                  </label>
                   <label><span><b>主题模式</b><small>控制应用窗口、菜单和面板的明暗外观</small></span>
                     <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
                       <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
@@ -839,6 +845,11 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>主题</h3>
               <div class="settings-grid">
                 <div class="settings-card">
+                  <label><span><b>主题风格</b></span>
+                    <select value={themeSkin()} onChange={event => setThemeSkin(event.currentTarget.value as ThemeSkin)}>
+                      <For each={themeSkins}>{skin => <option value={skin.id}>{skin.name}</option>}</For>
+                    </select>
+                  </label>
                   <label><span><b>主题模式</b></span>
                     <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
                       <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>

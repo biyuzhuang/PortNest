@@ -205,7 +205,7 @@
   border-radius: 5px;
   color: #20252a;
   background: #fff;
-  font: 12px "Cascadia Code", Consolas, monospace;
+  font: 13px "Cascadia Code", Consolas, monospace;
 }
 .file-manager-summary {
   display: flex;
@@ -214,7 +214,7 @@
   padding: 0 9px;
   border-bottom: 1px solid #e5e8eb;
   color: #272c31;
-  font-size: 12px;
+  font-size: 13px;
 }
 .file-manager-summary-actions {
   display: flex;
@@ -226,7 +226,7 @@
 .file-manager-summary-count {
   padding: 0 0 4px;
   color: #596169;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -236,7 +236,7 @@
   border: 0;
   color: #596169;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 .file-manager-summary button.active {
@@ -249,11 +249,11 @@
 .file-table { min-width: 500px; }
 .file-row {
   display: grid;
-  min-height: 30px;
+  min-height: 32px;
   grid-template-columns: minmax(175px, 1.35fr) 125px 70px 80px;
   padding: 0 7px;
   border-radius: 0;
-  font: 12px "Cascadia Code", Consolas, monospace;
+  font: 13px "Cascadia Code", Consolas, monospace;
 }
 .file-row:nth-child(even) { background: #f0f1f2; }
 .file-row:hover { background: #e8f1fd; }
@@ -267,7 +267,7 @@
   color: #33383d;
   background: #fafafa;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   text-transform: none;
 }
@@ -282,11 +282,11 @@
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
 }
 .file-icon { color: #86c51f; font-size: 12px; }
 .file-icon.folder { color: #ffb51b; }
-.file-name { color: inherit; font-size: 12px; }
+.file-name { color: inherit; font-size: 13px; }
 
 .sftp-file-icon {
   position: relative;
@@ -425,30 +425,30 @@
   color: #475569;
   font: 11px var(--font-ui);
 }
-.transfer-strip-header strong { color: #1f2937; font-size: 12px; }
-.transfer-strip-header span { flex: 1; color: #94a3b8; }
+.transfer-strip-header strong { color: var(--ui-text); font-size: 12px; }
+.transfer-strip-header span { flex: 1; color: var(--ui-muted); }
 .transfer-strip-header button,
 .transfer-retry-btn {
   padding: 3px 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ui-line-strong);
   border-radius: 4px;
-  color: #2563eb;
-  background: #fff;
+  color: var(--pn-blue);
+  background: var(--ui-surface);
   font: 11px var(--font-ui);
   cursor: pointer;
 }
 .transfer-strip-header button:hover,
-.transfer-retry-btn:hover { border-color: #3b82f6; background: #eff6ff; }
+.transfer-retry-btn:hover { border-color: var(--pn-blue); background: var(--ui-hover); }
 .transfer-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #30353a;
+  color: var(--ui-text);
   font: 11px "Cascadia Code", Consolas, monospace;
 }
 .transfer-icon {
   flex: 0 0 16px;
-  color: #3b82f6;
+  color: var(--pn-blue);
   font-size: 13px;
   text-align: center;
 }
@@ -468,23 +468,23 @@
 }
 .transfer-meta {
   flex-shrink: 0;
-  color: #6b7280;
+  color: var(--ui-muted);
 }
 .transfer-bar {
   height: 4px;
   margin-top: 3px;
   overflow: hidden;
   border-radius: 2px;
-  background: #e5e7eb;
+  background: var(--ui-line);
 }
 .transfer-bar-fill {
   height: 100%;
   border-radius: 2px;
-  background: #3b82f6;
+  background: var(--pn-blue);
   transition: width 0.15s ease;
 }
-.transfer-row.status-done .transfer-bar-fill { background: #10b981; }
-.transfer-row.status-cancelled .transfer-bar-fill { background: #9ca3af; }
+.transfer-row.status-done .transfer-bar-fill { background: var(--success); }
+.transfer-row.status-cancelled .transfer-bar-fill { background: var(--ui-muted); }
 .transfer-row.status-error .transfer-bar-fill { background: #ef4444; }
 .transfer-row.status-interrupted .transfer-bar-fill { background: #f59e0b; }
 .transfer-row.status-skipped .transfer-bar-fill { background: #94a3b8; }

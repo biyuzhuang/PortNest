@@ -1082,6 +1082,7 @@ const App: Component = () => {
       <div class={`app-body ${showAIAssistant() ? "ai-dock-open" : ""} ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() && !showAIAssistant() ? "files-layout-stacked" : ""}`}>
         <Sidebar
           width={sidebarWidth()}
+          selectedId={activeSession()?.connection.id}
           onConnect={handleConnect}
           onEdit={handleEdit}
           onDelete={handleDelete}
