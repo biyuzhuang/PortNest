@@ -7,7 +7,7 @@
   border-radius: 9px;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--surface-overlay, var(--bg-secondary)) 96%, transparent);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, .14), 0 2px 8px rgba(15, 23, 42, .08);
+  box-shadow: var(--shadow-menu);
   backdrop-filter: blur(18px);
   animation: text-menu-enter .12s cubic-bezier(.2, .8, .2, 1);
 }

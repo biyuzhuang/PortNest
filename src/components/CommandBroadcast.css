@@ -22,7 +22,7 @@
 .composer-field-header{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .composer-mode-label{display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);font-size:11px;white-space:nowrap}
 .mode-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
-.composer-field-header .composer-send{margin-left:auto;min-width:64px;height:24px;padding:0 12px;border-radius:var(--radius-sm);color:#fff;background:var(--accent);border:1px solid var(--accent);font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.composer-field-header .composer-send{margin-left:auto;min-width:64px;height:24px;padding:0 12px;border-radius:var(--radius-sm);color:var(--on-accent);background:var(--accent);border:1px solid var(--accent);font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}
 .composer-field-header .composer-send:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
 .composer-field-header .composer-send:active:not(:disabled){background:var(--accent-primary);border-color:var(--accent-primary)}
 .composer-field-header .composer-send:disabled{opacity:.5;cursor:not-allowed}
@@ -30,7 +30,7 @@
 .composer-field textarea:focus,.template-editor textarea:focus,.template-list input:focus,.template-toolbar input:focus{outline:2px solid var(--focus-ring);outline-offset:1px;border-color:var(--accent)}
 .composer-actions{display:flex;justify-content:flex-end;gap:8px}
 .composer-actions button{min-height:26px;padding:0 11px;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit;font-size:12px;cursor:pointer}
-.composer-actions .primary{color:#fff;background:var(--accent);border-color:var(--accent)}
+.composer-actions .primary{color:var(--on-accent);background:var(--accent);border-color:var(--accent)}
 .composer-actions .primary:hover{background:var(--accent-hover)}
 .composer-actions button:disabled{opacity:.5;cursor:not-allowed}
 /* 命令模板：左侧列表 + 右侧编辑，充满窗格高度 */

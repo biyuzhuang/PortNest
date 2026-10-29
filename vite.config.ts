@@ -26,7 +26,9 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      //    `design/` only holds design assets and verification tooling; watching
+      //    it made the dev server crash on the tool's short-lived temp files.
+      ignored: ["**/src-tauri/**", "**/design/**", "**/dist/**", "**/.dsh-acl-recovery/**", "**/.*-recovery/**"],
     },
   },
   // 3. @xterm/xterm@6.0.0 的预压缩 ESM 被 esbuild 二次压缩后，会破坏 requestMode

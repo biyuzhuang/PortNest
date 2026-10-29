@@ -1,0 +1,402 @@
+/* =============================================================================
+   Connection form — create / edit asset window.
+
+   Component owner for the compact layout of the asset editor. Surfaces and
+   colours stay in App.css / visual-refresh.css / Surfaces.css / Themes.css;
+   this file only tightens the geometry and reflows the field rows so the whole
+   "常规" tab fits without scrolling wherever the window allows it.
+
+   Loaded last from src/index.tsx (like AssetList.css) so the legacy metrics in
+   App.css can be trimmed without !important. The dialog itself sizes to its
+   content and only caps (and scrolls) when the window is too short.
+   ============================================================================= */
+
+.ssh-config-overlay { padding: var(--space-5); }
+
+.connect-modal-v2 {
+  height: auto;
+  max-height: min(720px, calc(100vh - var(--space-8)));
+}
+
+.connect-modal-v2 .connect-form-card { min-height: 0; }
+
+.connect-modal-header {
+  min-height: 64px;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
+.connect-modal-heading { gap: var(--space-4); }
+
+.connect-modal-protocol-icon {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+  border-radius: 10px;
+}
+
+.connect-modal-protocol-icon svg { width: 20px; height: 20px; }
+
+.connect-modal-kicker {
+  margin-bottom: 0;
+  font-size: 10px;
+}
+
+.connect-modal-heading h2 { font-size: var(--fs-18); }
+
+/* The title already says create/edit; the strapline only pushes the fields
+   down, so it is dropped in the compact layout. */
+.connect-modal-heading p { display: none; }
+
+.connect-modal-v2 .ssh-config-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+}
+
+.connect-protocol-rail {
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+}
+
+.connect-rail-heading { padding: 0 var(--space-2) var(--space-1); }
+.connect-rail-heading small { display: none; }
+
+.connect-protocol-list { gap: var(--space-1); }
+
+.connect-protocol-card {
+  min-height: 44px;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+}
+
+.connect-protocol-card-icon {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-radius: var(--r-sm);
+}
+
+.connect-protocol-card-icon svg { width: 15px; height: 15px; }
+.connect-protocol-card-copy strong { font-size: var(--fs-12); }
+.connect-protocol-card-copy small { font-size: 10px; }
+
+.connect-rail-tip {
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  font-size: 10px;
+}
+
+.connect-form-card { margin: var(--space-4) var(--space-5) 0; }
+
+.connect-form-card .ssh-config-tabs {
+  gap: var(--space-1);
+  margin: var(--space-4) var(--space-5) 0;
+  padding: var(--space-1);
+  border-radius: var(--r-md);
+}
+
+.connect-form-card .ssh-config-tabs button {
+  height: var(--h-row);
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-11);
+}
+
+.connect-form-card .ssh-config-tabs button svg { width: 13px; height: 13px; }
+
+.connect-form-scroll-content {
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.connect-form-section {
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--r-md);
+}
+
+.connect-form-section-head {
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.connect-form-section-icon {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+  border-radius: var(--r-sm);
+}
+
+.connect-form-section-icon svg { width: 14px; height: 14px; }
+
+/* Keep the one-line explanation, but on the title's baseline so it costs no
+   extra row. */
+.connect-form-section-head > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.connect-form-section-head h3 { font-size: var(--fs-12); }
+
+.connect-form-section-head p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.connect-form-grid { gap: var(--space-4) var(--space-5); }
+
+/* Host + port + user share one row for SSH/SFTP so the "连接信息" block costs
+   a single line. Database forms keep the 2-column grid (four fields). */
+@media (min-width: 761px) {
+  .connect-modal-v2 .connect-form-grid.connect-form-grid-3 {
+    grid-template-columns: minmax(0, 1.6fr) minmax(88px, .55fr) minmax(0, 1fr);
+  }
+}
+
+.connect-form-card .ssh-field > span,
+.connect-form-card .ssh-color-field > label {
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2) 1px;
+  font-size: var(--fs-11);
+}
+
+.required-mark { font-size: 10px; }
+
+/* Inputs keep the shared 32px text-control height; the compactness comes from
+   putting more fields on one line, not from shrinking the hit targets. */
+.connect-form-card .ssh-field textarea {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-12);
+}
+
+.connect-modal-v2 .connect-form-card .ssh-field textarea.connect-remark-input {
+  min-height: 40px;
+}
+
+.connect-form-card .ssh-field small {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.connect-form-card .app-select-trigger {
+  height: var(--h-control);
+  min-height: var(--h-control);
+}
+
+.connect-form-card .app-select-value { font-size: var(--fs-12); }
+
+/* Colour tag: label and swatches on one row instead of a label row plus a
+   second swatch row. */
+.connect-form-card .ssh-color-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.connect-form-card .ssh-color-field > label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.connect-form-card .ssh-color-palette {
+  height: 28px;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-sm);
+}
+
+.connect-form-card .ssh-color-palette button:not(.ssh-color-clear) {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  border-radius: var(--r-xs);
+}
+
+.connect-form-card .ssh-auth-options { gap: var(--space-2); }
+
+.connect-form-card .ssh-auth-pill {
+  height: 30px;
+  gap: var(--space-1);
+  padding: 0 var(--space-4);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-11);
+}
+
+.connect-key-select {
+  min-height: var(--h-control);
+  padding: 0 var(--space-4);
+  border-radius: var(--r-sm);
+}
+
+.connect-modal-footer {
+  min-height: 52px;
+  gap: var(--space-5);
+  padding: var(--space-2) var(--space-5);
+}
+
+.connect-cancel-button,
+.connect-save-button {
+  min-height: 30px;
+  padding: 0 var(--space-5);
+  font-size: var(--fs-11);
+}
+
+.connect-test-button {
+  min-height: var(--h-row);
+  padding: 0 var(--space-4);
+  font-size: var(--fs-11);
+}
+
+.connect-status-pill,
+.connect-validation-hint {
+  min-height: 24px;
+  font-size: 10px;
+}
+
+@media (min-width: 761px) {
+  .connect-modal-v2 {
+    width: min(920px, calc(100vw - var(--space-8)));
+  }
+
+  .connect-modal-body { grid-template-columns: 200px minmax(0, 1fr); }
+}
+
+/* Very short windows (e.g. an 800×600 debug window): one denser tier so the
+   general tab still lands above the fold instead of scrolling. */
+@media (max-height: 640px) {
+  .ssh-config-overlay { padding: var(--space-4); }
+
+  .ssh-config-overlay .connect-modal-v2 {
+    max-height: calc(100vh - var(--space-4));
+  }
+
+  .connect-modal-header {
+    min-height: 52px;
+    padding: var(--space-2) var(--space-5);
+  }
+
+  .connect-modal-protocol-icon {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+
+  .connect-modal-protocol-icon svg { width: 17px; height: 17px; }
+  .connect-modal-kicker { display: none; }
+  .connect-modal-heading h2 { font-size: var(--fs-16); }
+
+  .connect-form-card { margin: var(--space-2) var(--space-5) 0; }
+
+  .connect-form-card .ssh-config-tabs {
+    margin: var(--space-3) var(--space-5) 0;
+    padding: 1px;
+  }
+
+  .connect-form-card .ssh-config-tabs button {
+    height: 26px;
+    padding: 0 var(--space-3);
+  }
+
+  .connect-form-scroll-content {
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+  }
+
+  .connect-form-section { padding: var(--space-2) var(--space-4); }
+
+  .connect-form-section-head {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .connect-form-section-icon {
+    width: 20px;
+    height: 20px;
+    flex-basis: 20px;
+  }
+
+  .connect-form-section-icon svg { width: 12px; height: 12px; }
+  .connect-form-section-head h3 { font-size: var(--fs-11); }
+  .connect-form-section-head p { display: none; }
+
+  .connect-form-grid { gap: var(--space-3) var(--space-4); }
+
+  .connect-form-card .ssh-field > span,
+  .connect-form-card .ssh-color-field > label {
+    margin-bottom: 2px;
+    font-size: 10px;
+  }
+
+  .connect-form-card .ssh-field textarea,
+  .connect-modal-v2 .connect-form-card .ssh-field textarea.connect-remark-input {
+    min-height: 34px;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--fs-11);
+  }
+
+  .connect-form-card .ssh-color-palette {
+    height: 26px;
+    padding: 1px var(--space-1);
+  }
+
+  .connect-form-card .ssh-color-palette button:not(.ssh-color-clear) {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    min-height: 16px;
+  }
+
+  .connect-form-card .ssh-auth-pill {
+    height: 28px;
+    padding: 0 var(--space-3);
+    font-size: 10px;
+  }
+
+  .connect-modal-footer {
+    min-height: 44px;
+    padding: var(--space-1) var(--space-4);
+  }
+
+  .connect-cancel-button,
+  .connect-save-button {
+    min-height: 28px;
+    padding: 0 var(--space-4);
+    font-size: 10.5px;
+  }
+
+  .connect-test-button {
+    min-height: 26px;
+    padding: 0 var(--space-3);
+    font-size: 10.5px;
+  }
+
+  .connect-status-pill,
+  .connect-validation-hint {
+    min-height: 22px;
+    font-size: 10px;
+  }
+
+  .connect-protocol-card {
+    min-height: 38px;
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .connect-protocol-card-icon {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+  }
+
+  .connect-protocol-card-copy small { display: none; }
+  .connect-rail-tip { display: none; }
+}

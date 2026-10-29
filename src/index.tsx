@@ -1,4 +1,6 @@
 /* @refresh reload */
+// Design tokens first: every later stylesheet resolves its colours through them.
+import "./styles/tokens.css";
 import { render } from "solid-js/web";
 import App from "./App";
 import { SettingsModal } from "./components/SettingsModal";
@@ -12,6 +14,19 @@ import "./components/AssetList.css";
 import "./components/Surfaces.css";
 // Theme skins layer: owns palettes per data-skin/data-theme and re-introduces gradients.
 import "./components/Themes.css";
+// Application shell: titlebar, rail, session header, status bar.
+import "./styles/shell.css";
+// Asset tree panel: rows, filters, folder counts.
+import "./styles/tree.css";
+// Right dock: SFTP panel, path bar, file rows, transfers.
+import "./styles/panel.css";
+// Form controls and primary-action typography.
+import "./styles/forms.css";
+// Command palette, menus and modal shells.
+import "./styles/overlays.css";
+// Create/edit asset window: compact geometry wins over the legacy App.css
+// metrics, so it is loaded after every other layer.
+import "./components/ConnectionForm.css";
 
 const isSettingsWindow = new URLSearchParams(window.location.search).get("window") === "settings";
 document.addEventListener("contextmenu", event => event.preventDefault(), { capture: true });

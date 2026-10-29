@@ -1,0 +1,118 @@
+/* =============================================================================
+   Forms — one definition for every text control in the app.
+
+   Replaces the legacy universal `input:not(...) / select / textarea` rule that
+   used a (0,3,1) selector and therefore beat every component that tried to
+   style its own field. Controls get a 3:1 boundary (WCAG 1.4.11), a 32px
+   height, a visible focus ring, and the accent colour on focus.
+   ============================================================================= */
+
+/* `.field-flush` is the contract for inputs that sit inside a bordered field
+   wrapper (.asset-search, .folder-name-input): the wrapper owns the surface,
+   the boundary and the focus ring, so the input must not paint a second set of
+   borders / background / outline inside it. */
+input:not(.field-flush):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+select,
+textarea {
+  min-height: var(--h-control);
+  padding: 0 var(--space-4);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-13);
+  transition: border-color var(--dur-hover) ease, box-shadow var(--dur-hover) ease;
+}
+
+textarea {
+  min-height: 72px;
+  padding: var(--space-3) var(--space-4);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+select {
+  padding-right: var(--space-2);
+  cursor: pointer;
+}
+
+input:not(.field-flush):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"])::placeholder,
+textarea::placeholder {
+  color: var(--text-3);
+}
+
+input:not(.field-flush):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--line-control) 70%, var(--text-2));
+}
+
+input:not(.field-flush):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+input:not(.field-flush):disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  cursor: not-allowed;
+  opacity: .8;
+}
+
+/* Compact variants used inside dense chrome keep their own height, but never
+   lose the 3:1 boundary. */
+.path-input,
+.file-filter-input {
+  min-height: 0;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+}
+
+.path-input { height: 28px; font-size: 11.5px; }
+.file-filter-input { height: 24px; padding: 0 var(--space-2); font-size: 11px; }
+
+.path-input:focus,
+.file-filter-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* checkboxes / radios / ranges */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* Primary action: the label colour must follow the skin, not be hard-wired to
+   white — light accents on dark skins need dark ink to stay above 4.5:1. */
+.primary-btn,
+.btn-save,
+.asset-empty button,
+.settings-footer-primary,
+.settings-footer button,
+.connect-save-button.primary,
+.ssh-key-manage-button,
+.session-transfer-primary,
+.ai-save-button,
+.ai-send-button,
+.ai-composer-footer button,
+.composer-send.primary,
+button.primary,
+.mysql-panel-actions .primary,
+.mysql-dialog footer button.primary,
+.ssh-tunnel-add,
+.key-import-footer .save,
+.ai-tool-approve,
+.tunnel-runtime-row button {
+  color: var(--on-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input, select, textarea { transition: none; }
+}

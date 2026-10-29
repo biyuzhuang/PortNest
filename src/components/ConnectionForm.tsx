@@ -446,7 +446,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       <span class="connect-form-section-icon connection"><Icon name="terminal" size={15} /></span>
                       <div><h3>连接信息</h3><p>{isDatabase() ? "填写数据库服务器地址和默认数据库" : "填写远程主机地址和登录用户"}</p></div>
                     </header>
-                    <div class="connect-form-grid">
+                    <div class={`connect-form-grid ${isDatabase() ? "" : "connect-form-grid-3"}`}>
                       <label class={`ssh-field ${fieldInvalid("host", !host().trim()) ? "invalid" : ""}`}>
                         <span>主机地址<span class="required-mark">*</span></span>
                         <input value={host()} placeholder={isDatabase() ? "例如：db.example.com" : "例如：192.168.1.10"} onInput={event => setHost(event.currentTarget.value)} onBlur={() => markTouched("host")} />
@@ -480,7 +480,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     </header>
                     <div class="connect-form-grid">
                       <Show when={protocol() === "ssh"}>
-                        <div class="ssh-field connect-field-full">
+                        <div class={`ssh-field ${authType() === "password" ? "" : "connect-field-full"}`}>
                           <span>认证方式</span>
                           <div class="ssh-auth-options connect-auth-options">
                             {authButton("password", "密码")}
@@ -491,7 +491,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       </Show>
 
                       <Show when={authType() === "password"}>
-                        <label class={`ssh-field connect-field-full ${fieldInvalid("password", protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id) ? "invalid" : ""}`}>
+                        <label class={`ssh-field ${isDatabase() ? "connect-field-full" : ""} ${fieldInvalid("password", protocol() === "ssh" && authType() === "password" && !password() && !props.connection?.id) ? "invalid" : ""}`}>
                           <span>密码{protocol() === "ssh" && <span class="required-mark">*</span>}</span>
                           <div class="ssh-secret-input connect-password-input">
                             <input
@@ -510,7 +510,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       </Show>
 
                       <Show when={protocol() === "ssh" && authType() === "key"}>
-                        <div class="ssh-field connect-field-full ssh-key-field">
+                        <div class="ssh-field ssh-key-field">
                           <span>私钥<span class="required-mark">*</span></span>
                           <button type="button" class="ssh-key-select connect-key-select" onClick={() => setShowKeyPicker(true)}>
                             <span class="connect-key-select-copy">
@@ -520,7 +520,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                             <Icon name="settings" size={15} />
                           </button>
                         </div>
-                        <label class="ssh-field connect-field-full">
+                        <label class="ssh-field">
                           <span>私钥密码</span>
                           <input type="password" value={passphrase()} placeholder="如果私钥有口令，请填写" onInput={event => setPassphrase(event.currentTarget.value)} />
                         </label>

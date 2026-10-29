@@ -1,0 +1,676 @@
+/* =============================================================================
+   Overlays — command palette, menus, modal shells and dialogs.
+
+   One definition per surface. The legacy layers that used to style these
+   (App.css / visual-refresh / Surfaces / Themes) have had their rules removed
+   for the selectors listed here.
+   ============================================================================= */
+
+/* ---------- command palette ------------------------------------------------ */
+
+.quick-switcher-overlay {
+  position: fixed;
+  z-index: calc(var(--z-modal) + 20);
+  inset: var(--h-titlebar) 0 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: color-mix(in srgb, var(--surface-shell) 52%, var(--scrim));
+  backdrop-filter: blur(10px);
+}
+
+.quick-switcher {
+  display: flex;
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(440px, calc(100vh - 160px));
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+}
+
+.quick-switcher > input {
+  order: 0;
+  width: 100%;
+  height: 46px;
+  min-height: 0;
+  flex: 0 0 46px;
+  padding: 0 var(--space-6);
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  font-size: var(--fs-14);
+}
+
+.quick-switcher > input::placeholder { color: var(--text-3); }
+
+.quick-switcher > input:focus {
+  outline: none;
+  box-shadow: none;
+  border-bottom-color: var(--accent);
+}
+
+.quick-switcher-results {
+  order: 1;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.quick-switcher-results button {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-hover) ease;
+}
+
+.quick-switcher-results button:hover,
+.quick-switcher-results button:first-child {
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.quick-switcher-results button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.quick-switcher-results button > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.quick-switcher-results strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-switcher-results small {
+  overflow: hidden;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-switcher-results em {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.quick-switcher-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-6);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.quick-switcher-empty svg { color: var(--text-3); }
+.quick-switcher-empty p { margin: 0; color: var(--text-2); font-size: var(--fs-13); }
+.quick-switcher-empty small { color: var(--text-3); font-size: var(--fs-11); }
+
+.quick-switcher footer {
+  order: 2;
+  display: flex;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+}
+
+.quick-switcher kbd {
+  padding: 1px 5px;
+  color: var(--text-2);
+  background: var(--surface-base);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font: 500 10px/1.6 var(--font-ui);
+}
+
+/* ---------- modal shells --------------------------------------------------- */
+
+.modal-overlay {
+  position: fixed;
+  z-index: var(--z-modal);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+  background: color-mix(in srgb, var(--surface-shell) 28%, var(--scrim));
+  backdrop-filter: blur(8px);
+}
+
+.modal-overlay.close-confirm-overlay {
+  z-index: calc(var(--z-modal) + 10);
+  background: color-mix(in srgb, var(--surface-shell) 28%, var(--scrim));
+}
+
+.modal-content,
+.feedback-dialog,
+.folder-create-dialog,
+.close-confirm-dialog,
+.key-picker-modal,
+.key-name-modal,
+.remote-editor-dialog {
+  color: var(--text-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+}
+
+.modal-content {
+  min-width: 320px;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: var(--space-7);
+}
+
+.modal-content h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-20);
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.modal-content h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-16);
+  font-weight: 600;
+}
+
+.modal-content p { color: var(--text-2); font-size: var(--fs-13); }
+
+/* feedback (confirm / prompt / alert) */
+.feedback-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: var(--space-6) var(--space-7);
+}
+
+.feedback-dialog h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-16);
+  font-weight: 650;
+}
+
+.feedback-dialog p {
+  margin: 0 0 var(--space-5);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.feedback-dialog input {
+  width: 100%;
+  margin-bottom: var(--space-5);
+}
+
+.feedback-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* generic dialog buttons */
+.btn-cancel {
+  height: var(--h-control);
+  min-height: 0;
+  padding: 0 var(--space-5);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.btn-cancel:hover { background: var(--surface-hover); }
+
+.btn-cancel:focus-visible,
+.btn-save:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* close-confirm */
+.close-confirm-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+.close-confirm-title {
+  margin: 0 0 var(--space-3);
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  font-weight: 650;
+}
+
+.close-confirm-body {
+  padding: var(--space-5);
+  color: var(--text-2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+
+.close-confirm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+}
+
+.close-confirm-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.close-confirm-remember input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.close-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.close-confirm-action {
+  height: 30px;
+  min-height: 0;
+  padding: 0 var(--space-4);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.close-confirm-action:hover { background: var(--surface-hover); }
+.close-confirm-exit { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line-control)); }
+.close-confirm-exit:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.close-confirm-fold { color: var(--accent); border-color: var(--accent-line); }
+.close-confirm-fold:hover { background: var(--accent-soft); }
+
+.close-confirm-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* folder creation */
+.folder-create-dialog {
+  width: min(520px, calc(100vw - 40px));
+  overflow: hidden;
+}
+
+.folder-create-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.folder-create-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--r-md);
+}
+
+.folder-create-heading { min-width: 0; flex: 1; }
+.folder-create-heading > span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .06em;
+}
+
+.folder-create-heading h3 {
+  margin: 0 0 2px;
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  font-weight: 650;
+}
+
+.folder-create-heading p { margin: 0; color: var(--text-3); font-size: var(--fs-12); }
+
+.folder-create-close {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  place-items: center;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.folder-create-close:hover { color: var(--text-1); background: var(--surface-hover); }
+
+.folder-create-body { padding: var(--space-5) var(--space-6); }
+
+.folder-location-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.folder-location-icon { color: var(--text-3); }
+.folder-location-card small { display: block; color: var(--text-3); font-size: 10.5px; }
+.folder-location-card strong { color: var(--text-1); font-size: var(--fs-12); font-weight: 550; }
+
+.folder-name-field { display: block; }
+.folder-name-field > span { display: block; margin-bottom: 5px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+
+.folder-name-input {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+}
+
+.folder-name-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.folder-name-input svg { color: var(--text-3); flex: 0 0 auto; }
+
+.folder-name-input input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  font-size: var(--fs-13);
+}
+
+.folder-name-input input::placeholder { color: var(--text-3); }
+
+.folder-name-input input:focus { outline: none; box-shadow: none; }
+
+.folder-name-clear {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+}
+
+.folder-name-clear:hover { color: var(--text-1); background: var(--surface-hover); }
+
+.folder-name-field.invalid .folder-name-input { border-color: var(--danger); }
+.folder-name-field.invalid .folder-name-input:focus-within {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.folder-name-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.folder-name-field.invalid .folder-name-message { color: var(--danger); }
+.folder-name-count { font-variant-numeric: tabular-nums; }
+
+.folder-create-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  background: var(--surface-base);
+  border-top: 1px solid var(--line);
+}
+
+.folder-dialog-hint { color: var(--text-3); font-size: 10.5px; }
+.folder-dialog-hint kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface-sunken);
+  font: 500 10px/1.6 var(--font-ui);
+}
+
+.folder-create-actions { display: flex; gap: var(--space-2); margin-left: auto; }
+
+/* ---------- menus ---------------------------------------------------------- */
+
+.app-menu-dropdown,
+.tab-context-menu,
+.context-menu,
+.file-options-menu {
+  color: var(--text-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+
+/* Anchoring for the menus that are positioned at the pointer. Their surfaces
+   come from the rule above; this block only carries geometry. */
+.context-menu,
+.tab-context-menu {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  min-width: 160px;
+}
+.tab-context-menu { min-width: 140px; }
+.tab-context-menu-overlay {
+  position: fixed;
+  z-index: calc(var(--z-dropdown) - 1);
+  inset: 0;
+}
+.context-menu-item.has-submenu { position: relative; padding-right: 28px; }
+.context-menu-item.has-submenu > .context-submenu {
+  position: absolute;
+  top: -4px;
+  left: 100%;
+  display: none;
+}
+.context-menu-item.has-submenu:hover > .context-submenu,
+.context-menu-item.has-submenu:focus-within > .context-submenu { display: block; }
+.submenu-arrow {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+}
+
+.app-menu-container {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-menu-dropdown {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 6px);
+  right: 0;
+  width: 224px;
+  padding: var(--space-1);
+}
+
+.app-menu-item {
+  display: flex;
+  width: 100%;
+  height: 30px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-2);
+  color: var(--text-1);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-hover) ease;
+}
+
+.app-menu-item:hover { background: var(--surface-hover); }
+.app-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.app-menu-icon {
+  display: inline-grid;
+  width: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.app-menu-label { flex: 1; }
+
+.app-menu-shortcut {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-menu-divider {
+  height: 1px;
+  margin: var(--space-1) var(--space-1);
+  background: var(--line);
+}
+
+.app-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-dropdown) - 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-switcher-overlay { backdrop-filter: none; }
+}
+
+/* close-confirm variant colours that were never styled */
+.close-confirm-cancel {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--line-control));
+}
+
+.close-confirm-cancel:hover {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
+/* secondary action inside the SSH key manager */
+.import-secondary {
+  height: var(--h-control);
+  min-height: 0;
+  padding: 0 var(--space-5);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.import-secondary:hover { background: var(--surface-hover); }
+
+.import-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* row wrapper inside the file table */
+.file-body { display: block; }
+/* Connect form: the card is the single scroll container, so tunnel fields can
+   never be clipped by a nested flex/grid min-size. */
+.connect-form-card {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.connect-form-card > .connect-form-scroll-content,
+.connect-form-card > .ssh-tunnel-panel,
+.connect-form-card > .ssh-tab-panel {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+}
+.connect-form-card .ssh-field textarea.connect-remark-input { min-height: 62px; }

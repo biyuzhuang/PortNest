@@ -1,0 +1,1617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>PortNest — UI 设计提案</title>
+<style>
+/* ============================================================
+   PortNest UI proposal — static mockup
+   Nothing here is wired into the app. Tokens below are the ones
+   specified in DESIGN-SPEC.md and verified by tools/contrast.py.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+               "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  background: #16151d;
+  color: #cfcbe0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 0 40px;
+  min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- preview toolbar (not part of the product) ---------- */
+.preview-bar {
+  display: flex; align-items: center; gap: 18px;
+  width: 1460px; padding: 8px 12px;
+  background: #1f1e29; border: 1px solid #2e2c3c; border-radius: 10px;
+  font-size: 12px; color: #a7a2bd; flex-wrap: wrap;
+}
+.preview-bar .pv-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #ebe8f7; }
+.preview-bar .pv-brand i {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px;
+  background: linear-gradient(135deg, #7c6cff, #5b5ff0); color: #fff; font-style: normal;
+  font-size: 11px; font-weight: 800;
+}
+.preview-bar .pv-note { color: #726d8a; }
+.seg { display: flex; padding: 2px; background: #16151d; border-radius: 7px; border: 1px solid #2e2c3c; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: #a7a2bd;
+  font: inherit; font-size: 12px; padding: 5px 11px; border-radius: 5px; cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.seg button:hover { color: #ebe8f7; }
+.seg button[aria-pressed="true"] { background: #34314a; color: #fff; }
+.pv-group { display: flex; align-items: center; gap: 7px; }
+.pv-group > span { color: #726d8a; }
+select.pv-select {
+  appearance: none; background: #16151d; color: #d7d3e8; border: 1px solid #2e2c3c;
+  border-radius: 6px; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.pv-switch {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+}
+.pv-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.pv-switch .track {
+  width: 30px; height: 17px; border-radius: 999px; background: #34314a; position: relative;
+  transition: background .16s ease;
+}
+.pv-switch .track::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px;
+  border-radius: 50%; background: #b8b2d0; transition: transform .16s ease, background .16s ease;
+}
+.pv-switch input:checked + .track { background: #5b5ff0; }
+.pv-switch input:checked + .track::after { transform: translateX(13px); background: #fff; }
+.pv-switch input:focus-visible + .track { outline: 2px solid #9d8cff; outline-offset: 2px; }
+
+/* ============================================================
+   Design tokens — skin × mode
+   ============================================================ */
+
+.window {
+  /* component tokens (skin-independent) */
+  --h-titlebar: 36px;
+  --h-header: 36px;
+  --h-row: 28px;
+  --h-control: 32px;
+  --h-tab: 32px;
+  --h-status: 26px;
+  --w-rail: 54px;
+  --w-tree: 264px;
+  --w-panel: 352px;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+             "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+
+  --shadow-menu: 0 12px 32px rgba(16, 14, 32, .16), 0 2px 6px rgba(16, 14, 32, .06);
+  --shadow-overlay: 0 32px 80px rgba(16, 14, 32, .28), 0 4px 14px rgba(16, 14, 32, .1);
+
+  position: relative;
+  width: 1460px; height: 900px;
+  display: flex; flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  color: var(--text-1);
+  background: var(--surface-shell);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .06);
+  isolation: isolate;
+}
+
+/* ---- aurora ---- */
+.window[data-skin="aurora"][data-theme="light"] {
+  --surface-shell: #f3f2fa; --surface-base: #ffffff; --surface-raised: #ffffff;
+  --surface-sunken: #f7f6fc; --surface-selected: #ece9fd; --surface-hover: #f4f2fd;
+  --text-1: #16152a; --text-2: #5a5c72; --text-3: #65677a;
+  --accent: #5a4be0; --on-accent: #ffffff; --accent-soft: #eeebff; --accent-line: #d9d2fb;
+  --line: #d8d5e9; --line-strong: #c7c1e0; --line-control: #87829d;
+  --success: #0f7a4f; --warning: #9a5b00; --danger: #c22f38; --info: #1a6bb5;
+  --brand: linear-gradient(135deg, #6d5efc, #5b5ff0);
+}
+.window[data-skin="aurora"][data-theme="dark"] {
+  --surface-shell: #0a0912; --surface-base: #12101c; --surface-raised: #191627;
+  --surface-sunken: #07060c; --surface-selected: #241f3d; --surface-hover: #1d1a2c;
+  --text-1: #edecf7; --text-2: #b3aec8; --text-3: #948fa9;
+  --accent: #a99bff; --on-accent: #12101c; --accent-soft: #221d3b; --accent-line: #382f5e;
+  --line: #342d48; --line-strong: #41385e; --line-control: #70698b;
+  --success: #4fd6a0; --warning: #e6b45c; --danger: #ff8b93; --info: #79b8ff;
+  --brand: linear-gradient(135deg, #8f80ff, #6f6bff);
+}
+/* ---- mist ---- */
+.window[data-skin="mist"][data-theme="light"] {
+  --surface-shell: #eef1f6; --surface-base: #ffffff; --surface-raised: #ffffff;
+  --surface-sunken: #f6f8fb; --surface-selected: #e6effb; --surface-hover: #f2f6fb;
+  --text-1: #141c26; --text-2: #4e5c6e; --text-3: #5f6c7d;
+  --accent: #1a63b4; --on-accent: #ffffff; --accent-soft: #e8f1fc; --accent-line: #cfe1f6;
+  --line: #d2dbe8; --line-strong: #bbc9da; --line-control: #7c8998;
+  --success: #0b6b46; --warning: #8a5405; --danger: #bb2f33; --info: #15619f;
+  --brand: linear-gradient(135deg, #2f7dd1, #1a63b4);
+}
+.window[data-skin="mist"][data-theme="dark"] {
+  --surface-shell: #0a1017; --surface-base: #121a24; --surface-raised: #18212c;
+  --surface-sunken: #070c12; --surface-selected: #1e2c3c; --surface-hover: #172230;
+  --text-1: #e9eef6; --text-2: #aab6c6; --text-3: #8d9aac;
+  --accent: #7ab3ff; --on-accent: #0a1017; --accent-soft: #1b2a3c; --accent-line: #2b4460;
+  --line: #2a3948; --line-strong: #364658; --line-control: #677788;
+  --success: #4ed3a4; --warning: #e8b463; --danger: #ff8f8f; --info: #7cbaff;
+  --brand: linear-gradient(135deg, #5aa2ff, #3d7fe8);
+}
+/* ---- ember ---- */
+.window[data-skin="ember"][data-theme="light"] {
+  --surface-shell: #f8f2ea; --surface-base: #fffdfa; --surface-raised: #fffdfa;
+  --surface-sunken: #faf5ee; --surface-selected: #f8e9df; --surface-hover: #fbf2e9;
+  --text-1: #221a14; --text-2: #5c4e42; --text-3: #726355;
+  --accent: #a8482a; --on-accent: #ffffff; --accent-soft: #fbeadf; --accent-line: #eed6c3;
+  --line: #e5d5c5; --line-strong: #d6c2aa; --line-control: #928474;
+  --success: #3f6b32; --warning: #8a5a0c; --danger: #a93330; --info: #2a5d8a;
+  --brand: linear-gradient(135deg, #c25e3a, #a8482a);
+}
+.window[data-skin="ember"][data-theme="dark"] {
+  --surface-shell: #120e0b; --surface-base: #1a1512; --surface-raised: #231c17;
+  --surface-sunken: #0c0908; --surface-selected: #33241c; --surface-hover: #241d18;
+  --text-1: #f5ece4; --text-2: #c5b2a3; --text-3: #a6917f;
+  --accent: #ff9d78; --on-accent: #1a1512; --accent-soft: #2e2119; --accent-line: #4a3325;
+  --line: #3e332a; --line-strong: #4d3f33; --line-control: #7f6e60;
+  --success: #7fd49b; --warning: #e9b45f; --danger: #ff9186; --info: #8ec2ef;
+  --brand: linear-gradient(135deg, #ff9d78, #e0734f);
+}
+/* ---- midnight ---- */
+.window[data-skin="midnight"][data-theme="light"] {
+  --surface-shell: #eaf2f1; --surface-base: #fcffff; --surface-raised: #fcffff;
+  --surface-sunken: #f4faf9; --surface-selected: #dcefec; --surface-hover: #eff8f7;
+  --text-1: #0f2226; --text-2: #47605f; --text-3: #586b6a;
+  --accent: #0a6f6f; --on-accent: #ffffff; --accent-soft: #e2f4f1; --accent-line: #c3e5e0;
+  --line: #c5dcd9; --line-strong: #a8cbc6; --line-control: #6e8c88;
+  --success: #0b6b4f; --warning: #8a5a0c; --danger: #a83232; --info: #1a5f8a;
+  --brand: linear-gradient(135deg, #128f8f, #0a6f6f);
+}
+.window[data-skin="midnight"][data-theme="dark"] {
+  --surface-shell: #05100f; --surface-base: #0c1a1b; --surface-raised: #122425;
+  --surface-sunken: #040b0a; --surface-selected: #173433; --surface-hover: #102222;
+  --text-1: #e2f6f2; --text-2: #a4c3bf; --text-3: #88a8a4;
+  --accent: #4fe0c8; --on-accent: #05100f; --accent-soft: #12302e; --accent-line: #1f4a46;
+  --line: #224143; --line-strong: #2d4d50; --line-control: #607f80;
+  --success: #5fdfb0; --warning: #ecc06d; --danger: #ff9a9a; --info: #7ec8de;
+  --brand: linear-gradient(135deg, #2dd4bf, #14a89a);
+}
+
+/* terminal plane: follows the theme unless the dark-terminal switch is on */
+.window {
+  --term-bg: var(--surface-sunken);
+  --term-fg: var(--text-1);
+  --term-dim: var(--text-3);
+  --term-green: var(--success);
+  --term-blue: var(--accent);
+  --term-amber: var(--warning);
+  --term-red: var(--danger);
+  --term-selection: color-mix(in srgb, var(--accent) 22%, transparent);
+  --term-cursor: var(--accent);
+}
+.window[data-term="dark"] {
+  --term-bg: #0e1116;
+  --term-fg: #dfe3ec;
+  --term-dim: #7d8697;
+  --term-green: #56d364;
+  --term-blue: #6cb6ff;
+  --term-amber: #e3b341;
+  --term-red: #ff7b72;
+  --term-selection: rgba(110, 133, 183, .35);
+  --term-cursor: #9db8ff;
+}
+
+/* ============================================================
+   Shell
+   ============================================================ */
+
+.titlebar {
+  display: flex; align-items: center; gap: 10px;
+  height: var(--h-titlebar); flex: 0 0 var(--h-titlebar);
+  padding: 0 0 0 10px;
+  background: var(--surface-shell);
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+.brand { display: flex; align-items: center; gap: 7px; font-size: var(--fs-13); font-weight: 650; letter-spacing: -.01em; }
+.brand i {
+  display: grid; place-items: center; width: 19px; height: 19px; border-radius: 5px;
+  background: var(--brand); color: #fff; font-style: normal; font-size: 11px; font-weight: 800;
+  box-shadow: 0 1px 3px rgba(20, 16, 50, .18);
+}
+.titlebar .divider-v { width: 1px; height: 15px; background: var(--line); }
+.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: var(--fs-12); }
+.crumb svg { color: var(--accent); flex: 0 0 auto; }
+.crumb b { color: var(--text-1); font-weight: 550; }
+.crumb .host { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); }
+.titlebar .spacer { flex: 1; }
+
+.search-pill {
+  display: flex; align-items: center; gap: 7px;
+  height: 26px; padding: 0 8px 0 9px;
+  color: var(--text-3); background: var(--surface-base);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  font-size: var(--fs-12); cursor: text;
+  -webkit-app-region: no-drag;
+}
+.search-pill svg { flex: 0 0 auto; }
+.search-pill kbd {
+  margin-left: 12px; padding: 1px 5px; border-radius: var(--r-xs);
+  background: var(--surface-sunken); border: 1px solid var(--line);
+  color: var(--text-3); font: 500 10px/1.5 var(--font-ui);
+}
+.conn-state { display: flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--text-2); }
+.led { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent); }
+.led.warn { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 16%, transparent); }
+
+.win-ctrl { display: flex; align-items: center; gap: 1px; padding-right: 5px; -webkit-app-region: no-drag; }
+.icon-btn {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  color: var(--text-2); background: transparent; border: 0; border-radius: var(--r-sm);
+  cursor: pointer; transition: background .13s ease, color .13s ease;
+}
+.icon-btn:hover { color: var(--text-1); background: var(--surface-hover); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.win-ctrl .icon-btn { width: 34px; height: 30px; border-radius: var(--r-sm); }
+.win-ctrl .close:hover { background: #c42b1c; color: #fff; }
+
+.body { display: flex; flex: 1; min-height: 0; }
+
+/* ---------- icon rail ---------- */
+.rail {
+  width: var(--w-rail); flex: 0 0 var(--w-rail);
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; padding: 8px 0;
+  background: var(--surface-shell);
+  border-right: 1px solid var(--line);
+}
+.rail-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  width: 46px; height: 46px; padding: 0;
+  color: var(--text-3); background: transparent; border: 0; border-radius: var(--r-md);
+  font-size: 11px; font-weight: 500; line-height: 1.15; letter-spacing: 0;
+  white-space: nowrap; cursor: pointer; transition: color .13s ease, background .13s ease;
+}
+.rail-btn svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.rail-btn:hover { color: var(--text-1); background: var(--surface-hover); }
+.rail-btn[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+.rail-btn[aria-current="page"]::before {
+  content: ""; position: absolute; left: -4px; top: 12px; bottom: 12px; width: 2px;
+  border-radius: 0 2px 2px 0; background: var(--accent);
+}
+.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rail .grow { flex: 1; }
+.rail .rule { width: 22px; height: 1px; margin: 6px 0; background: var(--line); }
+
+/* ---------- asset tree ---------- */
+.tree {
+  width: var(--w-tree); flex: 0 0 var(--w-tree);
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface-base);
+  border-right: 1px solid var(--line);
+}
+.pane-head {
+  display: flex; align-items: center; gap: 6px;
+  height: var(--h-header); flex: 0 0 var(--h-header);
+  padding: 0 8px 0 12px;
+}
+.pane-head h2 { margin: 0; font-size: var(--fs-12); font-weight: 650; letter-spacing: .02em; color: var(--text-1); }
+.count-chip {
+  min-width: 17px; height: 16px; padding: 0 5px; border-radius: var(--r-full);
+  display: inline-grid; place-items: center;
+  color: var(--text-3); background: var(--surface-sunken); border: 1px solid var(--line);
+  font-size: 10.5px; font-weight: 600;
+}
+.pane-head .actions { display: flex; margin-left: auto; gap: 1px; }
+.pane-head .actions .icon-btn { width: 26px; height: 26px; }
+
+.tree-search { padding: 0 10px 8px; }
+.field {
+  display: flex; align-items: center; gap: 7px;
+  height: 30px; padding: 0 9px;
+  background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--r-sm);
+  color: var(--text-3); font-size: var(--fs-12);
+}
+.field svg { flex: 0 0 auto; }
+.field input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: var(--text-1); font: inherit; font-size: var(--fs-12);
+}
+.field input::placeholder { color: var(--text-3); }
+.field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+
+.filters { display: flex; gap: 3px; padding: 0 10px 8px; }
+.chip {
+  height: 24px; padding: 0 9px; border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-3); font: inherit; font-size: 11.5px; font-weight: 500;
+  cursor: pointer; transition: color .13s ease, background .13s ease;
+}
+.chip:hover { color: var(--text-1); background: var(--surface-hover); }
+.chip[aria-pressed="true"] { color: var(--text-1); background: var(--surface-selected); border-color: var(--accent-line); }
+
+.tree-body { flex: 1; overflow: auto; padding: 2px 8px 10px; }
+.group-row {
+  display: flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 6px; margin-top: 6px;
+  color: var(--text-3); font-size: 10.5px; font-weight: 650; letter-spacing: .06em;
+}
+.group-row .rule { flex: 1; height: 1px; background: var(--line); }
+
+.row {
+  display: flex; align-items: center; gap: 8px;
+  height: var(--h-row); padding: 0 8px;
+  border-radius: var(--r-sm); color: var(--text-1); font-size: 12.5px;
+  cursor: pointer; user-select: none;
+  transition: background .12s ease;
+}
+.row:hover { background: var(--surface-hover); }
+.row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.row svg { color: var(--text-3); flex: 0 0 auto; }
+.row.folder { color: var(--text-2); }
+.row.folder svg { color: var(--text-3); }
+.row.sel { background: var(--surface-selected); color: var(--text-1); font-weight: 550; box-shadow: inset 2px 0 0 var(--accent); }
+.row.sel .name { color: var(--accent); }
+.row.sel svg { color: var(--accent); }
+.row .chev { transition: transform .14s ease; }
+.row.open .chev { transform: rotate(90deg); }
+.row .dot-live { width: 5px; height: 5px; border-radius: 50%; background: var(--success); flex: 0 0 auto; }
+.indent { padding-left: 22px; }
+.indent-2 { padding-left: 38px; }
+
+/* ---------- main column ---------- */
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface-base); }
+
+.session-head {
+  display: flex; align-items: center; gap: 4px;
+  height: var(--h-header); flex: 0 0 var(--h-header);
+  padding: 0 6px 0 8px;
+  background: var(--surface-base);
+  border-bottom: 1px solid var(--line);
+}
+.tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow: hidden; }
+.tab {
+  position: relative;
+  display: flex; align-items: center; gap: 7px;
+  height: var(--h-tab); max-width: 208px; padding: 0 7px 0 9px;
+  border: 0; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent; color: var(--text-2);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.tab:hover { color: var(--text-1); background: var(--surface-hover); }
+.tab svg { flex: 0 0 auto; color: var(--text-3); }
+.tab .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .x {
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: var(--r-xs);
+  color: var(--text-3); opacity: 0; transition: opacity .12s ease, background .12s ease;
+}
+.tab:hover .x, .tab[aria-selected="true"] .x { opacity: 1; }
+.tab .x:hover { background: color-mix(in srgb, var(--text-1) 10%, transparent); color: var(--text-1); }
+.tab[aria-selected="true"] {
+  color: var(--text-1); font-weight: 550; background: var(--surface-base);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.tab[aria-selected="true"] svg { color: var(--accent); }
+.tab .pin { color: var(--text-3); }
+.tab .idx {
+  min-width: 15px; height: 15px; padding: 0 4px; border-radius: var(--r-full);
+  display: inline-grid; place-items: center;
+  background: var(--surface-sunken); color: var(--text-3);
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.session-head .divider-v { width: 1px; height: 16px; background: var(--line); margin: 0 4px; }
+.session-head .right { display: flex; align-items: center; gap: 1px; margin-left: auto; }
+.enc {
+  height: 22px; padding: 0 7px; display: inline-flex; align-items: center; gap: 5px;
+  border-radius: var(--r-xs); color: var(--text-3); font-size: 11px; font-family: var(--font-mono);
+  cursor: pointer;
+}
+.enc:hover { background: var(--surface-hover); color: var(--text-1); }
+
+/* ---------- terminal ---------- */
+.terminal {
+  position: relative; flex: 1; min-height: 0; overflow: hidden;
+  background: var(--term-bg);
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.term-scroll { height: 100%; overflow: auto; padding: 12px 16px 16px; }
+.term {
+  margin: 0; color: var(--term-fg);
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.62;
+  font-variant-ligatures: none; white-space: pre-wrap; word-break: break-word;
+  letter-spacing: .002em;
+}
+.term .g { color: var(--term-green); }
+.term .b { color: var(--term-blue); }
+.term .d { color: var(--term-dim); }
+.term .w { color: var(--term-amber); }
+.term .r { color: var(--term-red); }
+.term .u { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--term-blue) 60%, transparent); }
+.cursor {
+  display: inline-block; width: 7px; height: 15px; margin-left: 1px; vertical-align: -2px;
+  background: var(--term-cursor); border-radius: 1px;
+  animation: blink 1.1s steps(1, end) infinite;
+}
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+.term-badge {
+  position: absolute; right: 12px; bottom: 10px;
+  display: flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 9px;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface-base) 82%, transparent);
+  border: 1px solid var(--line);
+  color: var(--text-3); font-size: 10.5px; font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(8px);
+}
+.term-badge b { color: var(--text-2); font-weight: 600; }
+
+/* ---------- file panel ---------- */
+.panel {
+  width: var(--w-panel); flex: 0 0 var(--w-panel);
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--surface-base);
+  border-left: 1px solid var(--line);
+}
+.path-bar { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; height: var(--h-header); flex: 0 0 var(--h-header); }
+.path {
+  flex: 1; min-width: 0; display: flex; align-items: center;
+  height: 26px; padding: 0 8px;
+  background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--r-sm);
+  color: var(--text-2); font-family: var(--font-mono); font-size: 11.5px;
+  overflow: hidden; white-space: nowrap;
+}
+.path b { color: var(--text-1); font-weight: 500; }
+.path .seg-mute { color: var(--text-3); }
+
+.col-head {
+  display: grid; grid-template-columns: 1fr 74px 96px;
+  align-items: center; gap: 8px;
+  height: 26px; flex: 0 0 26px; padding: 0 12px 0 14px;
+  background: var(--surface-shell);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3); font-size: 10.5px; font-weight: 650; letter-spacing: .04em;
+}
+.col-head .r { text-align: right; }
+
+.files { flex: 1; overflow: auto; padding: 3px 6px; }
+.frow {
+  display: grid; grid-template-columns: 16px 1fr 74px 96px;
+  align-items: center; gap: 8px;
+  height: var(--h-row); padding: 0 8px;
+  border-radius: var(--r-sm); color: var(--text-1); font-size: 12.5px;
+  cursor: pointer; transition: background .12s ease;
+}
+.frow:hover { background: var(--surface-hover); }
+.frow.sel { background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--accent); }
+.frow svg { color: var(--text-3); }
+.frow .folder-ico { color: var(--text-3); }
+.frow.sel .folder-ico { color: var(--accent); }
+.frow .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .s, .frow .t { color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
+.frow.up .n { color: var(--text-2); }
+
+.panel-foot {
+  display: flex; align-items: center; gap: 8px;
+  height: 30px; flex: 0 0 30px; padding: 0 10px 0 14px;
+  border-top: 1px solid var(--line);
+  color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.transfer { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--text-2); }
+.bar { width: 56px; height: 3px; border-radius: var(--r-full); background: var(--surface-selected); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 62%; background: var(--accent); border-radius: inherit; }
+
+/* ---------- status bar ---------- */
+.statusbar {
+  display: flex; align-items: center; gap: 14px;
+  height: var(--h-status); flex: 0 0 var(--h-status);
+  padding: 0 12px;
+  background: var(--surface-shell); border-top: 1px solid var(--line);
+  color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.statusbar .item { display: flex; align-items: center; gap: 6px; }
+.statusbar .spacer { flex: 1; }
+.statusbar b { color: var(--text-2); font-weight: 550; }
+.statusbar .mono { font-family: var(--font-mono); font-size: 10.5px; }
+
+/* ============================================================
+   Generic pieces used by the other views
+   ============================================================ */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--h-control); padding: 0 12px;
+  border-radius: var(--r-sm); border: 1px solid transparent;
+  background: transparent; color: var(--text-1);
+  font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer;
+  transition: background .13s ease, border-color .13s ease, color .13s ease;
+}
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.secondary { background: var(--surface-base); border-color: var(--line-control); color: var(--text-1); }
+.btn.secondary:hover { background: var(--surface-hover); }
+.btn.ghost { color: var(--text-2); }
+.btn.ghost:hover { background: var(--surface-hover); color: var(--text-1); }
+.btn.danger { color: var(--danger); }
+.btn:disabled { color: var(--text-3); border-color: var(--line); cursor: not-allowed; opacity: .65; }
+.btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
+
+/* ============================================================
+   View switching
+   ============================================================ */
+.view { display: none; }
+.window[data-view="workspace"] .view-workspace,
+.window[data-view="assets"] .view-assets,
+.window[data-view="empty"] .view-empty,
+.window[data-view="form"] .view-form,
+.window[data-view="tokens"] .view-tokens { display: flex; }
+
+/* ============================================================
+   View: asset list
+   ============================================================ */
+.assets { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--surface-base); }
+.assets-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 20px 10px;
+}
+.assets-head h1 { margin: 0; font-size: var(--fs-16); font-weight: 650; letter-spacing: -.01em; }
+.assets-head .sub { color: var(--text-3); font-size: var(--fs-12); }
+.assets-head .actions { margin-left: auto; display: flex; gap: 6px; }
+.assets-tools {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 20px 12px; border-bottom: 1px solid var(--line);
+}
+.assets-tools .field { width: 240px; }
+.assets-tools .grow { flex: 1; }
+
+.asset-table { flex: 1; overflow: auto; padding: 0 12px 16px; }
+.asset-thead, .asset-tr {
+  display: grid; grid-template-columns: 1fr 132px 88px 96px 28px;
+  align-items: center; gap: 12px;
+}
+.asset-thead {
+  position: sticky; top: 0; z-index: 2;
+  height: 30px; padding: 0 10px;
+  background: var(--surface-base); border-bottom: 1px solid var(--line);
+  color: var(--text-3); font-size: 10.5px; font-weight: 650; letter-spacing: .04em;
+}
+.asset-thead .r, .asset-tr .r { text-align: right; }
+.asset-tr {
+  height: 38px; padding: 0 10px; border-radius: var(--r-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  font-size: 12.5px; cursor: pointer;
+}
+.asset-tr:hover { background: var(--surface-hover); }
+.asset-tr .host { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); }
+.asset-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.asset-name .ico {
+  display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px;
+  border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent);
+}
+.asset-name .t { min-width: 0; }
+.asset-name .t b { display: block; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-name .t span { display: block; color: var(--text-3); font-size: 11px; }
+.lat { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.lat i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+.lat.slow i { background: var(--warning); }
+.tag {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
+  border-radius: var(--r-xs); border: 1px solid var(--line);
+  background: var(--surface-sunken); color: var(--text-2);
+  font-size: 10.5px; font-weight: 600;
+}
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; padding: 56px 20px; text-align: center;
+}
+.empty-state .art {
+  display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 8px;
+  border-radius: var(--r-lg); background: var(--accent-soft); color: var(--accent);
+}
+.empty-state h3 { margin: 0; font-size: var(--fs-14); font-weight: 600; }
+.empty-state p { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-12); }
+
+/* first-run */
+.first-run { flex: 1; display: grid; place-items: center; padding: 24px; }
+.first-run .inner { width: 520px; text-align: center; }
+.first-run .mark {
+  display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 14px;
+  border-radius: 13px; background: var(--brand); color: #fff; font-size: 22px; font-weight: 800;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.first-run h2 { margin: 0 0 6px; font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+.first-run p { margin: 0 0 18px; color: var(--text-2); font-size: 12.5px; }
+.first-run .cta { display: flex; gap: 8px; justify-content: center; margin-bottom: 26px; }
+.start-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: left; }
+.start-card {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface-base); cursor: pointer;
+  transition: border-color .14s ease, background .14s ease;
+}
+.start-card:hover { border-color: var(--accent-line); background: var(--surface-hover); }
+.start-card svg { color: var(--accent); }
+.start-card b { font-size: 12.5px; font-weight: 600; }
+.start-card span { color: var(--text-3); font-size: 11.5px; line-height: 1.45; }
+.start-card kbd {
+  margin-top: 2px; align-self: flex-start; padding: 1px 5px; border-radius: var(--r-xs);
+  background: var(--surface-sunken); border: 1px solid var(--line);
+  color: var(--text-3); font: 500 10px/1.6 var(--font-ui);
+}
+
+/* ============================================================
+   View: connection form (modal over workspace)
+   ============================================================ */
+.modal-scrim {
+  position: absolute; inset: 0; z-index: 40;
+  background: color-mix(in srgb, var(--surface-shell) 55%, rgba(12, 10, 24, .62));
+  display: grid; place-items: center;
+}
+.modal {
+  width: 860px; max-height: 760px; display: flex; flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-overlay); overflow: hidden;
+}
+.modal-head {
+  display: flex; align-items: center; gap: 10px;
+  height: 52px; flex: 0 0 52px; padding: 0 12px 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { margin: 0; font-size: var(--fs-14); font-weight: 650; }
+.modal-head .sub { color: var(--text-3); font-size: var(--fs-12); }
+.modal-head .x { margin-left: auto; }
+.modal-body { display: flex; min-height: 0; flex: 1; }
+.proto-rail {
+  width: 176px; flex: 0 0 176px; padding: 10px;
+  border-right: 1px solid var(--line); background: var(--surface-sunken);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.proto {
+  display: flex; align-items: center; gap: 9px;
+  height: 36px; padding: 0 10px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-2); font: inherit; font-size: 12.5px;
+  cursor: pointer; text-align: left;
+}
+.proto:hover { background: var(--surface-hover); color: var(--text-1); }
+.proto[aria-pressed="true"] {
+  background: var(--surface-selected); color: var(--accent); font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.proto svg { flex: 0 0 auto; }
+
+.form-grid {
+  flex: 1; min-width: 0; overflow: auto; padding: 18px 22px 22px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px;
+}
+.form-grid .full { grid-column: 1 / -1; }
+.label { display: block; margin-bottom: 5px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.input {
+  display: flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 10px;
+  background: var(--surface-base);
+  border: 1px solid var(--line-control); border-radius: var(--r-sm);
+  color: var(--text-1); font-size: 13px;
+}
+.input input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.input input::placeholder { color: var(--text-3); }
+.input.focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+.input.error { border-color: var(--danger); }
+.help { margin-top: 5px; color: var(--text-3); font-size: 11px; }
+.help.err { color: var(--danger); display: flex; align-items: center; gap: 5px; }
+.seg-ctl { display: flex; padding: 2px; gap: 2px; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--r-sm); height: 34px; }
+.seg-ctl button {
+  flex: 1; border: 0; border-radius: 4px; background: transparent; color: var(--text-2);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.seg-ctl button[aria-pressed="true"] { background: var(--surface-base); color: var(--text-1); font-weight: 600; box-shadow: 0 1px 2px rgba(16, 14, 32, .1); }
+.check { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12.5px; }
+.check input { width: 15px; height: 15px; accent-color: var(--accent); }
+.modal-foot {
+  display: flex; align-items: center; gap: 8px;
+  height: 56px; flex: 0 0 56px; padding: 0 18px;
+  border-top: 1px solid var(--line); background: var(--surface-base);
+}
+.modal-foot .grow { flex: 1; }
+.note { color: var(--text-3); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
+.note svg { color: var(--warning); }
+
+/* ============================================================
+   View: tokens
+   ============================================================ */
+.tokens { flex: 1; overflow: auto; padding: 20px 26px 24px; background: var(--surface-base); }
+.tokens h1 { margin: 0 0 4px; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+.tokens .lede { margin: 0 0 16px; color: var(--text-3); font-size: 12.5px; }
+.tk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-bottom: 16px; }
+.tk-block h3 {
+  margin: 0 0 8px; color: var(--text-2);
+  font-size: 10.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase;
+}
+.sw { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11.5px; }
+.sw i { width: 26px; height: 18px; border-radius: var(--r-xs); border: 1px solid var(--line-strong); flex: 0 0 26px; }
+.sw code { color: var(--text-2); font-family: var(--font-mono); font-size: 10.5px; }
+.specimen { border-top: 1px solid var(--line); padding-top: 12px; display: grid; grid-template-columns: 150px 1fr; gap: 8px 0; align-items: baseline; }
+.specimen .k { color: var(--text-3); font-family: var(--font-mono); font-size: 10.5px; }
+.tk-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.tk-row + .tk-row { margin-top: 10px; }
+.selection-demo { display: flex; flex-direction: column; gap: 2px; width: 200px; }
+</style>
+</head>
+<body>
+
+<div class="preview-bar">
+  <span class="pv-brand"><i>P</i> PortNest · UI 设计提案</span>
+  <div class="seg" role="group" aria-label="视图">
+    <button data-goto="workspace" aria-pressed="true">工作区</button>
+    <button data-goto="assets" aria-pressed="false">资产列表</button>
+    <button data-goto="empty" aria-pressed="false">首次启动</button>
+    <button data-goto="form" aria-pressed="false">新建连接</button>
+    <button data-goto="tokens" aria-pressed="false">设计变量</button>
+  </div>
+  <div class="pv-group">
+    <span>主题</span>
+    <select class="pv-select" id="theme" aria-label="主题">
+      <option value="light">浅色</option>
+      <option value="dark">深色</option>
+    </select>
+    <span>皮肤</span>
+    <select class="pv-select" id="skin" aria-label="皮肤">
+      <option value="aurora">极光紫</option>
+      <option value="mist">晨雾蓝</option>
+      <option value="ember">暖砂</option>
+      <option value="midnight">午夜青</option>
+    </select>
+  </div>
+  <label class="pv-switch"><input type="checkbox" id="termdark" /><span class="track"></span>固定深色终端</label>
+  <span class="pv-note">静态预览，未接入应用代码</span>
+</div>
+
+<div class="window" data-skin="aurora" data-theme="light" data-view="workspace" id="win">
+
+  <!-- ======================= WORKSPACE ======================= -->
+  <div class="view view-workspace" style="flex:1;min-height:0;flex-direction:column">
+    <header class="titlebar">
+      <span class="brand"><i>P</i>PortNest</span>
+      <span class="divider-v"></span>
+      <span class="crumb">
+        <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+        <b>web-01.prod</b>
+        <span class="host">deploy@10.24.8.11</span>
+      </span>
+      <span class="spacer"></span>
+      <span class="search-pill">
+        <svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg>
+        搜索连接、命令或设置
+        <kbd>Ctrl K</kbd>
+      </span>
+      <div class="win-ctrl">
+        <button class="icon-btn" aria-label="最小化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-min" /></svg></button>
+        <button class="icon-btn" aria-label="最大化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-max" /></svg></button>
+        <button class="icon-btn close" aria-label="关闭窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+
+    <div class="body">
+      <!-- rail -->
+      <nav class="rail" aria-label="模块">
+        <button class="rail-btn" aria-current="page">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-tree" /></svg><span>资产</span>
+        </button>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg><span>终端</span>
+        </button>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg><span>数据库</span>
+        </button>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-box" /></svg><span>容器</span>
+        </button>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-remote" /></svg><span>远程</span>
+        </button>
+        <span class="grow"></span>
+        <span class="rule"></span>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-spark" /></svg><span>AI</span>
+        </button>
+        <button class="rail-btn">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>设置</span>
+        </button>
+      </nav>
+
+      <!-- asset tree -->
+      <aside class="tree">
+        <div class="pane-head">
+          <h2>资产树</h2>
+          <span class="count-chip">7</span>
+          <div class="actions">
+            <button class="icon-btn" aria-label="新建连接"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-plus" /></svg></button>
+            <button class="icon-btn" aria-label="新建文件夹"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg></button>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+        </div>
+        <div class="tree-search">
+          <label class="field">
+            <svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg>
+            <input type="text" placeholder="筛选连接" aria-label="筛选连接" />
+          </label>
+        </div>
+        <div class="filters">
+          <button class="chip" aria-pressed="true">全部</button>
+          <button class="chip" aria-pressed="false">终端</button>
+          <button class="chip" aria-pressed="false">数据库</button>
+        </div>
+        <div class="tree-body">
+          <div class="group-row">生产环境 <span class="rule"></span> 4</div>
+          <div class="row folder open indent">
+            <svg class="chev" width="12" height="12" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-chev-r" /></svg>
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="name">Web 集群</span>
+            <span class="meta">3</span>
+          </div>
+          <div class="row sel indent-2">
+            <span class="dot-live" aria-hidden="true"></span>
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+            <span class="name">web-01.prod</span>
+          </div>
+          <div class="row indent-2">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+            <span class="name">web-02.prod</span>
+          </div>
+          <div class="row indent-2">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+            <span class="name">web-03.prod</span>
+          </div>
+          <div class="row folder indent">
+            <svg class="chev" width="12" height="12" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-chev-r" /></svg>
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="name">数据与缓存</span>
+            <span class="meta">3</span>
+          </div>
+
+          <div class="group-row">开发环境 <span class="rule"></span> 3</div>
+          <div class="row folder open indent">
+            <svg class="chev" width="12" height="12" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-chev-r" /></svg>
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="name">本地与测试</span>
+            <span class="meta">3</span>
+          </div>
+          <div class="row indent-2">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg>
+            <span class="name">PowerShell 7</span>
+            <span class="tag">本地</span>
+          </div>
+          <div class="row indent-2">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>
+            <span class="name">mysql-staging</span>
+          </div>
+          <div class="row indent-2">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>
+            <span class="name">pg-staging</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- main -->
+      <main class="main">
+        <div class="session-head">
+          <div class="tabs" role="tablist" aria-label="会话">
+            <button class="tab" role="tab" aria-selected="true">
+              <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+              <span class="label">web-01.prod</span>
+              <span class="x" role="presentation"><svg width="11" height="11" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></span>
+            </button>
+            <button class="tab" role="tab" aria-selected="false">
+              <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>
+              <span class="label">web-02.prod</span>
+              <span class="idx">2</span>
+              <span class="x" role="presentation"><svg width="11" height="11" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></span>
+            </button>
+            <button class="tab" role="tab" aria-selected="false">
+              <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>
+              <span class="label">mysql-staging</span>
+              <span class="x" role="presentation"><svg width="11" height="11" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></span>
+            </button>
+          </div>
+          <div class="right">
+            <button class="icon-btn" aria-label="查找终端内容" title="查找 Ctrl+F"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg></button>
+            <button class="icon-btn" aria-label="清屏" title="清屏"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-eraser" /></svg></button>
+            <button class="icon-btn" aria-label="复制会话信息"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-copy" /></svg></button>
+            <button class="icon-btn" aria-label="端口转发"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-link" /></svg></button>
+            <span class="divider-v"></span>
+            <span class="enc">UTF-8</span>
+            <button class="icon-btn" aria-label="更多"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+        </div>
+
+        <section class="terminal">
+          <div class="term-scroll">
+<pre class="term"><span class="d">Last login: Tue Oct 27 21:01:04 2026 from 10.0.3.24</span>
+<span class="g">deploy@web-01</span>:<span class="b">~</span>$ uptime
+ 21:04:12 up 38 days,  4:12,  2 users,  load average: 0.42, 0.51, 0.47
+<span class="g">deploy@web-01</span>:<span class="b">~</span>$ systemctl status nginx --no-pager | head -n 5
+<span class="g">●</span> nginx.service - A high performance web server and a reverse proxy server
+     Loaded: loaded (/lib/systemd/system/nginx.service; enabled; preset: enabled)
+     Active: <span class="g">active (running)</span> since Tue 2026-09-16 09:12:41 CST; 1 month 11 days ago
+   Main PID: 1184 (nginx)
+      Tasks: 5 (limit: 4652)
+<span class="g">deploy@web-01</span>:<span class="b">~</span>$ cd <span class="u">/var/www/portnest</span> &amp;&amp; git pull --ff-only
+<span class="d">Already up to date.</span>
+<span class="g">deploy@web-01</span>:<span class="b">/var/www/portnest</span>$ docker ps --format 'table {{.Names}}\t{{.Status}}'
+NAMES                STATUS
+portnest-api         Up 12 days (healthy)
+portnest-web         Up 12 days (healthy)
+redis-cache          Up 38 days
+<span class="g">deploy@web-01</span>:<span class="b">/var/www/portnest</span>$ df -h / | tail -n 1
+/dev/nvme0n1p2   98G   41G   52G  45% /
+<span class="g">deploy@web-01</span>:<span class="b">/var/www/portnest</span>$ tail -n 3 logs/api.log
+<span class="d">2026-10-27 21:03:58 INFO  scheduler: job "cleanup" finished in 412ms</span>
+<span class="d">2026-10-27 21:04:02 INFO  http: GET /health 200 1.2ms</span>
+<span class="d">2026-10-27 21:04:07 WARN  pool: connections 92/100, backing off</span>
+<span class="g">deploy@web-01</span>:<span class="b">/var/www/portnest</span>$ <span class="cursor" aria-hidden="true"></span></pre>
+          </div>
+          <div class="term-badge"><b>120×30</b> · 拖动窗口自适应</div>
+        </section>
+      </main>
+
+      <!-- file panel -->
+      <aside class="panel">
+        <div class="path-bar">
+          <button class="icon-btn" aria-label="返回上级目录"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-up" /></svg></button>
+          <button class="icon-btn" aria-label="刷新"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-refresh" /></svg></button>
+          <div class="path"><span class="seg-mute">/</span><span class="seg-mute">var</span><span class="seg-mute">/</span><span class="seg-mute">www</span><span class="seg-mute">/</span><b>portnest</b></div>
+          <button class="icon-btn" aria-label="新建文件夹"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder-plus" /></svg></button>
+          <button class="icon-btn" aria-label="上传文件"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-upload" /></svg></button>
+          <button class="icon-btn" aria-label="更多"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+        </div>
+
+        <div class="col-head" aria-hidden="true">
+          <span>名称</span><span class="r">大小</span><span class="r">修改时间</span>
+        </div>
+
+        <div class="files">
+          <div class="frow up">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="n">..</span><span class="s">—</span><span class="t">—</span>
+          </div>
+          <div class="frow">
+            <svg class="folder-ico" width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="n">assets</span><span class="s">4</span><span class="t">10-27 18:02</span>
+          </div>
+          <div class="frow sel">
+            <svg class="folder-ico" width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="n">dist</span><span class="s">128</span><span class="t">10-27 20:41</span>
+          </div>
+          <div class="frow">
+            <svg class="folder-ico" width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg>
+            <span class="n">src</span><span class="s">96</span><span class="t">10-27 20:39</span>
+          </div>
+          <div class="frow">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-file" /></svg>
+            <span class="n">.env.production</span><span class="s">1.2 KB</span><span class="t">10-26 09:15</span>
+          </div>
+          <div class="frow">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-file" /></svg>
+            <span class="n">docker-compose.yml</span><span class="s">3.4 KB</span><span class="t">10-24 11:20</span>
+          </div>
+          <div class="frow">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-file" /></svg>
+            <span class="n">nginx.conf</span><span class="s">2.1 KB</span><span class="t">10-21 15:47</span>
+          </div>
+          <div class="frow">
+            <svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-file" /></svg>
+            <span class="n">package.json</span><span class="s">1.8 KB</span><span class="t">10-27 20:38</span>
+          </div>
+        </div>
+
+        <div class="panel-foot">
+          <span>8 项 · 3 个文件夹</span>
+          <span class="transfer">
+            <span>上传 nginx.conf</span>
+            <span class="bar"><i></i></span>
+            <span>62%</span>
+          </span>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="statusbar">
+      <span class="item"><span class="led"></span>已连接 <b>web-01.prod</b></span>
+      <span class="item mono">24ms</span>
+      <span class="spacer"></span>
+      <span class="item mono">120×30</span>
+      <span class="item">UTF-8</span>
+      <span class="item">端口转发 1</span>
+      <span class="item">v0.5.0</span>
+    </footer>
+  </div>
+
+  <!-- ======================= ASSET LIST ======================= -->
+  <div class="view view-assets" style="flex:1;min-height:0;flex-direction:column">
+    <header class="titlebar">
+      <span class="brand"><i>P</i>PortNest</span>
+      <span class="divider-v"></span>
+      <span class="crumb"><b>资产列表</b><span class="host">7 个连接 · 4 个文件夹</span></span>
+      <span class="spacer"></span>
+      <span class="search-pill">
+        <svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg>
+        搜索连接、命令或设置
+        <kbd>Ctrl K</kbd>
+      </span>
+      <div class="win-ctrl">
+        <button class="icon-btn" aria-label="最小化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-min" /></svg></button>
+        <button class="icon-btn" aria-label="最大化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-max" /></svg></button>
+        <button class="icon-btn close" aria-label="关闭窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+
+    <div class="body">
+      <nav class="rail" aria-label="模块">
+        <button class="rail-btn" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-tree" /></svg><span>资产</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg><span>终端</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg><span>数据库</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-box" /></svg><span>容器</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-remote" /></svg><span>远程</span></button>
+        <span class="grow"></span>
+        <span class="rule"></span>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-spark" /></svg><span>AI</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>设置</span></button>
+      </nav>
+
+      <main class="assets">
+        <div class="assets-head">
+          <h1>资产列表</h1>
+          <span class="sub">7 个连接 · 4 个文件夹 · 最近连接 3 分钟前</span>
+          <div class="actions">
+            <button class="btn secondary"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-import" /></svg>导入</button>
+            <button class="btn primary"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-plus" /></svg>新建连接</button>
+          </div>
+        </div>
+        <div class="assets-tools">
+          <label class="field">
+            <svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg>
+            <input type="text" placeholder="按名称、主机或用户名搜索" aria-label="搜索连接" />
+          </label>
+          <button class="chip" aria-pressed="true">全部</button>
+          <button class="chip" aria-pressed="false">终端</button>
+          <button class="chip" aria-pressed="false">数据库</button>
+          <span class="grow"></span>
+          <button class="btn ghost sm"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-pulse" /></svg>检测延迟</button>
+          <button class="btn ghost sm"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-refresh" /></svg>刷新</button>
+        </div>
+
+        <div class="asset-table">
+          <div class="asset-thead" aria-hidden="true">
+            <span>名称 / 地址</span><span>标签</span><span class="r">延迟</span><span class="r">最近连接</span><span></span>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg></span>
+              <span class="t"><b>web-01.prod</b><span class="host">deploy@10.24.8.11:22</span></span>
+            </span>
+            <span><span class="tag">生产环境</span></span>
+            <span class="lat"><i></i>24 ms</span>
+            <span class="r">3 分钟前</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg></span>
+              <span class="t"><b>web-02.prod</b><span class="host">deploy@10.24.8.12:22</span></span>
+            </span>
+            <span><span class="tag">生产环境</span></span>
+            <span class="lat"><i></i>31 ms</span>
+            <span class="r">1 小时前</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg></span>
+              <span class="t"><b>mysql-staging</b><span class="host">root@10.24.9.20:3306</span></span>
+            </span>
+            <span><span class="tag">数据库</span></span>
+            <span class="lat slow"><i></i>86 ms</span>
+            <span class="r">昨天</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg></span>
+              <span class="t"><b>PowerShell 7</b><span>本机 · 无网络往返</span></span>
+            </span>
+            <span><span class="tag">本地</span></span>
+            <span class="lat"><i></i>—</span>
+            <span class="r">今天 09:12</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg></span>
+              <span class="t"><b>web-03.prod</b><span class="host">deploy@10.24.8.13:22</span></span>
+            </span>
+            <span><span class="tag">生产环境</span></span>
+            <span class="lat"><i></i>28 ms</span>
+            <span class="r">2 天前</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg></span>
+              <span class="t"><b>pg-staging</b><span class="host">postgres@10.24.9.21:5432</span></span>
+            </span>
+            <span><span class="tag">数据库</span></span>
+            <span class="lat slow"><i></i>102 ms</span>
+            <span class="r">3 天前</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+          <div class="asset-tr">
+            <span class="asset-name">
+              <span class="ico"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg></span>
+              <span class="t"><b>redis-cache</b><span class="host">ops@10.24.9.30:22</span></span>
+            </span>
+            <span><span class="tag">生产环境</span></span>
+            <span class="lat"><i></i>35 ms</span>
+            <span class="r">上周</span>
+            <button class="icon-btn" aria-label="更多操作"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-more" /></svg></button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="statusbar">
+      <span class="item"><span class="led"></span>就绪</span>
+      <span class="spacer"></span>
+      <span class="item">7 个连接 · 4 个文件夹</span>
+      <span class="item">v0.5.0</span>
+    </footer>
+  </div>
+
+  <!-- ======================= FIRST RUN ======================= -->
+  <div class="view view-empty" style="flex:1;min-height:0;flex-direction:column">
+    <header class="titlebar">
+      <span class="brand"><i>P</i>PortNest</span>
+      <span class="divider-v"></span>
+      <span class="crumb"><b>资产列表</b><span class="host">还没有连接</span></span>
+      <span class="spacer"></span>
+      <span class="search-pill">
+        <svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg>
+        搜索连接、命令或设置
+        <kbd>Ctrl K</kbd>
+      </span>
+      <div class="win-ctrl">
+        <button class="icon-btn" aria-label="最小化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-min" /></svg></button>
+        <button class="icon-btn" aria-label="最大化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-max" /></svg></button>
+        <button class="icon-btn close" aria-label="关闭窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+
+    <div class="body">
+      <nav class="rail" aria-label="模块">
+        <button class="rail-btn" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-tree" /></svg><span>资产</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg><span>终端</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg><span>数据库</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-box" /></svg><span>容器</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-remote" /></svg><span>远程</span></button>
+        <span class="grow"></span>
+        <span class="rule"></span>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-spark" /></svg><span>AI</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>设置</span></button>
+      </nav>
+
+      <main class="assets">
+        <div class="first-run">
+          <div class="inner">
+            <span class="mark" aria-hidden="true">P</span>
+            <h2>先连接一台服务器</h2>
+            <p>PortNest 把 SSH、SFTP、数据库和本地终端放在同一个工作区里。</p>
+            <div class="cta">
+              <button class="btn primary"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-plus" /></svg>新建 SSH 连接</button>
+              <button class="btn secondary"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-import" /></svg>从 Xshell / JSON 导入</button>
+            </div>
+            <div class="start-cards">
+              <div class="start-card">
+                <svg width="16" height="16" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg>
+                <b>打开本地终端</b>
+                <span>无需配置，直接在本机 Shell 中开始。</span>
+                <kbd>工具栏 → 终端</kbd>
+              </div>
+              <div class="start-card">
+                <svg width="16" height="16" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-key" /></svg>
+                <b>导入已有私钥</b>
+                <span>支持 OpenSSH、PEM 与带口令私钥。</span>
+                <kbd>密钥管理器</kbd>
+              </div>
+              <div class="start-card">
+                <svg width="16" height="16" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-spark" /></svg>
+                <b>配置 AI 助手</b>
+                <span>使用自己的 API Key，凭据仅保存在本机。</span>
+                <kbd>Ctrl Shift A</kbd>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="statusbar">
+      <span class="item"><span class="led"></span>就绪</span>
+      <span class="spacer"></span>
+      <span class="item">0 个连接</span>
+      <span class="item">Ctrl K 快速开始</span>
+      <span class="item">v0.5.0</span>
+    </footer>
+  </div>
+
+  <!-- ======================= CONNECTION FORM ======================= -->
+  <div class="view view-form" style="flex:1;min-height:0;flex-direction:column">
+    <header class="titlebar">
+      <span class="brand"><i>P</i>PortNest</span>
+      <span class="divider-v"></span>
+      <span class="crumb"><b>资产列表</b><span class="host">7 个连接</span></span>
+      <span class="spacer"></span>
+      <div class="win-ctrl">
+        <button class="icon-btn" aria-label="最小化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-min" /></svg></button>
+        <button class="icon-btn" aria-label="最大化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-max" /></svg></button>
+        <button class="icon-btn close" aria-label="关闭窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+    <div class="body" style="position:relative">
+      <nav class="rail" aria-label="模块">
+        <button class="rail-btn" aria-current="page"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-tree" /></svg><span>资产</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg><span>终端</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg><span>数据库</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-box" /></svg><span>容器</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-remote" /></svg><span>远程</span></button>
+        <span class="grow"></span>
+        <span class="rule"></span>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-spark" /></svg><span>AI</span></button>
+        <button class="rail-btn"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings" /></svg><span>设置</span></button>
+      </nav>
+
+      <div class="modal-scrim">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+          <div class="modal-head">
+            <div>
+              <h2 id="dlg-title">新建连接</h2>
+              <span class="sub">保存到 生产环境 / Web 集群</span>
+            </div>
+            <button class="icon-btn x" aria-label="关闭"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+          </div>
+          <div class="modal-body">
+            <div class="proto-rail">
+              <button class="proto" aria-pressed="true"><svg width="15" height="15" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg>SSH</button>
+              <button class="proto" aria-pressed="false"><svg width="15" height="15" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-terminal" /></svg>本地终端</button>
+              <button class="proto" aria-pressed="false"><svg width="15" height="15" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>MySQL</button>
+              <button class="proto" aria-pressed="false"><svg width="15" height="15" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>PostgreSQL</button>
+              <button class="proto" aria-pressed="false"><svg width="15" height="15" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-db" /></svg>瀚高数据库</button>
+            </div>
+            <div class="form-grid">
+              <div class="full">
+                <label class="label" for="f-name">显示名称</label>
+                <div class="input focus"><input id="f-name" value="web-04.prod" /></div>
+              </div>
+              <div>
+                <label class="label" for="f-host">主机地址</label>
+                <div class="input"><input id="f-host" placeholder="10.24.8.14" /></div>
+                <div class="help">支持 IPv4、IPv6 与域名</div>
+              </div>
+              <div>
+                <label class="label" for="f-port">端口</label>
+                <div class="input"><input id="f-port" value="22" /></div>
+              </div>
+              <div>
+                <label class="label" for="f-user">用户名</label>
+                <div class="input error"><input id="f-user" placeholder="必填" aria-invalid="true" aria-describedby="f-user-err" /></div>
+                <div class="help err" id="f-user-err">
+                  <svg width="11" height="11" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-alert" /></svg>请输入用户名
+                </div>
+              </div>
+              <div>
+                <label class="label">认证方式</label>
+                <div class="seg-ctl" role="group" aria-label="认证方式">
+                  <button aria-pressed="true">密码</button>
+                  <button aria-pressed="false">私钥</button>
+                </div>
+              </div>
+              <div class="full">
+                <label class="label" for="f-pass">密码</label>
+                <div class="input">
+                  <input id="f-pass" type="password" value="••••••••••" />
+                  <button class="icon-btn" aria-label="显示密码" style="width:22px;height:22px"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-eye" /></svg></button>
+                </div>
+              </div>
+              <div class="full"><label class="check"><input type="checkbox" checked />连接前询问是否打开 SFTP 文件面板</label></div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <span class="note"><svg width="12" height="12" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-shield" /></svg>凭据使用本机密钥加密存储</span>
+            <span class="grow"></span>
+            <button class="btn ghost">取消</button>
+            <button class="btn secondary">保存</button>
+            <button class="btn primary">保存并连接</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="statusbar">
+      <span class="item"><span class="led"></span>就绪</span>
+      <span class="spacer"></span>
+      <span class="item">Esc 取消 · Ctrl+Enter 保存并连接</span>
+    </footer>
+  </div>
+
+  <!-- ======================= TOKENS ======================= -->
+  <div class="view view-tokens" style="flex:1;min-height:0;flex-direction:column">
+    <header class="titlebar">
+      <span class="brand"><i>P</i>PortNest</span>
+      <span class="divider-v"></span>
+      <span class="crumb"><b>设计变量</b><span class="host">当前皮肤随右上角切换</span></span>
+      <span class="spacer"></span>
+      <div class="win-ctrl">
+        <button class="icon-btn" aria-label="最小化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-min" /></svg></button>
+        <button class="icon-btn" aria-label="最大化窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-max" /></svg></button>
+        <button class="icon-btn close" aria-label="关闭窗口"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-x" /></svg></button>
+      </div>
+    </header>
+
+    <main class="tokens">
+      <h1>设计变量</h1>
+      <p class="lede">全部取值已经过 WCAG 2.1 校验：正文 ≥ 7:1，次要文本与强调色 ≥ 4.5:1，表单边框 ≥ 3:1。详见 contrast-report.md。</p>
+
+      <div class="tk-grid">
+        <div class="tk-block">
+          <h3>表面层级</h3>
+          <div class="sw"><i style="background:var(--surface-shell)"></i><code>--surface-shell</code></div>
+          <div class="sw"><i style="background:var(--surface-base)"></i><code>--surface-base</code></div>
+          <div class="sw"><i style="background:var(--surface-raised)"></i><code>--surface-raised</code></div>
+          <div class="sw"><i style="background:var(--surface-sunken)"></i><code>--surface-sunken</code></div>
+          <div class="sw"><i style="background:var(--surface-selected)"></i><code>--surface-selected</code></div>
+        </div>
+        <div class="tk-block">
+          <h3>文本</h3>
+          <div class="sw"><i style="background:var(--text-1)"></i><code>--text-1</code></div>
+          <div class="sw"><i style="background:var(--text-2)"></i><code>--text-2</code></div>
+          <div class="sw"><i style="background:var(--text-3)"></i><code>--text-3</code></div>
+          <div class="sw"><i style="background:var(--accent)"></i><code>--accent</code></div>
+          <div class="sw"><i style="background:var(--on-accent)"></i><code>--on-accent</code></div>
+        </div>
+        <div class="tk-block">
+          <h3>线条</h3>
+          <div class="sw"><i style="background:var(--line)"></i><code>--line 发丝</code></div>
+          <div class="sw"><i style="background:var(--line-strong)"></i><code>--line-strong 分隔</code></div>
+          <div class="sw"><i style="background:var(--line-control)"></i><code>--line-control 控件</code></div>
+          <div class="sw"><i style="background:var(--accent-soft)"></i><code>--accent-soft</code></div>
+          <div class="sw"><i style="background:var(--accent-line)"></i><code>--accent-line</code></div>
+        </div>
+        <div class="tk-block">
+          <h3>状态</h3>
+          <div class="sw"><i style="background:var(--success)"></i><code>--success</code></div>
+          <div class="sw"><i style="background:var(--warning)"></i><code>--warning</code></div>
+          <div class="sw"><i style="background:var(--danger)"></i><code>--danger</code></div>
+          <div class="sw"><i style="background:var(--info)"></i><code>--info</code></div>
+        </div>
+      </div>
+
+      <div class="tk-block" style="margin-bottom:16px">
+        <h3>字号与字重</h3>
+        <div class="specimen">
+          <span class="k">20 / 650 弹窗标题</span><span style="font-size:20px;font-weight:650;letter-spacing:-.01em">新建 SSH 连接</span>
+          <span class="k">16 / 650 页面标题</span><span style="font-size:16px;font-weight:650">资产列表</span>
+          <span class="k">14 / 650 面板标题</span><span style="font-size:14px;font-weight:650">命令广播</span>
+          <span class="k">13 / 400 正文</span><span style="font-size:13px">连接已建立，正在同步远端目录结构。</span>
+          <span class="k">12 / 400 次级</span><span style="font-size:12px;color:var(--text-2)">副标题、说明与表单提示统一使用 12px。</span>
+          <span class="k">11 / 600 元信息</span><span style="font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:.04em">列头 · 时间戳 · 计数</span>
+          <span class="k">mono 12.5 终端</span><span style="font-family:var(--font-mono);font-size:12.5px">deploy@web-01:~$ systemctl status nginx</span>
+        </div>
+      </div>
+
+      <div class="tk-block" style="margin-bottom:16px">
+        <h3>控件与状态</h3>
+        <div class="tk-row">
+          <button class="btn primary">主操作</button>
+          <button class="btn secondary">次操作</button>
+          <button class="btn ghost">文字操作</button>
+          <button class="btn danger">删除</button>
+          <button class="btn secondary" disabled>不可用</button>
+          <span class="tag">标签</span>
+          <span class="count-chip">12</span>
+        </div>
+        <div class="tk-row">
+          <label class="field" style="width:230px"><svg width="13" height="13" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-search" /></svg><input placeholder="默认搜索框" aria-label="默认搜索框" /></label>
+          <div class="input focus" style="width:200px"><input value="聚焦态" aria-label="聚焦态" /></div>
+          <div class="input error" style="width:200px"><input value="错误态" aria-invalid="true" aria-label="错误态" /></div>
+          <button class="btn secondary">键盘聚焦 →</button>
+        </div>
+      </div>
+
+      <div class="tk-block" style="margin-bottom:16px">
+        <h3>选中态（全应用只有一种）</h3>
+        <div class="tk-row" style="align-items:flex-start">
+          <div class="selection-demo">
+            <div class="row sel"><span class="dot-live" aria-hidden="true"></span><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg><span class="name">web-01.prod</span></div>
+            <div class="row"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg><span class="name">web-02.prod</span></div>
+            <div class="row"><svg width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-server" /></svg><span class="name">web-03.prod</span></div>
+          </div>
+          <div class="selection-demo" style="width:260px">
+            <div class="frow sel"><svg class="folder-ico" width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg><span class="n">dist</span><span class="s">128</span><span class="t">20:41</span></div>
+            <div class="frow"><svg class="folder-ico" width="14" height="14" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder" /></svg><span class="n">src</span><span class="s">96</span><span class="t">20:39</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tk-block">
+        <h3>圆角与高度</h3>
+        <div class="tk-row">
+          <span class="tag" style="border-radius:4px">r-xs 4</span>
+          <span class="tag" style="border-radius:6px">r-sm 6</span>
+          <span class="tag" style="border-radius:8px">r-md 8</span>
+          <span class="tag" style="border-radius:12px">r-lg 12</span>
+        </div>
+        <div class="tk-row">
+          <span class="tag">行高 28</span>
+          <span class="tag">控件 32</span>
+          <span class="tag">页头 36</span>
+          <span class="tag">状态栏 26</span>
+          <span class="tag">导轨 52</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="statusbar">
+      <span class="item"><span class="led"></span>设计变量与 contrast-report.md 一致</span>
+      <span class="spacer"></span>
+      <span class="item">4 皮肤 × 2 主题 × 22 项检查 = 176 组成对校验</span>
+    </footer>
+  </div>
+</div>
+
+<!-- ======================= icon sprite ======================= -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="i-server" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="7" rx="2" /><rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 7.5h.01M7 16.5h.01" />
+    </g>
+    <g id="i-terminal" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M13 15h4" />
+    </g>
+    <g id="i-db" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" />
+    </g>
+    <g id="i-box" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+    </g>
+    <g id="i-remote" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17" /><path d="M12 3.5c2.6 2.4 4 5.3 4 8.5s-1.4 6.1-4 8.5c-2.6-2.4-4-5.3-4-8.5s1.4-6.1 4-8.5z" />
+    </g>
+    <g id="i-tree" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4.5" width="5" height="4" rx="1" />
+      <rect x="16" y="4.5" width="5" height="4" rx="1" />
+      <rect x="9.5" y="15.5" width="5" height="4" rx="1" />
+      <path d="M5.5 8.5v3.5h13V8.5M12 12v3.5" />
+    </g>
+    <g id="i-spark" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l1.8 4.6L18.5 9.5 13.8 11 12 15.6 10.2 11 5.5 9.5 10.2 7.6z" /><path d="M18 16l.9 2.1 2.1.9-2.1.9L18 22l-.9-2.1-2.1-.9 2.1-.9z" />
+    </g>
+    <g id="i-settings" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
+    </g>
+    <g id="i-search" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="10.5" cy="10.5" r="5.5" /><path d="M15 15l4.5 4.5" />
+    </g>
+    <g id="i-plus" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></g>
+    <g id="i-x" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></g>
+    <g id="i-min" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 12h14" /></g>
+    <g id="i-max" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="5.5" y="5.5" width="13" height="13" rx="1.5" /></g>
+    <g id="i-more" fill="currentColor"><circle cx="6" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="18" cy="12" r="1.6" /></g>
+    <g id="i-folder" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7.5A1.5 1.5 0 014.5 6h4l2 2.5h9A1.5 1.5 0 0121 10v7.5A1.5 1.5 0 0119.5 19h-15A1.5 1.5 0 013 17.5z" />
+    </g>
+    <g id="i-folder-plus" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7.5A1.5 1.5 0 014.5 6h4l2 2.5h9A1.5 1.5 0 0121 10v7.5A1.5 1.5 0 0119.5 19h-15A1.5 1.5 0 013 17.5z" /><path d="M12 11v5M9.5 13.5h5" />
+    </g>
+    <g id="i-file" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V9z" /><path d="M13 3v6h6" />
+    </g>
+    <g id="i-chev-r" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></g>
+    <g id="i-up" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6" /></g>
+    <g id="i-refresh" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 11a8 8 0 10-2.6 6.3" /><path d="M20 4v7h-7" />
+    </g>
+    <g id="i-upload" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+    </g>
+    <g id="i-eraser" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 17l7-7 6 6-4 4H8z" /><path d="M11 10l4-4a2 2 0 013 0l3 3a2 2 0 010 3l-4 4" />
+    </g>
+    <g id="i-copy" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 012-2h9" />
+    </g>
+    <g id="i-link" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 13a4 4 0 006 .5l2-2a4 4 0 00-5.5-5.5L11 7.5" /><path d="M14 11a4 4 0 00-6-.5l-2 2A4 4 0 0011.5 18l1.5-1.5" />
+    </g>
+    <g id="i-pulse" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2.5-6 4 12 3-6H22" /></g>
+    <g id="i-import" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 4v11M8 11l4 4 4-4" /><path d="M4 18v1a1 1 0 001 1h14a1 1 0 001-1v-1" />
+    </g>
+    <g id="i-eye" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.6" />
+    </g>
+    <g id="i-shield" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l7 3v6c0 4.4-3 7.8-7 9-4-1.2-7-4.6-7-9V6z" /><path d="M9.5 12l2 2 3.5-4" />
+    </g>
+    <g id="i-alert" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5h.01" /></g>
+    <g id="i-key" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="8" cy="12" r="4" /><path d="M12 12h9M17 12v4M20.5 12v3" />
+    </g>
+  </defs>
+</svg>
+
+<script>
+  const win = document.getElementById('win');
+  document.querySelectorAll('[data-goto]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-goto]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      win.dataset.view = btn.dataset.goto;
+    });
+  });
+  document.getElementById('theme').addEventListener('change', e => { win.dataset.theme = e.target.value; });
+  document.getElementById('skin').addEventListener('change', e => { win.dataset.skin = e.target.value; });
+  document.getElementById('termdark').addEventListener('change', e => {
+    win.dataset.term = e.target.checked ? 'dark' : 'theme';
+  });
+
+  // Deep-link support so each state can be rendered to an image:
+  // mockup.html?view=workspace&theme=dark&skin=mist&term=dark
+  const params = new URLSearchParams(location.search);
+  const setView = (view) => {
+    if (!view) return;
+    document.querySelectorAll('[data-goto]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.goto === view));
+    });
+    win.dataset.view = view;
+  };
+  if (params.has('view')) setView(params.get('view'));
+  if (params.has('theme')) {
+    win.dataset.theme = params.get('theme');
+    document.getElementById('theme').value = params.get('theme');
+  }
+  if (params.has('skin')) {
+    win.dataset.skin = params.get('skin');
+    document.getElementById('skin').value = params.get('skin');
+  }
+  // Render helper: pin the canvas to the left edge so a narrow window captures
+  // the rail + tree at high DPI instead of the centred middle of the page.
+  if (params.get('anchor') === 'left') {
+    document.body.style.alignItems = 'flex-start';
+    document.querySelector('.preview-bar').style.marginLeft = '0';
+  }
+  if (params.get('term') === 'dark') {
+    win.dataset.term = 'dark';
+    document.getElementById('termdark').checked = true;
+  }
+</script>
+</body>
+</html>

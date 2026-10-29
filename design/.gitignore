@@ -1,0 +1,6 @@
+__pycache__/
+
+# Verification screenshots and baselines are local-only (size + may contain
+# local environment data). Keep the written decision records.
+verify/*
+!verify/*.md

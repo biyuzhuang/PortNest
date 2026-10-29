@@ -306,10 +306,6 @@ export const AssetList: Component<AssetListProps> = (props) => {
 
   return (
     <section class="asset-workspace" onContextMenu={openContextMenu} onClick={closeMenus}>
-      <div class="asset-view-tabs">
-        <button class="asset-view-tab active"><Icon name="list" size={15} /> 列表 <span class="asset-chevron"><Icon name="chevronDown" size={14} /></span></button>
-      </div>
-
       <div class="asset-toolbar">
         <div class="asset-toolbar-title">
           <span class="asset-list-icon"><Icon name="list" size={16} /></span>
@@ -319,11 +315,13 @@ export const AssetList: Component<AssetListProps> = (props) => {
             <span class="asset-toolbar-heading">{currentFolder()?.name}</span>
           </Show>
         </div>
+        <span class="asset-toolbar-meta">{visibleFolders().length} 个文件夹 · {visibleConnections().length} 个连接</span>
         <div class="asset-selection" classList={{ "is-empty": selectedConnections().length === 0 }}>已选择 <strong>{selectedConnections().length}</strong> 个连接</div>
         <div class="asset-toolbar-actions">
           <label class="asset-search">
             <Icon name="search" size={15} />
             <input
+              class="field-flush"
               value={query()}
               onInput={event => setQuery(event.currentTarget.value)}
               placeholder="名称, IP, User (Ctrl+F)"
@@ -392,6 +390,8 @@ export const AssetList: Component<AssetListProps> = (props) => {
           {(connection) => (
             <div
               class={`asset-row asset-connection-row ${selectedIds().has(connection.id) ? "selected" : ""}`}
+              classList={{ "has-color": Boolean(connection.color) }}
+              style={connection.color ? { "--connection-color": connection.color } : undefined}
               onClick={(event) => selectConnection(event, connection)}
               onDblClick={() => props.onConnect(connection)}
               onContextMenu={(event) => openConnectionMenu(event, connection)}
@@ -400,8 +400,8 @@ export const AssetList: Component<AssetListProps> = (props) => {
               <div>{renderLatency(connection)}</div>
               <div class="asset-mono asset-host-cell"><Icon name="copy" size={11} /><span>{connection.protocol === "local" ? "本机" : `${connection.host}:${connection.port}`}</span></div>
               <div class="asset-mono">{connection.protocol === "local" ? "—" : (connection.username || "—")}</div>
-              <div>{formatTime(connection.created_at)}</div>
-              <div>{formatTime(connection.last_connected_at)}</div>
+              <div class="asset-time-cell">{formatTime(connection.created_at)}</div>
+              <div class="asset-time-cell">{formatTime(connection.last_connected_at)}</div>
             </div>
           )}
         </For>
@@ -416,12 +416,6 @@ export const AssetList: Component<AssetListProps> = (props) => {
             <button onClick={() => props.onNewConnection(folderId() ?? undefined)}>新建连接</button>
           </div>
         </Show>
-      </div>
-
-      <div class="asset-footer">
-        <span>{visibleFolders().length} 个文件夹</span>
-        <span>{visibleConnections().length} 个连接</span>
-        <span>双击连接以打开终端</span>
       </div>
 
       <Show when={contextMenu()}>

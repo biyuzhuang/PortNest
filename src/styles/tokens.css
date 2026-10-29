@@ -1,0 +1,483 @@
+/* =============================================================================
+   PortNest design tokens — the single source of truth for colour and chrome.
+
+   Loaded first (src/index.tsx). Three layers:
+
+     1. primitives   (per skin, per mode)  → surface / text / line / accent / state
+     2. legacy map   → old variable names are aliased onto semantic tokens, so
+                       the rest of the codebase keeps working while it is
+                       migrated component by component
+     3. components   → heights, radii, spacing, type, motion, z-index
+
+   Every text/background pair here is verified by design/tools/contrast.py
+   (176 pairs, 4 skins × 2 modes × 22 checks). Change a value, re-run it.
+   ============================================================================= */
+
+/* ---------- 3. component tokens (skin independent) ------------------------- */
+
+:root {
+  /* chrome sizing */
+  --h-titlebar: 36px;
+  --h-header: 36px;
+  --h-row: 28px;
+  --h-row-lg: 38px;
+  --h-control: 32px;
+  --h-tab: 32px;
+  --h-status: 26px;
+  --w-rail: 54px;
+  --w-tree: 264px;
+  --w-panel: 352px;
+
+  /* radii — four, no more */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+
+  /* spacing rhythm */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+
+  /* type scale — seven steps */
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+             "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", "Cascadia Code", Consolas,
+               "Liberation Mono", monospace;
+
+  /* icons */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 18px;
+
+  /* motion — exit is always faster than enter */
+  --dur-press: 90ms;
+  --dur-hover: 120ms;
+  --dur-surface: 160ms;
+  --dur-enter: 160ms;
+  --dur-exit: 110ms;
+  --dur-overlay: 220ms;
+  --ease-out: cubic-bezier(.2, .7, .3, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+
+  /* stacking ladder */
+  --z-sticky: 10;
+  --z-dropdown: 100;
+  --z-drawer: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+  --z-tooltip: 500;
+
+  /* elevation */
+  --shadow-menu: 0 12px 32px rgba(16, 14, 32, .16), 0 2px 6px rgba(16, 14, 32, .06);
+  --shadow-modal: 0 32px 80px rgba(16, 14, 32, .28), 0 4px 14px rgba(16, 14, 32, .10);
+  --shadow-card: 0 1px 2px rgba(16, 14, 32, .06);
+  --scrim: rgba(10, 9, 18, .62);
+  --shadow-titlebar: 0 4px 18px rgba(15, 23, 42, .04);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow-md: 0 10px 32px rgba(15, 23, 42, .14), 0 2px 8px rgba(15, 23, 42, .08);
+  --shadow-knob: 0 1px 3px rgba(16, 14, 32, .28);
+
+  /* terminal background presets — shared by the terminal and its settings
+     preview so the two can never drift apart */
+  --terminal-bg-midnight: linear-gradient(145deg, #111827, #0b1220 58%, #26344d);
+  --terminal-bg-aurora:
+    radial-gradient(circle at 15% 20%, rgba(13, 148, 136, .38), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(79, 70, 229, .34), transparent 38%),
+    linear-gradient(145deg, #07111f, #111827);
+
+  /* the one chevron every native select uses, so no component redraws it */
+  --on-brand: #ffffff;
+  --shadow-topbar: inset 0 1px rgba(255, 255, 255, .55), 0 4px 16px rgba(15, 23, 42, .035);
+  --shadow-panel: 0 4px 16px rgba(15, 23, 42, .045);
+
+  --code-block-bg: #17202b;
+  --code-block-fg: #d7e2ee;
+  /* protocol identity colours — icons and badges only */
+  --protocol-local: #159ca8;
+  --protocol-mysql: #d75b92;
+  --protocol-postgresql: #397ad4;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2398a2b1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* ---------- 1. primitives: aurora ---------------------------------------- */
+
+:root[data-skin="aurora"][data-theme="light"] {
+  --surface-shell: #f3f2fa;
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f7f6fc;
+  --surface-selected: #ece9fd;
+  --surface-hover: #f4f2fd;
+
+  --text-1: #16152a;
+  --text-2: #5a5c72;
+  --text-3: #65677a;
+  --on-accent: #ffffff;
+
+  --accent: #5a4be0;
+  --accent-soft: #eeebff;
+  --accent-line: #d9d2fb;
+
+  --line: #d8d5e9;
+  --line-strong: #c7c1e0;
+  --line-control: #87829d;
+
+  --success: #0f7a4f;
+  --warning: #9a5b00;
+  --danger: #c22f38;
+  --info: #1a6bb5;
+
+  --brand-gradient: linear-gradient(135deg, #6d5efc, #5b5ff0);
+}
+
+:root[data-skin="aurora"][data-theme="dark"] {
+  --surface-shell: #0a0912;
+  --surface-base: #12101c;
+  --surface-raised: #191627;
+  --surface-sunken: #07060c;
+  --surface-selected: #241f3d;
+  --surface-hover: #1d1a2c;
+
+  --text-1: #edecf7;
+  --text-2: #b3aec8;
+  --text-3: #948fa9;
+  --on-accent: #12101c;
+
+  --accent: #a99bff;
+  --accent-soft: #221d3b;
+  --accent-line: #382f5e;
+
+  --line: #342d48;
+  --line-strong: #41385e;
+  --line-control: #70698b;
+
+  --success: #4fd6a0;
+  --warning: #e6b45c;
+  --danger: #ff8b93;
+  --info: #79b8ff;
+
+  --brand-gradient: linear-gradient(135deg, #8f80ff, #6f6bff);
+}
+
+/* ---------- 1. primitives: mist ------------------------------------------ */
+
+:root[data-skin="mist"][data-theme="light"] {
+  --surface-shell: #eef1f6;
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f6f8fb;
+  --surface-selected: #e6effb;
+  --surface-hover: #f2f6fb;
+
+  --text-1: #141c26;
+  --text-2: #4e5c6e;
+  --text-3: #5f6c7d;
+  --on-accent: #ffffff;
+
+  --accent: #1a63b4;
+  --accent-soft: #e8f1fc;
+  --accent-line: #cfe1f6;
+
+  --line: #d2dbe8;
+  --line-strong: #bbc9da;
+  --line-control: #7c8998;
+
+  --success: #0b6b46;
+  --warning: #8a5405;
+  --danger: #bb2f33;
+  --info: #15619f;
+
+  --brand-gradient: linear-gradient(135deg, #2f7dd1, #1a63b4);
+}
+
+:root[data-skin="mist"][data-theme="dark"] {
+  --surface-shell: #0a1017;
+  --surface-base: #121a24;
+  --surface-raised: #18212c;
+  --surface-sunken: #070c12;
+  --surface-selected: #1e2c3c;
+  --surface-hover: #172230;
+
+  --text-1: #e9eef6;
+  --text-2: #aab6c6;
+  --text-3: #8d9aac;
+  --on-accent: #0a1017;
+
+  --accent: #7ab3ff;
+  --accent-soft: #1b2a3c;
+  --accent-line: #2b4460;
+
+  --line: #2a3948;
+  --line-strong: #364658;
+  --line-control: #677788;
+
+  --success: #4ed3a4;
+  --warning: #e8b463;
+  --danger: #ff8f8f;
+  --info: #7cbaff;
+
+  --brand-gradient: linear-gradient(135deg, #5aa2ff, #3d7fe8);
+}
+
+/* ---------- 1. primitives: ember ----------------------------------------- */
+
+:root[data-skin="ember"][data-theme="light"] {
+  --surface-shell: #f8f2ea;
+  --surface-base: #fffdfa;
+  --surface-raised: #fffdfa;
+  --surface-sunken: #faf5ee;
+  --surface-selected: #f8e9df;
+  --surface-hover: #fbf2e9;
+
+  --text-1: #221a14;
+  --text-2: #5c4e42;
+  --text-3: #726355;
+  --on-accent: #ffffff;
+
+  --accent: #a8482a;
+  --accent-soft: #fbeadf;
+  --accent-line: #eed6c3;
+
+  --line: #e5d5c5;
+  --line-strong: #d6c2aa;
+  --line-control: #928474;
+
+  --success: #3f6b32;
+  --warning: #8a5a0c;
+  --danger: #a93330;
+  --info: #2a5d8a;
+
+  --brand-gradient: linear-gradient(135deg, #c25e3a, #a8482a);
+}
+
+:root[data-skin="ember"][data-theme="dark"] {
+  --surface-shell: #120e0b;
+  --surface-base: #1a1512;
+  --surface-raised: #231c17;
+  --surface-sunken: #0c0908;
+  --surface-selected: #33241c;
+  --surface-hover: #241d18;
+
+  --text-1: #f5ece4;
+  --text-2: #c5b2a3;
+  --text-3: #a6917f;
+  --on-accent: #1a1512;
+
+  --accent: #ff9d78;
+  --accent-soft: #2e2119;
+  --accent-line: #4a3325;
+
+  --line: #3e332a;
+  --line-strong: #4d3f33;
+  --line-control: #7f6e60;
+
+  --success: #7fd49b;
+  --warning: #e9b45f;
+  --danger: #ff9186;
+  --info: #8ec2ef;
+
+  --brand-gradient: linear-gradient(135deg, #ff9d78, #e0734f);
+}
+
+/* ---------- 1. primitives: midnight -------------------------------------- */
+
+:root[data-skin="midnight"][data-theme="light"] {
+  --surface-shell: #eaf2f1;
+  --surface-base: #fcffff;
+  --surface-raised: #fcffff;
+  --surface-sunken: #f4faf9;
+  --surface-selected: #dcefec;
+  --surface-hover: #eff8f7;
+
+  --text-1: #0f2226;
+  --text-2: #47605f;
+  --text-3: #586b6a;
+  --on-accent: #ffffff;
+
+  --accent: #0a6f6f;
+  --accent-soft: #e2f4f1;
+  --accent-line: #c3e5e0;
+
+  --line: #c5dcd9;
+  --line-strong: #a8cbc6;
+  --line-control: #6e8c88;
+
+  --success: #0b6b4f;
+  --warning: #8a5a0c;
+  --danger: #a83232;
+  --info: #1a5f8a;
+
+  --brand-gradient: linear-gradient(135deg, #128f8f, #0a6f6f);
+}
+
+:root[data-skin="midnight"][data-theme="dark"] {
+  --surface-shell: #05100f;
+  --surface-base: #0c1a1b;
+  --surface-raised: #122425;
+  --surface-sunken: #040b0a;
+  --surface-selected: #173433;
+  --surface-hover: #102222;
+
+  --text-1: #e2f6f2;
+  --text-2: #a4c3bf;
+  --text-3: #88a8a4;
+  --on-accent: #05100f;
+
+  --accent: #4fe0c8;
+  --accent-soft: #12302e;
+  --accent-line: #1f4a46;
+
+  --line: #224143;
+  --line-strong: #2d4d50;
+  --line-control: #607f80;
+
+  --success: #5fdfb0;
+  --warning: #ecc06d;
+  --danger: #ff9a9a;
+  --info: #7ec8de;
+
+  --brand-gradient: linear-gradient(135deg, #2dd4bf, #14a89a);
+}
+
+/* ---------- 2. legacy map -------------------------------------------------
+   Old names stay valid so unmigrated components keep rendering. Each one is a
+   pointer, not a value: change a semantic token and every consumer follows.
+   Specificity [data-theme] beats the older :root defaults in App.css and
+   visual-refresh.css; the per-skin blocks above already outrank this rule.
+   ------------------------------------------------------------------------- */
+
+:root[data-theme="dark"] {
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .22);
+  --shadow-md: 0 14px 38px rgba(0, 0, 0, .42), 0 3px 10px rgba(0, 0, 0, .25);
+}
+:root[data-theme] {
+  /* surfaces */
+  --bg-primary: var(--surface-shell);
+  --bg-secondary: var(--surface-base);
+  --bg-tertiary: var(--surface-sunken);
+  --bg-hover: var(--surface-hover);
+  --bg-active: var(--surface-selected);
+  --bg-input: var(--surface-base);
+  --surface-elevated: var(--surface-raised);
+  --surface-overlay: color-mix(in srgb, var(--surface-shell) 92%, transparent);
+
+  /* text */
+  --text-primary: var(--text-1);
+  --text-secondary: var(--text-2);
+  --text-muted: var(--text-3);
+
+  /* accent + state */
+  --accent-primary: var(--accent);
+  --accent-secondary: color-mix(in srgb, var(--accent) 72%, var(--text-1));
+  --accent-hover: color-mix(in srgb, var(--accent) 84%, var(--text-1));
+  --error: var(--danger);
+  --focus-ring: color-mix(in srgb, var(--accent) 26%, transparent);
+
+  /* lines */
+  --border: var(--line);
+  --border-color: var(--line);
+  --border-light: color-mix(in srgb, var(--line) 62%, var(--surface-base));
+
+  /* workspace aliases */
+  --workspace-shell-bg: var(--surface-shell);
+  --workspace-surface: var(--surface-base);
+  --workspace-subtle: var(--surface-sunken);
+  --workspace-line: var(--line);
+  --workspace-line-strong: var(--line-strong);
+  --workspace-rail-active: var(--surface-selected);
+  --workspace-text: var(--text-1);
+  --workspace-muted: var(--text-3);
+  --workspace-warning: var(--warning);
+
+  /* pn-* palette aliases */
+  --pn-blue: var(--accent);
+  --pn-indigo: color-mix(in srgb, var(--accent) 78%, var(--info));
+  --pn-violet: color-mix(in srgb, var(--accent) 62%, var(--danger));
+  --pn-teal: var(--success);
+  --pn-cyan: var(--info);
+  --pn-amber: var(--warning);
+  --pn-green: var(--success);
+  --pn-red: var(--danger);
+  --pn-brand-gradient: var(--brand-gradient);
+  --pn-blue-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --pn-teal-soft: color-mix(in srgb, var(--success) 14%, transparent);
+  --pn-amber-soft: color-mix(in srgb, var(--warning) 14%, transparent);
+  --pn-violet-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --pn-card-border: var(--line);
+  --pn-card-shadow: var(--shadow-card);
+  --pn-focus-glow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+
+  /* ui-* aliases */
+  --ui-surface: var(--surface-base);
+  --ui-subtle: var(--surface-sunken);
+  --ui-line: var(--line);
+  --ui-line-strong: var(--line-strong);
+  --ui-text: var(--text-1);
+  --ui-muted: var(--text-3);
+  --ui-hover: var(--surface-hover);
+  --ui-selected: var(--surface-selected);
+  --ui-input: var(--surface-base);
+  --ui-primary: var(--accent);
+  --ui-primary-hover: var(--accent-hover);
+  --ui-danger: var(--danger);
+  --ui-menu-bg: var(--surface-raised);
+  --ui-menu-hover: color-mix(in srgb, var(--accent) 10%, transparent);
+  --ui-menu-selected: var(--surface-selected);
+  --ui-menu-line: var(--line);
+  --ui-menu-shadow: var(--shadow-menu);
+  --ui-radius-menu: var(--r-md);
+  --ui-radius-row: var(--r-sm);
+
+  /* skin-* aliases: four radii, no gradients in chrome */
+  --skin-panel-radius: var(--r-lg);
+  --skin-card-radius: var(--r-md);
+  --skin-control-radius: var(--r-sm);
+  --skin-menu-radius: var(--r-md);
+  --skin-gradient: var(--brand-gradient);
+  --skin-gradient-2: linear-gradient(135deg, var(--success), var(--info));
+  --skin-accent-soft: var(--accent-soft);
+  --skin-accent-line: var(--accent-line);
+  --skin-teal-soft: color-mix(in srgb, var(--success) 12%, var(--surface-base));
+  --skin-teal-line: color-mix(in srgb, var(--success) 28%, var(--line));
+  --skin-warm-soft: color-mix(in srgb, var(--warning) 12%, var(--surface-base));
+  --skin-warm-line: color-mix(in srgb, var(--warning) 30%, var(--line));
+  --skin-warm-ink: var(--warning);
+  --skin-glow: none;
+  --skin-glow-2: none;
+  --skin-card-shadow: var(--shadow-card);
+  --skin-modal-shadow: var(--shadow-modal);
+  --skin-menu-shadow: var(--shadow-menu);
+  --skin-wash-1: color-mix(in srgb, var(--accent) 11%, transparent);
+  --skin-wash-2: color-mix(in srgb, var(--success) 8%, transparent);
+  --skin-wash-3: transparent;
+
+  /* radii + control height converge on the component scale */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --control-height: var(--h-control);
+}
+
+/* Keep the page background in sync with the shell so there is no white flash
+   on the first paint and no mismatch under the window edges. */
+body,
+.app-container {
+  background-color: var(--surface-shell);
+  color: var(--text-1);
+}

@@ -165,12 +165,12 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     return files().filter(file => (showHidden() || !file.name.startsWith(".")) && (!query || file.name.toLowerCase().includes(query)));
   });
   const columnTemplate = createMemo(() => [
-    columns().name && "minmax(175px, 1.35fr)",
-    columns().modified && "125px",
-    columns().type && "70px",
-    columns().size && "80px",
-    columns().permissions && "78px",
-    columns().owner && "90px",
+    columns().name && "minmax(110px, 1.35fr)",
+    columns().modified && "84px",
+    columns().type && "54px",
+    columns().size && "62px",
+    columns().permissions && "70px",
+    columns().owner && "80px",
   ].filter(Boolean).join(" "));
 
   const computeInitialPath = () => {
@@ -764,7 +764,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <Show when={uiStore.pathLinked() && props.sessionKey}>
             <button onClick={handleReadTerminalPath} title="从终端读取当前路径并同步">定位</button>
           </Show>
-          <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
           <button onClick={() => openNewEntryDialog("folder")} title="新建文件夹">＋文件夹</button>
           <button onClick={handleUpload} title="上传文件">上传</button>
           <button onClick={handleUploadDirectory} title="递归上传目录">上传目录</button>
@@ -772,6 +771,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
             传输 {Object.values(transfers()).filter(item => item.status === "running").length || ""}
           </button>
         </div>
+        <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" aria-label="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
         <div class="file-manager-summary-count">
           共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
         </div>

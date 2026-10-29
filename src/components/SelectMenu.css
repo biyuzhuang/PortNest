@@ -53,7 +53,7 @@
   border: 1px solid color-mix(in srgb, var(--border) 72%, var(--text-muted));
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-overlay) 97%, transparent);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, .2), 0 4px 12px rgba(15, 23, 42, .1);
+  box-shadow: var(--shadow-menu);
   backdrop-filter: blur(18px);
   animation: app-select-enter .12s cubic-bezier(.2, .8, .2, 1);
 }

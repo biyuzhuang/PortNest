@@ -403,12 +403,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} style={`--asset-sidebar-width:${props.width || 286}px`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
       <nav class="module-rail" aria-label="功能导航">
         <div class="module-rail-primary">
-          <button class={`module-rail-btn module-rail-ai ${props.aiOpen ? "active" : ""}`} title="PortNest AI（Ctrl+Shift+A）" onClick={() => props.onOpenAI?.()}>
-            <span><Icon name="sparkles" /></span><small>AI</small>
-          </button>
           <button
             class={`module-rail-btn ${!props.aiOpen && uiStore.assetTreeVisible() ? "active" : ""}`}
             title={props.aiOpen || !uiStore.assetTreeVisible() ? "显示资产树" : "收起资产树"}
+            aria-pressed={uiStore.assetTreeVisible()}
             onClick={() => {
               if (props.aiOpen) {
                 props.onCloseAI?.();
@@ -420,17 +418,40 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           >
             <span><Icon name="assets" /></span><small>资产树</small>
           </button>
-          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "all" ? "active" : ""}`} title="显示全部" onClick={() => { props.onCloseAI?.(); selectAssetFilter("all"); }}>
-            <span><Icon name="list" /></span><small>全部</small>
-          </button>
-          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "terminal" ? "active" : ""}`} title="只显示终端" onClick={() => { props.onCloseAI?.(); selectAssetFilter("terminal"); }}>
-            <span><ProtocolIcon kind="ssh" /></span><small>终端</small>
-          </button>
-          <button class={`module-rail-btn ${!props.aiOpen && uiStore.assetFilter() === "database" ? "active" : ""}`} title="只显示数据库" onClick={() => { props.onCloseAI?.(); selectAssetFilter("database"); }}>
-            <span><ProtocolIcon kind="database" /></span><small>数据库</small>
-          </button>
+
+          <div class="module-rail-divider" role="separator" aria-orientation="horizontal" />
+
+          <div class="module-rail-filters" role="group" aria-label="资产筛选">
+            <button
+              class={`module-rail-btn ${uiStore.assetFilter() === "all" ? "active" : ""}`}
+              title="显示全部资产"
+              aria-pressed={uiStore.assetFilter() === "all"}
+              onClick={() => { props.onCloseAI?.(); selectAssetFilter("all"); }}
+            >
+              <span><Icon name="list" /></span><small>全部</small>
+            </button>
+            <button
+              class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`}
+              title="只看终端资产"
+              aria-pressed={uiStore.assetFilter() === "terminal"}
+              onClick={() => { props.onCloseAI?.(); selectAssetFilter("terminal"); }}
+            >
+              <span><Icon name="terminal" /></span><small>终端</small>
+            </button>
+            <button
+              class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`}
+              title="只看数据库资产"
+              aria-pressed={uiStore.assetFilter() === "database"}
+              onClick={() => { props.onCloseAI?.(); selectAssetFilter("database"); }}
+            >
+              <span><Icon name="database" /></span><small>数据库</small>
+            </button>
+          </div>
         </div>
         <div class="module-rail-bottom">
+          <button class={`module-rail-btn ${props.aiOpen ? "active" : ""}`} title="PortNest AI（Ctrl+Shift+A）" aria-pressed={!!props.aiOpen} onClick={() => props.onOpenAI?.()}>
+            <span><Icon name="sparkles" /></span><small>AI</small>
+          </button>
           <button class="module-rail-btn" title="设置" onClick={() => { props.onCloseAI?.(); props.onOpenSettings?.(); }}>
             <span><Icon name="settings" /></span><small>设置</small>
           </button>
@@ -459,7 +480,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               value={searchQuery()}
               onInput={(e) => setSearchQuery(e.currentTarget.value)}
               onKeyDown={event => { if (event.key === "Escape") { setSearchQuery(""); setSearchOpen(false); } }}
-              class="search-input"
+              class="search-input field-flush"
             />
           </div>
         </div>
@@ -588,14 +609,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         />
       </Show>
 
-      <div class="sidebar-footer">
-        <div class="status-bar">
-          <span class="status-item">
-            <span class="status-dot online" />
-            就绪
-          </span>
-        </div>
-      </div>
       </div>
     </div>
   );
@@ -614,19 +627,6 @@ interface ConnectionItemProps {
 }
 
 const ConnectionItem: Component<ConnectionItemProps> = (props) => {
-  const getProtocolColor = (protocol: string) => {
-    switch (protocol) {
-      case "ssh": return "#4ade80";
-      case "local": return "#22d3ee";
-      case "rdp": return "#60a5fa";
-      case "sftp": return "#fbbf24";
-      case "mysql": return "#f472b6";
-      case "postgresql": return "#3b82f6";
-      case "highgo": return "#14b8a6";
-      default: return "#9ca3af";
-    }
-  };
-
   const handleDragStart = (e: DragEvent) => {
     if (e.dataTransfer) {
       // 同时写 connectionId 和 text/plain 两种 MIME，
@@ -650,6 +650,8 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
   return (
     <div
       class={`connection-item ${props.selected ? "selected" : ""} ${props.builtin ? "builtin" : ""} ${props.dragging ? "dragging" : ""}`}
+      classList={{ "has-color": Boolean(props.conn.color) }}
+      style={props.conn.color ? { "--connection-color": props.conn.color } : undefined}
       draggable={true}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -666,7 +668,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       onDblClick={() => props.onConnect(props.conn)}
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >
-      <span class="conn-icon" style={{ color: getProtocolColor(props.conn.protocol) }}>
+      <span class={`conn-icon protocol-${props.conn.protocol}`}>
         <ProtocolIcon kind={props.conn.protocol} />
       </span>
       <span class="conn-name" title={`${props.conn.name}\n${connectionSummary}`}>{props.conn.name}</span>

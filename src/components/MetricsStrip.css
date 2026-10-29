@@ -11,7 +11,7 @@
   border-radius: 10px;
   padding: 14px 12px;
   width: 140px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-menu);
 }
 
 .metrics-strip-item {
@@ -42,7 +42,7 @@
 }
 
 .metrics-strip-bar.up .metrics-strip-fill {
-  background: linear-gradient(to right, var(--success), #34d399);
+  background: linear-gradient(to right, var(--success), color-mix(in srgb, var(--success) 62%, var(--surface-base)));
 }
 
 .metrics-strip-bar.down .metrics-strip-fill {
@@ -54,7 +54,7 @@
 }
 
 .metrics-strip-bar.disk .metrics-strip-fill {
-  background: linear-gradient(to right, var(--warning), #fbbf24);
+  background: linear-gradient(to right, var(--warning), color-mix(in srgb, var(--warning) 62%, var(--surface-base)));
 }
 
 .metrics-strip-label {

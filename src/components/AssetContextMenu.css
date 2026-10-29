@@ -1,209 +1,187 @@
 /* HexHub-style asset context menus. */
 .hexhub-context-overlay {
-  position: fixed;
-  z-index: 1398;
-  inset: 0;
+  position:fixed;
+  z-index:1398;
+  inset:0;
 }
 .hexhub-context-menu {
-  position: fixed;
-  z-index: 1399;
-  width: 220px;
-  padding: 0 !important;
-  border: 1px solid rgba(20, 25, 33, .11) !important;
-  border-radius: 7px !important;
-  background: #f4f5f6 !important;
-  color: #25282d;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, .16), 0 2px 8px rgba(15, 23, 42, .08) !important;
-  font-family: var(--font-ui);
-  user-select: none;
-  animation: hexhub-menu-enter .12s ease-out;
+  position:fixed;
+  z-index:1399;
+  width:220px;
+  padding:0;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--surface-raised);
+  color:var(--text-2);
+  box-shadow:var(--shadow-menu);
+  font-family:var(--font-ui);
+  user-select:none;
+  animation:hexhub-menu-enter .12s ease-out;
 }
 @keyframes hexhub-menu-enter {
-  from { opacity: 0; transform: translateY(-2px) scale(.99); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity:0; transform:translateY(-2px) scale(.99); }
+  to { opacity:1; transform:translateY(0) scale(1); }
 }
 .hexhub-context-header {
-  display: flex;
-  min-height: 38px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 7px 0 12px;
-  border-bottom: 1px solid rgba(20, 25, 33, .08);
+  display:flex;
+  min-height:38px;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:0 7px 0 12px;
+  border-bottom:1px solid var(--line);
 }
 .hexhub-context-header > strong {
-  color: #2b2e33;
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: .01em;
+  color:var(--text-2);
+  font-size:12px;
+  font-weight:650;
+  letter-spacing:.01em;
 }
 .hexhub-context-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  display:flex;
+  align-items:center;
+  gap:2px;
 }
 .hexhub-context-header-actions button {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 4px;
-  color: #696e76;
-  background: transparent;
-  cursor: default;
+  display:grid;
+  width:24px;
+  height:24px;
+  padding:0;
+  place-items:center;
+  border:0;
+  border-radius:4px;
+  color:var(--text-3);
+  background:transparent;
+  cursor:default;
 }
 .hexhub-context-header-actions button:hover:not(:disabled) {
-  color: #272a2f;
-  background: rgba(20, 25, 33, .06);
+  color:var(--text-2);
+  background:color-mix(in srgb, var(--text-1) 6%, transparent);
 }
-.hexhub-context-header-actions button:disabled { opacity: .33; }
-.hexhub-context-items { padding: 5px; }
-.hexhub-context-row { position: relative; }
+.hexhub-context-header-actions button:disabled { opacity:.33; }
+.hexhub-context-items { padding:5px; }
+.hexhub-context-row { position:relative; }
 .hexhub-context-menu .hexhub-context-item {
-  display: flex !important;
-  width: 100%;
-  min-height: 30px !important;
-  align-items: center;
-  gap: 9px;
-  padding: 4px 8px !important;
-  border: 0;
-  border-radius: 5px !important;
-  color: #2b2e33 !important;
-  background: transparent !important;
-  font-family: var(--font-ui);
-  font-size: 12px !important;
-  line-height: 1.35;
-  text-align: left;
-  cursor: default;
-  transition: none;
+  display:flex;
+  width:100%;
+  min-height:30px;
+  align-items:center;
+  gap:9px;
+  padding:4px 8px;
+  border:0;
+  border-radius:5px;
+  color:var(--text-2);
+  background:transparent;
+  font-family:var(--font-ui);
+  font-size:12px;
+  line-height:1.35;
+  text-align:left;
+  cursor:default;
+  transition:none;
 }
 .hexhub-context-menu .hexhub-context-item:hover:not(:disabled),
 .hexhub-context-menu .hexhub-context-item:focus-visible:not(:disabled) {
-  color: #1f4c91 !important;
-  background: #d8e5fb !important;
-  outline: none;
+  color:var(--accent);
+  background:var(--accent-soft);
+  outline:none;
 }
 .hexhub-context-menu .hexhub-context-item.disabled,
 .hexhub-context-menu .hexhub-context-item:disabled {
-  color: #b8bbc0 !important;
-  background: transparent !important;
+  color:var(--text-3);
+  background:transparent;
 }
 .hexhub-context-menu .hexhub-context-item.danger:hover:not(:disabled) {
-  color: #c74343 !important;
-  background: #f7e2e2 !important;
+  color:var(--danger);
+  background:color-mix(in srgb, var(--danger) 14%, transparent);
 }
 .hexhub-context-icon {
-  display: grid;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  place-items: center;
-  color: #70757d;
-  background: transparent;
+  display:grid;
+  width:16px;
+  height:16px;
+  flex:0 0 16px;
+  place-items:center;
+  color:var(--text-3);
+  background:transparent;
 }
-.hexhub-context-icon svg { width: 15px; height: 15px; stroke-width: 1.7; }
-.hexhub-context-item:hover:not(:disabled) .hexhub-context-icon { color: #2563b8; }
+.hexhub-context-icon svg { width:15px; height:15px; stroke-width:1.7; }
+.hexhub-context-item:hover:not(:disabled) .hexhub-context-icon { color:var(--accent); }
 .hexhub-context-item.disabled .hexhub-context-icon,
-.hexhub-context-item:disabled .hexhub-context-icon { color: #b8bbc0; }
+.hexhub-context-item:disabled .hexhub-context-icon { color:var(--text-3); }
 .hexhub-context-label {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width:0;
+  flex:1;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .hexhub-context-shortcut {
-  flex: 0 0 auto;
-  margin-left: 10px;
-  color: #9a9ea5;
-  font-size: 10px;
-  letter-spacing: .01em;
+  flex:0 0 auto;
+  margin-left:10px;
+  color:var(--text-3);
+  font-size:10px;
+  letter-spacing:.01em;
 }
 .hexhub-context-arrow {
-  display: grid;
-  width: 13px;
-  height: 13px;
-  flex: 0 0 13px;
-  place-items: center;
-  color: #8f949b;
+  display:grid;
+  width:13px;
+  height:13px;
+  flex:0 0 13px;
+  place-items:center;
+  color:var(--text-3);
 }
 .hexhub-context-separator {
-  height: 1px;
-  margin: 4px 8px;
-  background: rgba(20, 25, 33, .08);
+  height:1px;
+  margin:4px 8px;
+  background:var(--line);
 }
 .hexhub-context-submenu {
-  position: absolute;
-  top: -5px;
-  left: calc(100% + 5px);
-  z-index: 1;
-  display: none;
-  width: 220px;
-  padding: 5px;
-  border: 1px solid rgba(20, 25, 33, .11);
-  border-radius: 7px;
-  background: #f4f5f6;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, .16), 0 2px 8px rgba(15, 23, 42, .08);
+  position:absolute;
+  top:-5px;
+  left:calc(100% + 5px);
+  z-index:1;
+  display:none;
+  width:220px;
+  padding:5px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--surface-raised);
+  box-shadow:var(--shadow-menu);
 }
 .hexhub-context-row:hover > .hexhub-context-submenu,
 .hexhub-context-row:focus-within > .hexhub-context-submenu,
-.hexhub-context-submenu.open { display: block; }
-.hexhub-context-submenu.open-left { left: auto; right: calc(100% + 5px); }
-.hexhub-context-submenu.open-up { top: auto; bottom: -5px; }
+.hexhub-context-submenu.open { display:block; }
+.hexhub-context-submenu.open-left { left:auto; right:calc(100% + 5px); }
+.hexhub-context-submenu.open-up { top:auto; bottom:-5px; }
 .hexhub-context-submenu .hexhub-context-menu .hexhub-context-item,
-.hexhub-context-submenu .hexhub-context-item { min-height: 30px !important; font-size: 12px !important; }
-[data-theme="dark"] .hexhub-context-menu,
-[data-theme="dark"] .hexhub-context-submenu {
-  border-color: rgba(255, 255, 255, .1) !important;
-  background: #1c222b !important;
-  color: #e7ebf0;
-  box-shadow: 0 20px 54px rgba(0, 0, 0, .45), 0 2px 8px rgba(0, 0, 0, .28) !important;
-}
-[data-theme="dark"] .hexhub-context-header { border-bottom-color: rgba(255, 255, 255, .08); }
-[data-theme="dark"] .hexhub-context-header > strong,
-[data-theme="dark"] .hexhub-context-menu .hexhub-context-item { color: #e7ebf0 !important; }
-[data-theme="dark"] .hexhub-context-menu .hexhub-context-item:hover:not(:disabled) { color: #dce9ff !important; background: #28405f !important; }
-[data-theme="dark"] .hexhub-context-menu .hexhub-context-item.disabled,
-[data-theme="dark"] .hexhub-context-menu .hexhub-context-item:disabled { color: #69727d !important; }
-[data-theme="dark"] .hexhub-context-separator { background: rgba(255, 255, 255, .09); }
-[data-theme="dark"] .hexhub-context-shortcut,
-[data-theme="dark"] .hexhub-context-icon { color: #89939f; }
-
-/* High-specificity overrides against the legacy asset-menu rules. */
-.asset-context-menu.hexhub-context-menu {
-  z-index: 1399 !important;
-  background: rgba(244, 245, 246, .98) !important;
-}
+.hexhub-context-submenu .hexhub-context-item { min-height:30px; font-size:12px; }
+/* Row + icon layout (the legacy menu structure is gone). */
 .hexhub-context-menu .hexhub-context-item > .hexhub-context-icon {
-  display: grid !important;
-  width: 16px !important;
-  height: 16px !important;
-  min-width: 16px !important;
-  flex: 0 0 16px !important;
-  flex-direction: row !important;
+  display:grid;
+  width:16px;
+  height:16px;
+  min-width:16px;
+  flex:0 0 16px;
+  flex-direction:row;
 }
 .hexhub-context-menu .hexhub-context-item > .hexhub-context-label {
-  display: block !important;
-  min-width: 0 !important;
-  flex: 1 1 auto !important;
-  flex-direction: row !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display:block;
+  min-width:0;
+  flex:1 1 auto;
+  flex-direction:row;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .hexhub-context-menu .hexhub-context-item > .hexhub-context-shortcut {
-  display: inline-flex !important;
-  flex: 0 0 auto !important;
-  align-items: center;
-  justify-content: flex-end;
+  display:inline-flex;
+  flex:0 0 auto;
+  align-items:center;
+  justify-content:flex-end;
 }
 .hexhub-context-menu .hexhub-context-item > .hexhub-context-arrow {
-  display: grid !important;
-  width: 13px !important;
-  min-width: 13px !important;
-  flex: 0 0 13px !important;
-  place-items: center;
+  display:grid;
+  width:13px;
+  min-width:13px;
+  flex:0 0 13px;
+  place-items:center;
 }
-[data-theme="dark"] .asset-context-menu.hexhub-context-menu { background: #1c222b !important; }

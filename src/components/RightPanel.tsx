@@ -92,7 +92,7 @@ export const RightPanel: Component<RightPanelProps> = (props) => {
         title="收起文件面板"
         aria-label="收起文件面板"
       >
-        <Icon name="back" size={15} />
+        <Icon name="chevronRight" size={15} />
       </button>
       <div class="right-panel-top">
         <Show when={props.connection} fallback={<div class="right-panel-empty">

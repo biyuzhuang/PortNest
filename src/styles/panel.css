@@ -1,0 +1,640 @@
+/* =============================================================================
+   File panel — SFTP file manager inside the right dock.
+
+   Owns .right-panel*, .file-*, .path-*, .transfer-* and the panel toolbar.
+   Modal internals (permission editor, remote editor) stay in FileManager.css.
+   ============================================================================= */
+
+/* ---------- dock ---------------------------------------------------------- */
+
+.right-panel {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-width: 280px;
+  max-width: 560px;
+  flex: 0 0 auto;
+  flex-direction: column;
+  background: var(--surface-base);
+  border-left: 1px solid var(--line);
+}
+
+.right-panel[hidden],
+.panel-splitter[hidden] { display: none; }
+
+.right-panel-top {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.right-panel-top .file-manager {
+  flex: 1;
+  background: var(--surface-base);
+}
+
+/* drag handle on the panel's left edge */
+.right-panel-collapse-btn {
+  position: absolute;
+  z-index: var(--z-sticky);
+  top: 50%;
+  left: 2px;
+  opacity: 0;
+  display: grid;
+  width: 16px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border: 0;
+  border-radius: var(--r-xs);
+  font-size: 12px;
+  line-height: 1;
+  opacity: .85;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-hover) ease, color var(--dur-hover) ease, background var(--dur-hover) ease;
+}
+
+.right-panel:hover .right-panel-collapse-btn,
+.right-panel-collapse-btn:focus-visible { opacity: .9; }
+
+.right-panel-collapse-btn:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+  opacity: 1;
+}
+
+.right-panel-collapse-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* handle shown when the panel is collapsed */
+.right-panel-expand-tab {
+  display: grid;
+  position: relative;
+  width: 16px;
+  height: 36px;
+  flex: 0 0 16px;
+  align-self: center;
+  padding: 0;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border: 0;
+  border-radius: var(--r-xs);
+  opacity: .85;
+  cursor: pointer;
+  transition: opacity var(--dur-hover) ease, color var(--dur-hover) ease, background var(--dur-hover) ease;
+}
+
+.right-panel-expand-tab:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+  opacity: 1;
+}
+
+.right-panel-expand-tab-icon { display: none; }
+.right-panel-expand-tab-arrow { font-size: 12px; }
+
+.right-panel-empty {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+.right-panel-empty-icon {
+  color: var(--text-3);
+  font-size: 26px;
+  opacity: .5;
+}
+
+/* ---------- file manager -------------------------------------------------- */
+
+.file-manager {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-1);
+  background: var(--surface-base);
+}
+
+.file-manager-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  background: transparent;
+  border-bottom: 0;
+}
+
+.path-bar {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.nav-btn {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  flex: 0 0 26px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color var(--dur-hover) ease, background var(--dur-hover) ease;
+}
+
+.nav-btn:hover:not(:disabled) {
+  color: var(--text-1);
+  background: var(--surface-hover);
+}
+
+.nav-btn:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.nav-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.nav-btn svg { width: 15px; height: 15px; }.path-input { min-width: 0; flex: 1; padding: 0 var(--space-3); color: var(--text-1); background: var(--surface-base); border: 1px solid var(--line-control); border-radius: var(--r-sm); font-family: var(--font-mono); }
+
+.path-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.path-link-badge {
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.path-link-badge.linked { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.path-link-badge.probing { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.path-link-badge.idle { color: var(--text-3); background: var(--surface-sunken); }
+
+/* summary / actions row */
+.file-manager-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.file-manager-summary-actions {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.file-manager-summary-actions button {
+  height: 24px;
+  min-height: 0;
+  padding: 0 7px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-hover) ease, background var(--dur-hover) ease;
+}
+
+.file-manager-summary-actions button:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+}
+
+.file-manager-summary-actions button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.file-manager-summary-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}.file-filter-input { min-width: 0; flex: 1 1 90px; color: var(--text-1); background: var(--surface-base); border: 1px solid var(--line); border-radius: var(--r-xs); font: inherit; }
+
+.file-filter-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.file-filter-input::placeholder { color: var(--text-3); }
+
+.file-manager-summary-count {
+  flex: 0 1 auto;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ---------- file table ---------------------------------------------------- */
+
+.file-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 0 var(--space-2) var(--space-3);
+}
+
+.file-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-row {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-row);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background var(--dur-hover) ease;
+}
+
+.file-row:hover { background: var(--surface-hover); }
+
+.file-row.selected {
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.file-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.file-row.header {
+  position: sticky;
+  z-index: var(--z-sticky);
+  top: 0;
+  height: 26px;
+  color: var(--text-3);
+  background: var(--surface-base);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  cursor: default;
+}
+
+.file-row.header:hover { background: var(--surface-base); }
+
+.file-row.parent-row { color: var(--text-2); }
+
+.file-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-cell.name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.file-cell.date,
+.file-cell.size,
+.file-cell.permissions,
+.file-cell.owner {
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.file-cell.type {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.file-row.header .file-cell.date,
+.file-row.header .file-cell.size,
+.file-row.header .file-cell.permissions,
+.file-row.header .file-cell.owner { text-align: right; }
+
+.file-name {
+  overflow: hidden;
+  color: inherit;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sftp-file-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.sftp-file-icon svg { width: 15px; height: 15px; }
+
+.sftp-file-icon.kind-folder { color: var(--accent); }
+.sftp-file-icon.kind-file { color: var(--text-3); }
+.sftp-file-icon.kind-link { color: var(--info); }
+.sftp-file-icon.kind-archive { color: var(--warning); }
+.sftp-file-icon.kind-code,
+.sftp-file-icon.kind-text { color: var(--info); }
+.sftp-file-icon.kind-image { color: var(--success); }
+
+.loading,
+.error {
+  padding: var(--space-7);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  text-align: center;
+}
+
+.error { color: var(--danger); }
+
+/* ---------- transfer strip ------------------------------------------------ */
+
+.transfer-strip {
+  flex: 0 0 auto;
+  max-height: 190px;
+  overflow: auto;
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--line);
+}
+
+.transfer-strip-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 30px;
+  padding: 0 var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--line);
+}
+
+.transfer-strip-header strong {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.transfer-strip-header span {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transfer-strip-header button {
+  height: 22px;
+  min-height: 0;
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.transfer-strip-header button:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+}
+
+.transfer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  font-size: 11.5px;
+}
+
+.transfer-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  color: var(--text-3);
+  background: var(--surface-base);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font-size: 10px;
+}
+
+.transfer-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.transfer-info {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.transfer-name {
+  overflow: hidden;
+  color: var(--text-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-meta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transfer-status { color: var(--text-3); font-size: 10.5px; }
+
+.transfer-bar {
+  height: 3px;
+  margin-top: 5px;
+  overflow: hidden;
+  background: var(--surface-selected);
+  border-radius: var(--r-full);
+}
+
+.transfer-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width var(--dur-surface) var(--ease-out);
+}
+
+.transfer-row.status-running .transfer-icon {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+.transfer-row.status-error .transfer-icon,
+.transfer-row.status-failed .transfer-icon,
+.transfer-row.status-cancelled .transfer-icon { color: var(--danger); }
+
+.transfer-row.status-done .transfer-icon,
+.transfer-row.status-completed .transfer-icon { color: var(--success); }
+
+.transfer-row.status-error .transfer-bar-fill,
+.transfer-row.status-failed .transfer-bar-fill { background: var(--danger); }
+
+.transfer-cancel-btn,
+.transfer-retry-btn {
+  height: 22px;
+  min-height: 0;
+  padding: 0 6px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.transfer-retry-btn { color: var(--accent); border-color: var(--accent-line); }
+
+/* ---------- panel toolbar + options menu ---------------------------------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  height: 26px;
+  min-height: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--space-3);
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color var(--dur-hover) ease, background var(--dur-hover) ease;
+}
+
+.toolbar-btn:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+}
+
+.file-options-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dropdown);
+}
+
+.file-options-menu {
+  position: absolute;
+  z-index: calc(var(--z-dropdown) + 1);
+  display: flex;
+  width: 240px;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+
+.file-options-menu select,
+.file-options-menu input[type="number"] {
+  height: 26px;
+  padding: 0 var(--space-2);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: 11.5px;
+}
+
+.file-options-select-label,
+.file-options-number-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+
+.file-options-caption {
+  margin: var(--space-1) 0 0;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+.file-options-divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transfer-bar-fill { transition: none; }
+}
