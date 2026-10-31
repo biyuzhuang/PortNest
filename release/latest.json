@@ -1,11 +1,11 @@
 {
-  "version": "0.6.1",
-  "notes": "终端配色与会话图标修复，文件管理排序/布局和快捷键收敛，资产上级目录与概览导轨优化。",
-  "pub_date": "2026-10-31T10:58:31Z",
+  "version": "0.6.2",
+  "notes": "全新品牌图标；资产树扁平化与文件夹拖拽；完整路径面包屑；文件双击编辑；路径联动与关闭行为设置修复。",
+  "pub_date": "2026-10-31T14:27:02Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeFIwS3Q1YnUwSlBTNkgrWElVNUtUbTFZMUtkM1VTMlY1QXBlbEhZUmZkcGhtak5vc0VjSnR2Y1A2Mm5qZWJiRDI4UFp6U0l5WFJoYlREbldnNm0yMGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDQ0MjkwCWZpbGU6UG9ydE5lc3RfMC42LjFfeDY0LXNldHVwLmV4ZQpjOWE0cG0vekh4blVXalFEVUQ5OEs3STVxUmxLaDl4dGpUKy90aWl5YnoyVi9uWi84ZWVmNERma0J0eTJZZnZWWElXKzhRZFJKTnNFU29MUXVLWEVCUT09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.6.1/PortNest_0.6.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeGFyL2pDMVM2OE9tV1dnNldTMUJ4SmZlS2VheUpVbmM4eTQ5ZXJOS0VQT3RjVFBsUUgrUHZPRjZGZHpGY0VGZ25MMjkzejJiYjBuTTZZblg1MGU1amd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDU2ODE2CWZpbGU6UG9ydE5lc3RfMC42LjJfeDY0LXNldHVwLmV4ZQp5K2pkOWxMR1diQ01RN0hMVnBlOWFJVVFUemd0aUxVSVVzVTJEK3liWUFOb1JBZkJTWWpqL1ExVnNlQ01BWTE2Y3orS3VpVWJMTllTN3RWZThpY1hBdz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.6.2/PortNest_0.6.2_x64-setup.exe"
     }
   }
 }
