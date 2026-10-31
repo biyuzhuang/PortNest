@@ -1,6 +1,6 @@
 import type { Component, JSX } from "solid-js";
 
-export type IconName = "assets" | "list" | "grid" | "terminal" | "database" | "table" | "view" | "query" | "play" | "import" | "export" | "trash" | "copy" | "edit" | "chevronRight" | "chevronDown" | "chevronUp" | "arrowLeft" | "arrowRight" | "arrowUp" | "arrowDown" | "check" | "eye" | "eyeOff" | "home" | "file" | "sparkles" | "scissors" | "copyPlus" | "link" | "docker" | "settings" | "search" | "plus" | "folder" | "folderOpen" | "refresh" | "more" | "close" | "minimize" | "maximize" | "restore" | "pin" | "key" | "info" | "transfer" | "back" | "lock" | "shield" | "image" | "mic";
+export type IconName = "assets" | "list" | "grid" | "terminal" | "database" | "table" | "view" | "query" | "play" | "activity" | "import" | "export" | "trash" | "copy" | "edit" | "chevronRight" | "chevronDown" | "chevronUp" | "sort" | "arrowLeft" | "arrowRight" | "arrowUp" | "arrowDown" | "check" | "eye" | "eyeOff" | "home" | "file" | "sparkles" | "scissors" | "copyPlus" | "link" | "docker" | "settings" | "search" | "plus" | "folder" | "folderOpen" | "refresh" | "more" | "close" | "minimize" | "maximize" | "restore" | "pin" | "key" | "info" | "transfer" | "back" | "lock" | "shield" | "image" | "mic" | "alert" | "power";
 
 export const Icon: Component<{ name: IconName; class?: string; size?: number }> = (props) => {
   const paths: Record<IconName, JSX.Element> = {
@@ -12,12 +12,14 @@ export const Icon: Component<{ name: IconName; class?: string; size?: number }> 
     table: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11M3 14h18"/></>,
     view: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></>,
     query: <><path d="M5 4h14v12H9l-4 4Z"/><path d="M9 8h6M9 12h4"/></>, play:<path d="m8 5 11 7-11 7Z"/>,
+    activity: <path d="M3 12h4l2.5-6 4 12 2.5-6h5"/>,
     import:<><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></>, export:<><path d="M12 15V3m0 0 4 4m-4-4L8 7"/><path d="M5 19h14"/></>,
     trash:<><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></>, copy:<><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></>,
     edit:<><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10Z"/><path d="m13.5 6.5 3.5 3.5"/></>,
     chevronRight:<path d="m9 6 6 6-6 6"/>,
     chevronDown:<path d="m6 9 6 6 6-6"/>,
     chevronUp:<path d="m6 15 6-6 6 6"/>,
+    sort:<><path d="m8 9 4-4 4 4"/><path d="m8 15 4 4 4-4"/></>,
     arrowLeft:<path d="M19 12H5m0 0 6-6m-6 6 6 6"/>,
     arrowRight:<path d="M5 12h14m0 0-6-6m6 6-6 6"/>,
     arrowUp:<path d="M12 19V5m0 0-6 6m6-6 6 6"/>,
@@ -43,6 +45,8 @@ export const Icon: Component<{ name: IconName; class?: string; size?: number }> 
     restore: <><path d="M8 8V6h10v10h-2"/><rect x="5" y="9" width="10" height="10" rx=".5"/></>,
     pin: <><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></>,
     key: <><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-5 1 2 2"/></>, info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
+    alert: <><path d="M12 3.5 21.5 20h-19Z"/><path d="M12 9.5v4.5M12 17.5h.01"/></>,
+    power: <><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></>,
     transfer: <path d="M4 8h15m0 0-4-4m4 4-4 4M20 16H5m0 0 4 4m-4-4 4-4"/>, back: <path d="m15 18-6-6 6-6"/>,
     lock: <><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
     shield: <><path d="M12 3 20 6v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6Z"/><path d="m9 12 2 2 4-4"/></>,

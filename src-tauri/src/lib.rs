@@ -6,6 +6,7 @@ pub mod connection;
 pub mod error;
 pub mod protocol;
 pub mod storage;
+mod webview;
 
 pub use error::{Error, Result};
 
@@ -136,6 +137,9 @@ pub fn run() {
         .manage(app_state)
         .setup(|app| {
             setup_tray(app)?;
+            if let Some(window) = app.get_webview_window("main") {
+                webview::disable_browser_accelerators(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

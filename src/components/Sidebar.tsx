@@ -344,18 +344,18 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   ];
 
   const connectionMenuItems = (connection: ConnectionRecord): AssetMenuAction[] => [
-    { label: "打开", icon: "play", shortcut: "Enter", onSelect: () => props.onConnect(connection) },
-    { label: "刷新", icon: "refresh", shortcut: "F5", onSelect: () => void connectionStore.loadConnections() },
-    { label: "新标签页打开", icon: "plus", shortcut: "Alt+N", onSelect: () => props.onConnect(connection) },
-    { label: "新窗口打开", icon: "copyPlus", shortcut: "Ctrl+Shift+N", disabled: true },
+    { label: "打开", icon: "play", onSelect: () => props.onConnect(connection) },
+    { label: "刷新", icon: "refresh", onSelect: () => void connectionStore.loadConnections() },
+    { label: "新标签页打开", icon: "plus", onSelect: () => props.onConnect(connection) },
+    { label: "新窗口打开", icon: "copyPlus", disabled: true },
     { label: "同屏打开", icon: "view", disabled: true },
     { label: "新建目录", icon: "folder", separatorBefore: true, onSelect: () => props.onNewFolder?.(connection.folder_id ?? undefined) },
     { label: "新建连接", icon: "link", children: newConnectionActions(connection.folder_id) },
     { label: "新建数据库连接", icon: "database", children: databaseConnectionActions(connection.folder_id) },
     { label: "克隆", icon: "copyPlus", onSelect: () => props.onCopyConnection?.(connection) },
     { label: "编辑", icon: "edit", onSelect: () => props.onEdit(connection) },
-    { label: "删除", icon: "trash", shortcut: "Backspace", danger: true, onSelect: () => props.onDelete(connection) },
-    { label: "重命名", icon: "edit", shortcut: "F2", onSelect: () => void renameConnection(connection) },
+    { label: "删除", icon: "trash", danger: true, onSelect: () => props.onDelete(connection) },
+    { label: "重命名", icon: "edit", onSelect: () => void renameConnection(connection) },
     { label: "更多", icon: "chevronDown", children: moreActions() },
   ];
 

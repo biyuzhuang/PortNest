@@ -41,37 +41,80 @@ interface TransferProgress {
   persistent?: boolean;
 }
 
-const fileIconKind = (file: FileInfo) => {
-  if (file.is_dir) return { kind: "folder", label: "" };
-  if (file.is_link) return { kind: "link", label: "↗" };
-  const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
-  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico"].includes(extension)) return { kind: "image", label: "IMG" };
-  if (["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz"].includes(extension)) return { kind: "archive", label: "ZIP" };
-  if (["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"].includes(extension)) return { kind: "script", label: "SH" };
-  if (["js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "vue"].includes(extension)) return { kind: "code", label: "<>" };
-  if (["yaml", "yml", "json", "toml", "ini", "conf", "cfg", "xml", "env"].includes(extension)) return { kind: "config", label: "CFG" };
-  if (["txt", "md", "log", "csv"].includes(extension)) return { kind: "text", label: "TXT" };
-  if (["sql", "db", "sqlite"].includes(extension)) return { kind: "database", label: "DB" };
-  if (["pem", "key", "pub", "crt", "cer"].includes(extension)) return { kind: "key", label: "KEY" };
-  if (["exe", "bin", "run", "appimage"].includes(extension) || (!extension && file.permissions?.includes("x"))) {
-    return { kind: "executable", label: "EXE" };
-  }
-  return { kind: "generic", label: "FILE" };
+type SortKey = "name" | "modified" | "type" | "size";
+type SortDirection = "asc" | "desc";
+
+const SORT_DEFAULT_DIRECTION: Record<SortKey, SortDirection> = {
+  name: "asc",
+  modified: "desc",
+  type: "asc",
+  size: "desc",
 };
 
+const isSortKey = (value: unknown): value is SortKey =>
+  value === "name" || value === "modified" || value === "type" || value === "size";
+
+const fileIconKind = (file: FileInfo): string => {
+  if (file.is_dir) return "folder";
+  if (file.is_link) return "link";
+  const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico"].includes(extension)) return "image";
+  if (["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz"].includes(extension)) return "archive";
+  if (["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"].includes(extension)) return "script";
+  if (["js", "jsx", "ts", "tsx", "py", "rs", "go", "java", "c", "cpp", "h", "css", "html", "vue"].includes(extension)) return "code";
+  if (["yaml", "yml", "json", "toml", "ini", "conf", "cfg", "xml", "env"].includes(extension)) return "config";
+  if (["txt", "md", "log", "csv"].includes(extension)) return "text";
+  if (["sql", "db", "sqlite"].includes(extension)) return "database";
+  if (["pem", "key", "pub", "crt", "cer"].includes(extension)) return "key";
+  if (["exe", "bin", "run", "appimage"].includes(extension) || (!extension && file.permissions?.includes("x"))) return "executable";
+  return "generic";
+};
+
+const fileTypeLabel = (file: FileInfo): string => file.is_dir
+  ? "文件夹"
+  : file.name.includes(".") ? file.name.split(".").pop() || "文件" : "文件";
+
 const FileTypeIcon: Component<{ file: FileInfo; parent?: boolean }> = (props) => {
-  const icon = () => props.parent ? { kind: "folder", label: "" } : fileIconKind(props.file);
+  const icon = () => props.parent ? "folder" : fileIconKind(props.file);
   return (
-    <span class={`sftp-file-icon kind-${icon().kind}`}>
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <Show when={icon().kind === "folder"} fallback={
+    <span class={`sftp-file-icon kind-${icon()}`}>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <Show when={icon() === "folder"} fallback={
           <path d="M5 2.5h6l4 4v11H5z M11 2.5v4h4" />
         }>
           <path d="M2.5 5.5h6l1.7 2H17.5v9.5h-15z" />
         </Show>
       </svg>
-      <Show when={icon().kind !== "folder"}><small>{icon().label}</small></Show>
     </span>
+  );
+};
+
+const SortHeader: Component<{
+  label: string;
+  column: SortKey;
+  activeColumn: SortKey;
+  direction: SortDirection;
+  onSort: (column: SortKey) => void;
+}> = (props) => {
+  const active = () => props.activeColumn === props.column;
+  return (
+    <button
+      class={`file-sort ${active() ? "active" : ""}`}
+      title={active()
+        ? `${props.label}（${props.direction === "asc" ? "升序" : "降序"}），点击切换`
+        : `按${props.label}排序`}
+      aria-label={active()
+        ? `${props.label}，当前${props.direction === "asc" ? "升序" : "降序"}，点击切换`
+        : `按${props.label}排序`}
+      onClick={() => props.onSort(props.column)}
+    >
+      <span>{props.label}</span>
+      <span class="file-sort-icon">
+        <Show when={active()} fallback={<Icon name="sort" size={10} class="file-sort-hint" />}>
+          <Icon name={props.direction === "asc" ? "chevronUp" : "chevronDown"} size={11} />
+        </Show>
+      </span>
+    </button>
   );
 };
 
@@ -84,6 +127,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const [pathHistory, setPathHistory] = createSignal<string[]>([]);
   const [historyIndex, setHistoryIndex] = createSignal(0);
   const [fileFilter, setFileFilter] = createSignal("");
+  const [pathMode, setPathMode] = createSignal<"path" | "search">("path");
+  const [sortKey, setSortKey] = createSignal<SortKey>(isSortKey(storedOptions.sortKey) ? storedOptions.sortKey : "name");
+  const [sortDirection, setSortDirection] = createSignal<SortDirection>(
+    storedOptions.sortDirection === "asc" || storedOptions.sortDirection === "desc"
+      ? storedOptions.sortDirection
+      : SORT_DEFAULT_DIRECTION[sortKey()],
+  );
   const [files, setFiles] = createSignal<FileInfo[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -95,7 +145,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const [showOptions, setShowOptions] = createSignal(false);
   const [showTransferCenter, setShowTransferCenter] = createSignal(true);
   const [showHidden, setShowHidden] = createSignal(storedOptions.showHidden === true);
-  const [favoritePath, setFavoritePath] = createSignal(storedOptions.favoritePath === true);
   const [transfers, setTransfers] = createSignal<Record<string, TransferProgress>>({});
   const [pendingTransfers, setPendingTransfers] = createSignal<Array<{ localId: string; direction: "upload" | "download"; fileName: string }>>([]);
   const [probePending, setProbePending] = createSignal(false);
@@ -128,6 +177,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   let unlistenProgress: (() => void) | undefined;
   let rootRef: HTMLDivElement | undefined;
   let contextMenuRef: HTMLDivElement | undefined;
+  let pathInputRef: HTMLInputElement | undefined;
   let lastFollowedCwd = "";
   let probeTimer: number | undefined;
 
@@ -138,12 +188,13 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   const persistOptions = () => localStorage.setItem("portnest-file-view-options", JSON.stringify({
     showHidden: showHidden(),
     pathLinked: uiStore.pathLinked(),
-    favoritePath: favoritePath(),
     conflictPolicy: conflictPolicy(),
     verifyChecksum: verifyChecksum(),
     maxConcurrent: maxConcurrent(),
     rateLimitKbps: rateLimitKbps(),
     columns: columns(),
+    sortKey: sortKey(),
+    sortDirection: sortDirection(),
   }));
 
   const applyQueueConfig = async () => {
@@ -160,27 +211,59 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     persistOptions();
   };
 
+  const compareFiles = (a: FileInfo, b: FileInfo) => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    let result: number;
+    switch (sortKey()) {
+      case "modified":
+        result = (a.modified ?? 0) - (b.modified ?? 0);
+        break;
+      case "type":
+        result = fileTypeLabel(a).localeCompare(fileTypeLabel(b), "zh-CN");
+        break;
+      case "size":
+        result = (a.is_dir ? 0 : a.size) - (b.is_dir ? 0 : b.size);
+        break;
+      default:
+        result = a.name.localeCompare(b.name, "zh-CN", { numeric: true, sensitivity: "base" });
+    }
+    return sortDirection() === "asc" ? result : -result;
+  };
+
   const visibleFiles = createMemo(() => {
     const query = fileFilter().trim().toLowerCase();
-    return files().filter(file => (showHidden() || !file.name.startsWith(".")) && (!query || file.name.toLowerCase().includes(query)));
+    return files()
+      .filter(file => (showHidden() || !file.name.startsWith(".")) && (!query || file.name.toLowerCase().includes(query)))
+      .sort(compareFiles);
   });
-  const columnTemplate = createMemo(() => [
-    columns().name && "minmax(110px, 1.35fr)",
-    columns().modified && "84px",
-    columns().type && "54px",
-    columns().size && "62px",
-    columns().permissions && "70px",
-    columns().owner && "80px",
-  ].filter(Boolean).join(" "));
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey() === key) {
+      setSortDirection(previous => previous === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDirection(SORT_DEFAULT_DIRECTION[key]);
+    }
+    persistOptions();
+  };
+
+  const columnTemplate = createMemo(() => {
+    const tracks = [
+      columns().name && "var(--file-name-track)",
+      columns().modified && "max-content",
+      columns().type && "max-content",
+      columns().size && "max-content",
+      columns().permissions && "max-content",
+      columns().owner && "max-content",
+    ].filter((track): track is string => Boolean(track));
+    if (!columns().name) tracks.push("minmax(0, 1fr)");
+    return tracks.join(" ");
+  });
 
   const computeInitialPath = () => {
     if (props.sessionKey && uiStore.pathLinked()) {
       const linked = pathLinkStore.getCwd(props.sessionKey);
       if (linked) return linked;
-    }
-    if (favoritePath()) {
-      const favorite = localStorage.getItem(`portnest-favorite-path-${props.connection.id}`);
-      if (favorite) return favorite;
     }
     return homePath();
   };
@@ -213,6 +296,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
 
     const requestId = ++directoryRequestId;
     const cached = directoryCache.get(path);
+    if (path !== currentPath()) setPathMode("path");
     if (recordHistory && path !== currentPath()) {
       const next = pathHistory().slice(0, historyIndex() + 1);
       if (next[next.length - 1] !== path) next.push(path);
@@ -242,7 +326,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       }
       if (requestId !== directoryRequestId) return;
       setFiles(sortedEntries);
-      if (favoritePath()) localStorage.setItem(`portnest-favorite-path-${props.connection.id}`, path);
       setSelectedFile(null);
     } catch (e) {
       if (requestId === directoryRequestId && !cached) setError(String(e));
@@ -581,10 +664,6 @@ export const FileManager: Component<FileManagerProps> = (props) => {
       .catch(() => setProbePending(false));
   };
 
-  const handleReadTerminalPath = () => {
-    sendProbe();
-  };
-
   const cleanupOptimisticRow = (localId: string) => {
     const stillPending = pendingTransfers().some(item => item.localId === localId);
     if (!stillPending) return;
@@ -728,10 +807,11 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     }).replace(/\//g, "-");
   };
 
-  const fileType = (file: FileInfo) => file.is_dir
-    ? "文件夹"
-    : file.name.includes(".") ? file.name.split(".").pop() || "文件" : "文件";
   const totalSize = () => files().filter(file => !file.is_dir).reduce((sum, file) => sum + file.size, 0);
+  const summaryText = () => {
+    const folderCount = files().filter(file => file.is_dir).length;
+    return `共 ${files().length - folderCount} 个文件，${folderCount} 个文件夹，${formatSize(totalSize())}`;
+  };
 
   return (
     <div class="file-manager" ref={rootRef}>
@@ -741,13 +821,44 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <button class="nav-btn" disabled={historyIndex() >= pathHistory().length - 1} onClick={() => navigateHistory(1)} title="前进"><Icon name="arrowRight" size={15} /></button>
           <button class="nav-btn" onClick={navigateUp} title="返回上级目录"><Icon name="arrowUp" size={15} /></button>
           <button class="nav-btn" onClick={refreshDirectory} title="刷新"><Icon name="refresh" size={15} /></button>
-          <input
-            type="text"
-            class="path-input"
-            value={currentPath()}
-            onKeyDown={(e) => e.key === "Enter" && navigateTo(e.currentTarget.value)}
-            onBlur={(e) => navigateTo(e.currentTarget.value)}
-          />
+          <div class={`path-field ${pathMode() === "search" ? "searching" : ""}`}>
+            <input
+              ref={pathInputRef}
+              type="text"
+              class="path-input"
+              value={pathMode() === "path" ? currentPath() : fileFilter()}
+              placeholder={pathMode() === "path" ? "输入路径并回车" : "搜索当前目录"}
+              aria-label={pathMode() === "path" ? "目录路径" : "搜索当前目录"}
+              onInput={(e) => { if (pathMode() === "search") setFileFilter(e.currentTarget.value); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && pathMode() === "search") {
+                  setPathMode("path");
+                  setFileFilter("");
+                  e.currentTarget.blur();
+                  return;
+                }
+                if (e.key === "Enter" && pathMode() === "path") navigateTo(e.currentTarget.value);
+              }}
+              onBlur={(e) => { if (pathMode() === "path") navigateTo(e.currentTarget.value); }}
+            />
+            <button
+              class="path-mode-btn"
+              title={pathMode() === "path" ? "搜索当前目录" : "返回路径输入"}
+              aria-label={pathMode() === "path" ? "搜索当前目录" : "返回路径输入"}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (pathMode() === "path") {
+                  setPathMode("search");
+                } else {
+                  setPathMode("path");
+                  setFileFilter("");
+                }
+                pathInputRef?.focus();
+              }}
+            >
+              <Icon name={pathMode() === "path" ? "search" : "folder"} size={13} />
+            </button>
+          </div>
           <Show when={uiStore.pathLinked() && props.sessionKey}>
             <span
               class={`path-link-badge ${probePending() ? "probing" : linkedCwd() ? "linked" : "idle"}`}
@@ -760,21 +871,17 @@ export const FileManager: Component<FileManagerProps> = (props) => {
         </div>
       </div>
       <div class="file-manager-summary">
-        <div class="file-manager-summary-actions">
-          <Show when={uiStore.pathLinked() && props.sessionKey}>
-            <button onClick={handleReadTerminalPath} title="从终端读取当前路径并同步">定位</button>
-          </Show>
-          <button onClick={() => openNewEntryDialog("folder")} title="新建文件夹">＋文件夹</button>
-          <button onClick={handleUpload} title="上传文件">上传</button>
-          <button onClick={handleUploadDirectory} title="递归上传目录">上传目录</button>
-          <button class={showTransferCenter() ? "active" : ""} onClick={() => setShowTransferCenter(value => !value)} title="显示传输中心">
-            传输 {Object.values(transfers()).filter(item => item.status === "running").length || ""}
-          </button>
+        <div class="file-manager-summary-count" title={summaryText()}>
+          {summaryText()}
         </div>
-        <input class="file-filter-input" value={fileFilter()} placeholder="筛选当前目录" aria-label="筛选当前目录" onInput={event => setFileFilter(event.currentTarget.value)} />
-        <div class="file-manager-summary-count">
-          共 {files().length} 个文件，{files().filter(file => file.is_dir).length} 个文件夹，{formatSize(totalSize())}
-        </div>
+        <button
+          class={`file-manager-transfer-toggle ${showTransferCenter() ? "active" : ""}`}
+          onClick={() => setShowTransferCenter(value => !value)}
+          title={showTransferCenter() ? "隐藏传输中心" : "显示传输中心"}
+        >
+          <Icon name="transfer" size={12} />
+          <span>传输 {Object.values(transfers()).filter(item => item.status === "running").length || ""}</span>
+        </button>
       </div>
 
       <div class="file-list" onContextMenu={(e) => openContextMenu(e, null)}>
@@ -785,12 +892,12 @@ export const FileManager: Component<FileManagerProps> = (props) => {
           <div class="error">{error()} <button onClick={refreshDirectory}>重试</button></div>
         </Show>
         <Show when={!loading() && !error()}>
-          <div class="file-table">
-            <div class="file-row header" style={{ "grid-template-columns": columnTemplate() }}>
-              <Show when={columns().name}><div class="file-cell name">名称</div></Show>
-              <Show when={columns().modified}><div class="file-cell date">修改时间</div></Show>
-              <Show when={columns().type}><div class="file-cell type">类型</div></Show>
-              <Show when={columns().size}><div class="file-cell size">大小</div></Show>
+          <div class="file-table" style={{ "grid-template-columns": columnTemplate() }}>
+            <div class="file-row header">
+              <Show when={columns().name}><div class="file-cell name"><SortHeader label="名称" column="name" activeColumn={sortKey()} direction={sortDirection()} onSort={toggleSort} /></div></Show>
+              <Show when={columns().modified}><div class="file-cell date"><SortHeader label="修改时间" column="modified" activeColumn={sortKey()} direction={sortDirection()} onSort={toggleSort} /></div></Show>
+              <Show when={columns().type}><div class="file-cell type"><SortHeader label="类型" column="type" activeColumn={sortKey()} direction={sortDirection()} onSort={toggleSort} /></div></Show>
+              <Show when={columns().size}><div class="file-cell size"><SortHeader label="大小" column="size" activeColumn={sortKey()} direction={sortDirection()} onSort={toggleSort} /></div></Show>
               <Show when={columns().permissions}><div class="file-cell permissions">权限</div></Show>
               <Show when={columns().owner}><div class="file-cell owner">用户/组</div></Show>
             </div>
@@ -798,7 +905,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
               <Show when={currentPath() !== "/"}>
                 <div
                   class="file-row parent-row"
-                  style={{ "grid-template-columns": columnTemplate() }}
+                  title="双击返回上级目录"
                   onDblClick={navigateUp}
                   onContextMenu={(e) => openContextMenu(e, null)}
                 >
@@ -817,17 +924,16 @@ export const FileManager: Component<FileManagerProps> = (props) => {
                 {(file) => (
                   <div
                     class={`file-row ${selectedFile()?.path === file.path ? "selected" : ""}`}
-                    style={{ "grid-template-columns": columnTemplate() }}
                     onClick={() => handleFileClick(file)}
                     onDblClick={() => handleFileDoubleClick(file)}
                     onContextMenu={(e) => openContextMenu(e, file)}
                   >
                     <Show when={columns().name}><div class="file-cell name">
                       <FileTypeIcon file={file} />
-                      <span class="file-name">{file.name}</span>
+                      <span class="file-name" title={file.name}>{file.name}</span>
                     </div></Show>
                     <Show when={columns().modified}><div class="file-cell date">{formatDate(file.modified)}</div></Show>
-                    <Show when={columns().type}><div class="file-cell type">{fileType(file)}</div></Show>
+                    <Show when={columns().type}><div class="file-cell type">{fileTypeLabel(file)}</div></Show>
                     <Show when={columns().size}><div class="file-cell size">{file.is_dir ? "-" : formatSize(file.size)}</div></Show>
                     <Show when={columns().permissions}><div class="file-cell permissions">{file.permissions || "-"}</div></Show>
                     <Show when={columns().owner}><div class="file-cell owner">{file.owner_group || "-"}</div></Show>
@@ -887,46 +993,67 @@ export const FileManager: Component<FileManagerProps> = (props) => {
 
       <Show when={showOptions()}>
         <div class="file-options-menu" onClick={event => event.stopPropagation()}>
-          <label><input type="checkbox" checked={uiStore.filesStacked()} onChange={event => uiStore.setFilesStacked(event.currentTarget.checked)} />上下布局</label>
-          <label><input type="checkbox" checked={showHidden()} onChange={event => { setShowHidden(event.currentTarget.checked); persistOptions(); }} />显示隐藏文件</label>
-          <label><input type="checkbox" checked={uiStore.pathLinked()} onChange={event => {
-            uiStore.setPathLinked(event.currentTarget.checked);
-            persistOptions();
-          }} />路径联动</label>
-          <label><input type="checkbox" checked={favoritePath()} onChange={event => {
-            setFavoritePath(event.currentTarget.checked);
-            if (event.currentTarget.checked) localStorage.setItem(`portnest-favorite-path-${props.connection.id}`, currentPath());
-            persistOptions();
-          }} />收藏路径</label>
+          <div class="file-options-group" role="group" aria-label="视图">
+            <div class="file-options-caption">视图</div>
+            <label class="file-options-check">
+              <input type="checkbox" checked={uiStore.filesStacked()} onChange={event => uiStore.setFilesStacked(event.currentTarget.checked)} />
+              <span>上下布局</span>
+            </label>
+            <label class="file-options-check">
+              <input type="checkbox" checked={showHidden()} onChange={event => { setShowHidden(event.currentTarget.checked); persistOptions(); }} />
+              <span>显示隐藏文件</span>
+            </label>
+            <label class="file-options-check">
+              <input type="checkbox" checked={uiStore.pathLinked()} onChange={event => {
+                uiStore.setPathLinked(event.currentTarget.checked);
+                persistOptions();
+              }} />
+              <span>路径联动</span>
+            </label>
+          </div>
           <div class="file-options-divider" />
-          <div class="file-options-caption">传输策略</div>
-          <label class="file-options-select-label">同名文件
-            <select value={conflictPolicy()} onChange={event => { setConflictPolicy(event.currentTarget.value as SftpConflictPolicy); persistOptions(); }}>
-              <option value="resume">断点续传</option>
-              <option value="rename">自动重命名</option>
-              <option value="overwrite">覆盖</option>
-              <option value="skip">跳过</option>
-            </select>
-          </label>
-          <label><input type="checkbox" checked={verifyChecksum()} onChange={event => { setVerifyChecksum(event.currentTarget.checked); persistOptions(); }} />SHA-256 校验</label>
-          <label class="file-options-select-label">并发任务
-            <select value={maxConcurrent()} onChange={event => { setMaxConcurrent(Number(event.currentTarget.value)); void applyQueueConfig(); }}>
-              <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
-              <option value="6">6</option><option value="8">8</option>
-            </select>
-          </label>
-          <label class="file-options-number-label">单任务限速
-            <input type="number" min="0" step="128" value={rateLimitKbps()} onChange={event => { setRateLimitKbps(Math.max(0, Number(event.currentTarget.value) || 0)); void applyQueueConfig(); }} />
-            <span>KB/s</span>
-          </label>
+          <div class="file-options-group" role="group" aria-label="传输策略">
+            <div class="file-options-caption">传输策略</div>
+            <label class="file-options-field">
+              <span class="file-options-label">同名文件</span>
+              <select class="file-options-select file-options-policy" value={conflictPolicy()} onChange={event => { setConflictPolicy(event.currentTarget.value as SftpConflictPolicy); persistOptions(); }}>
+                <option value="resume">断点续传</option>
+                <option value="rename">自动重命名</option>
+                <option value="overwrite">覆盖</option>
+                <option value="skip">跳过</option>
+              </select>
+            </label>
+            <label class="file-options-check">
+              <input type="checkbox" checked={verifyChecksum()} onChange={event => { setVerifyChecksum(event.currentTarget.checked); persistOptions(); }} />
+              <span>SHA-256 校验</span>
+            </label>
+            <label class="file-options-field">
+              <span class="file-options-label">并发任务</span>
+              <select class="file-options-select file-options-concurrency" value={maxConcurrent()} onChange={event => { setMaxConcurrent(Number(event.currentTarget.value)); void applyQueueConfig(); }}>
+                <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+                <option value="6">6</option><option value="8">8</option>
+              </select>
+            </label>
+            <label class="file-options-field">
+              <span class="file-options-label">单任务限速</span>
+              <span class="file-options-number-control">
+                <input class="file-options-number" type="number" min="0" step="128" value={rateLimitKbps()} onChange={event => { setRateLimitKbps(Math.max(0, Number(event.currentTarget.value) || 0)); void applyQueueConfig(); }} />
+                <span class="file-options-unit">KB/s</span>
+              </span>
+            </label>
+          </div>
           <div class="file-options-divider" />
-          <div class="file-options-caption">远程显示列</div>
-          <label><input type="checkbox" checked={columns().name} onChange={() => toggleColumn("name")} />名称</label>
-          <label><input type="checkbox" checked={columns().modified} onChange={() => toggleColumn("modified")} />修改时间</label>
-          <label><input type="checkbox" checked={columns().type} onChange={() => toggleColumn("type")} />类型</label>
-          <label><input type="checkbox" checked={columns().size} onChange={() => toggleColumn("size")} />大小</label>
-          <label><input type="checkbox" checked={columns().permissions} onChange={() => toggleColumn("permissions")} />权限</label>
-          <label><input type="checkbox" checked={columns().owner} onChange={() => toggleColumn("owner")} />用户/组</label>
+          <div class="file-options-group" role="group" aria-label="远程显示列">
+            <div class="file-options-caption">远程显示列</div>
+            <div class="file-options-columns">
+              <label class="file-options-check"><input type="checkbox" checked={columns().name} onChange={() => toggleColumn("name")} /><span>名称</span></label>
+              <label class="file-options-check"><input type="checkbox" checked={columns().modified} onChange={() => toggleColumn("modified")} /><span>修改时间</span></label>
+              <label class="file-options-check"><input type="checkbox" checked={columns().type} onChange={() => toggleColumn("type")} /><span>类型</span></label>
+              <label class="file-options-check"><input type="checkbox" checked={columns().size} onChange={() => toggleColumn("size")} /><span>大小</span></label>
+              <label class="file-options-check"><input type="checkbox" checked={columns().permissions} onChange={() => toggleColumn("permissions")} /><span>权限</span></label>
+              <label class="file-options-check"><input type="checkbox" checked={columns().owner} onChange={() => toggleColumn("owner")} /><span>用户/组</span></label>
+            </div>
+          </div>
         </div>
         <div class="file-options-overlay" onClick={() => setShowOptions(false)} />
       </Show>

@@ -3784,6 +3784,7 @@ pub async fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     .build()
     .map_err(|error| format!("无法创建设置窗口: {}", error))?;
 
+    crate::webview::disable_browser_accelerators(&window);
     let _ = window.show();
     let _ = window.set_focus();
     Ok(())

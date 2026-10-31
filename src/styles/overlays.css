@@ -657,8 +657,8 @@
   outline-offset: 2px;
 }
 
-/* row wrapper inside the file table */
-.file-body { display: block; }
+/* Rows join the table's subgrid, so the wrapper must not create a grid. */
+.file-body { display: contents; }
 /* Connect form: the card is the single scroll container, so tunnel fields can
    never be clipped by a nested flex/grid min-size. */
 .connect-form-card {

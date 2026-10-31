@@ -116,7 +116,7 @@
   position:relative;
   width:32px;
   height:36px;
-  border-radius:10px;
+  border-radius:var(--r-xs);
   background:var(--surface-sunken);
   overflow:hidden;
   display:flex;
@@ -126,7 +126,7 @@
 .rail-gauge-fill {
   width:100%;
   min-height:3px;
-  border-radius:9px 9px 0 0;
+  border-radius:2px 2px 0 0;
   background:var(--success);
   transition:height 0.4s ease;
 }
@@ -143,14 +143,18 @@
   align-items:center;
   justify-content:center;
   font-size:9px;
-  font-weight:600;
-  color:var(--text-3);
+  font-weight:700;
+  line-height:1;
+  letter-spacing:-.02em;
+  color:var(--text-1);
   font-variant-numeric:tabular-nums;
+  text-shadow:
+    0 1px 0 var(--surface-base),
+    0 -1px 0 var(--surface-base),
+    1px 0 0 var(--surface-base),
+    -1px 0 0 var(--surface-base);
   pointer-events:none;
 }
-
-.rail-gauge.level-warning .rail-gauge-text { color:var(--text-3); }
-.rail-gauge.level-critical .rail-gauge-text { color:var(--text-3); }
 
 .overview-rail-error {
   position:absolute;

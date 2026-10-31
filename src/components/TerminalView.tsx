@@ -267,7 +267,6 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
     const terminal = new Terminal({
       allowProposedApi: true,
       allowTransparency: true,
-      minimumContrastRatio: settings.highlightEnhancement ? 4.5 : 1,
       fontFamily: settings.fontFamily,
       fontSize: settings.fontSize,
       lineHeight: settings.lineHeight,
@@ -722,7 +721,6 @@ export const TerminalView: Component<TerminalViewProps> = (props) => {
       cursor: cursorColors.cursor,
       cursorAccent: cursorColors.cursorAccent,
     };
-    state.terminal.options.minimumContrastRatio = settings.highlightEnhancement ? 4.5 : 1;
     state.terminal.options.fontFamily = settings.fontFamily;
     state.terminal.options.fontSize = settings.fontSize;
     state.terminal.options.lineHeight = settings.lineHeight;

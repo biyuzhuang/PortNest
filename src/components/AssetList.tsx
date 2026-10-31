@@ -324,7 +324,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               class="field-flush"
               value={query()}
               onInput={event => setQuery(event.currentTarget.value)}
-              placeholder="名称, IP, User (Ctrl+F)"
+              placeholder="名称, IP, User"
             />
           </label>
           <button class="asset-icon-button" title="回到资产列表根目录" aria-label="回到资产列表根目录" onClick={() => { setFolderId(null); setQuery(""); }}>
@@ -334,7 +334,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
             <Icon name="refresh" size={16} />
           </button>
           <button class="asset-icon-button asset-ping-toggle" title="测试当前列表延迟" aria-label="测试当前列表延迟" onClick={refreshVisibleLatencies}>
-            <span class="asset-ping-icon"><i /></span>
+            <Icon name="activity" size={16} />
           </button>
           <button class="asset-icon-button asset-primary" title="新建连接" aria-label="新建连接" onClick={() => props.onNewConnection(folderId() ?? undefined)}>
             <Icon name="plus" size={16} />
@@ -366,6 +366,22 @@ export const AssetList: Component<AssetListProps> = (props) => {
           <div>创建时间</div>
           <div>最近连接</div>
         </div>
+
+        <Show when={currentFolder() && !query().trim()}>
+          <div
+            class="asset-row asset-folder-row asset-parent-row"
+            title="返回上级目录"
+            onDblClick={() => {
+              setFolderId(currentFolder()?.parentId ?? null);
+              setSelectedIds(new Set<string>());
+              setSelectionAnchorId(null);
+            }}
+          >
+            <div class="asset-name-cell"><span class="asset-folder-icon"><Icon name="folder" size={15} /></span>..</div>
+            <div>—</div><div>—</div><div>—</div><div>—</div>
+            <div>—</div>
+          </div>
+        </Show>
 
         <For each={visibleFolders()}>
           {(folder) => (
@@ -456,18 +472,18 @@ export const AssetList: Component<AssetListProps> = (props) => {
               y={connectionMenu()!.y}
               headerActions={connectionHeaderActions(connectionMenu()!.connection)}
               items={[
-                { label: "打开", icon: "play", shortcut: "Enter", onSelect: () => props.onConnect(connectionMenu()!.connection) },
-                { label: "刷新", icon: "refresh", shortcut: "F5", onSelect: () => { void connectionStore.loadConnections(); void testConnectionLatency(connectionMenu()!.connection, true); } },
-                { label: "新标签页打开", icon: "plus", shortcut: "Alt+N", onSelect: () => props.onConnect(connectionMenu()!.connection) },
-                { label: "新窗口打开", icon: "copyPlus", shortcut: "Ctrl+Shift+N", disabled: true },
+                { label: "打开", icon: "play", onSelect: () => props.onConnect(connectionMenu()!.connection) },
+                { label: "刷新", icon: "refresh", onSelect: () => { void connectionStore.loadConnections(); void testConnectionLatency(connectionMenu()!.connection, true); } },
+                { label: "新标签页打开", icon: "plus", onSelect: () => props.onConnect(connectionMenu()!.connection) },
+                { label: "新窗口打开", icon: "copyPlus", disabled: true },
                 { label: "同屏打开", icon: "view", disabled: true },
                 { label: "新建目录", icon: "folder", separatorBefore: true, onSelect: props.onNewFolder },
                 { label: "新建连接", icon: "link", children: newConnectionActions() },
                 { label: "新建数据库连接", icon: "database", children: databaseConnectionActions() },
                 { label: "克隆", icon: "copyPlus", onSelect: () => props.onCopy(connectionMenu()!.connection) },
                 { label: "编辑", icon: "edit", onSelect: () => props.onEdit(connectionMenu()!.connection) },
-                { label: "删除", icon: "trash", shortcut: "Backspace", danger: true, onSelect: () => props.onDelete(connectionMenu()!.connection) },
-                { label: "重命名", icon: "edit", shortcut: "F2", onSelect: () => void renameConnection(connectionMenu()!.connection) },
+                { label: "删除", icon: "trash", danger: true, onSelect: () => props.onDelete(connectionMenu()!.connection) },
+                { label: "重命名", icon: "edit", onSelect: () => void renameConnection(connectionMenu()!.connection) },
                 { label: "更多", icon: "chevronDown", children: moreActions() },
               ]}
               onClose={closeMenus}

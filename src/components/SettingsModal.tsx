@@ -4,6 +4,7 @@ import {
   terminalThemes, getTerminalTheme,
   getTerminalThemePreferences, setTerminalThemePreferences, effectiveTheme, getTerminalSettings, setTerminalSettings,
   terminalBackgroundConfig, setTerminalBackgroundConfig, getEffectiveTerminalBackgroundStyle, type TerminalBackgroundStyle, type TerminalBackgroundConfig,
+  TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX, isTerminalFontSizeValid,
   type TerminalSettings,
 } from "../stores/themeStore";
 import { uiStore } from "../stores/uiStore";
@@ -188,6 +189,8 @@ const PlaceholderSettingsPage: Component<{
   title: string;
   description: string;
   sections: PlaceholderSectionSpec[];
+  note?: string;
+  readOnly?: boolean;
 }> = (props) => (
   <div class="settings-page">
     <div class="settings-page-heading">
@@ -196,24 +199,35 @@ const PlaceholderSettingsPage: Component<{
     </div>
     <div class="settings-unavailable-note">
       <Icon name="info" size={13} />
-      <span>以下设置项已预留界面，但当前版本暂不可用。</span><UnavailableBadge />
+      <span>{props.note || "以下设置项已预留界面，但当前版本暂不可用。"}</span>
+      <Show when={!props.readOnly}><UnavailableBadge /></Show>
     </div>
     <For each={props.sections}>{section => (
       <>
         <h3>{section.title}</h3>
         <div class="settings-grid">
           <For each={section.groups}>{rows => (
-            <div class="settings-card settings-card-unavailable">
+            <div class={`settings-card${props.readOnly ? " settings-shortcut-card" : " settings-card-unavailable"}`}>
               <For each={rows}>{row => (
-                <label class="settings-row-unavailable">
-                  <span>
-                    <b>{row.label}</b>
-                    <Show when={row.hint}><small>{row.hint}</small></Show>
-                  </span>
-                  <Show when={row.toggle} fallback={<DisabledSelect value={row.value || "暂不可用"} />}>
-                    <DisabledToggle />
-                  </Show>
-                </label>
+                <Show when={props.readOnly} fallback={
+                  <label class="settings-row-unavailable">
+                    <span>
+                      <b>{row.label}</b>
+                      <Show when={row.hint}><small>{row.hint}</small></Show>
+                    </span>
+                    <Show when={row.toggle} fallback={<DisabledSelect value={row.value || "暂不可用"} />}>
+                      <DisabledToggle />
+                    </Show>
+                  </label>
+                }>
+                  <div class="settings-shortcut-row">
+                    <span>
+                      <b>{row.label}</b>
+                      <Show when={row.hint}><small>{row.hint}</small></Show>
+                    </span>
+                    <kbd class="settings-shortcut-key">{row.value || "—"}</kbd>
+                  </div>
+                </Show>
               )}</For>
             </div>
           )}</For>
@@ -228,6 +242,8 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
   const [currentTerminalTheme, setCurrentTerminalTheme] = createSignal(getTerminalTheme());
   const [terminalThemePreferences, setThemePreferences] = createSignal(getTerminalThemePreferences());
   const [terminalSettings, setSettings] = createSignal<TerminalSettings>(getTerminalSettings());
+  const [fontSizeDraft, setFontSizeDraft] = createSignal(String(terminalSettings().fontSize));
+  const fontSizeDraftValid = createMemo(() => isTerminalFontSizeValid(Number(fontSizeDraft())));
   const [updateStatus, setUpdateStatus] = createSignal("检查更新");
   const [checkingUpdate, setCheckingUpdate] = createSignal(false);
   const [background, setBackground] = createSignal<TerminalBackgroundConfig>(terminalBackgroundConfig());
@@ -679,6 +695,15 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     setTerminalSettings(next);
   };
 
+  // Font size is committed only inside the supported range; the draft keeps
+  // out-of-range typing visible until blur, then snaps back to the applied value.
+  const updateFontSizeDraft = (raw: string) => {
+    setFontSizeDraft(raw);
+    const value = Number(raw);
+    if (raw.trim() && isTerminalFontSizeValid(value)) updateSetting("fontSize", value);
+  };
+  const resetFontSizeDraft = () => setFontSizeDraft(String(terminalSettings().fontSize));
+
   const navItem = (id: Page, label: string, disabled = false) => (
     <button class={page() === id ? "active" : ""} disabled={disabled} onClick={() => !disabled && setPage(id)}>
       <span>{label}</span>
@@ -780,10 +805,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                     </select>
                   </label>
                 </div>
-                <div class="settings-card settings-card-unavailable">
-                  <label class="settings-row-unavailable"><span><b>界面动画</b><small>控制面板和菜单的过渡动画</small></span><DisabledToggle /></label>
-                  <label class="settings-row-unavailable"><span><b>字体连字</b><small>启用等宽字体的编程连字特性</small></span><DisabledToggle /></label>
-                </div>
               </div>
               <h3>终端配色方案</h3>
               <div class="terminal-theme-grid">
@@ -842,28 +863,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 </div>
               </section>
 
-              <h3>主题</h3>
-              <div class="settings-grid">
-                <div class="settings-card">
-                  <label><span><b>主题风格</b></span>
-                    <select value={themeSkin()} onChange={event => setThemeSkin(event.currentTarget.value as ThemeSkin)}>
-                      <For each={themeSkins}>{skin => <option value={skin.id}>{skin.name}</option>}</For>
-                    </select>
-                  </label>
-                  <label><span><b>主题模式</b></span>
-                    <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
-                      <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="settings-card">
-                  <label><span><b>主题配色</b></span>
-                    <select value={currentTerminalTheme()} onChange={event => chooseTerminalTheme(event.currentTarget.value)}>
-                      <For each={Object.entries(terminalThemes)}>{([key, value]) => <option value={key}>{value.name}</option>}</For>
-                    </select>
-                  </label>
-                </div>
-              </div>
               <h3>终端显示</h3>
               <div class="settings-grid">
                 <div class="settings-card">
@@ -873,12 +872,27 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                       <option>Cascadia Code, Consolas, monospace</option><option>Consolas, monospace</option>
                     </select>
                   </label>
-                  <label><span><b>终端字号</b></span><input type="number" min="9" max="28" value={terminalSettings().fontSize} onInput={event => updateSetting("fontSize", Number(event.currentTarget.value))} /></label>
+                  <label class={fontSizeDraftValid() ? undefined : "settings-row-invalid"}>
+                    <span>
+                      <b>终端字号</b>
+                      <small>{fontSizeDraftValid() ? `可调范围 ${TERMINAL_FONT_SIZE_MIN}–${TERMINAL_FONT_SIZE_MAX} px` : `仅支持 ${TERMINAL_FONT_SIZE_MIN}–${TERMINAL_FONT_SIZE_MAX} px，超出的输入不会应用`}</small>
+                    </span>
+                    <input
+                      type="number"
+                      min={TERMINAL_FONT_SIZE_MIN}
+                      max={TERMINAL_FONT_SIZE_MAX}
+                      value={fontSizeDraft()}
+                      aria-invalid={!fontSizeDraftValid()}
+                      onInput={event => updateFontSizeDraft(event.currentTarget.value)}
+                      onChange={resetFontSizeDraft}
+                      onBlur={resetFontSizeDraft}
+                    />
+                  </label>
                   <label><span><b>终端行高</b></span><input type="number" min="1" max="2" step="0.1" value={terminalSettings().lineHeight} onInput={event => updateSetting("lineHeight", Number(event.currentTarget.value))} /></label>
                   <label><span><b>终端间距</b></span><input type="number" min="-2" max="8" value={terminalSettings().letterSpacing} onInput={event => updateSetting("letterSpacing", Number(event.currentTarget.value))} /></label>
                 </div>
                 <div class="settings-card">
-                  <label><span><b>终端高亮增强</b><small>增强命令与路径的对比度和可读性</small></span><Toggle checked={terminalSettings().highlightEnhancement} onChange={value => updateSetting("highlightEnhancement", value)} /></label>
+                  <label><span><b>终端高亮增强</b><small>高亮命令与路径，不改变终端配色</small></span><Toggle checked={terminalSettings().highlightEnhancement} onChange={value => updateSetting("highlightEnhancement", value)} /></label>
                   <label><span><b>条纹背景</b><small>使用浅色水平条纹区分输出行</small></span><Toggle checked={terminalSettings().stripedBackground} onChange={value => updateSetting("stripedBackground", value)} /></label>
                   <label class="settings-row-unavailable"><span><b>WebGL 渲染</b><small>使用 GPU 提升终端渲染性能</small></span><DisabledToggle /></label>
                   <label><span><b>最大缓存行数</b></span><input type="number" min="100" max="100000" value={terminalSettings().scrollback} onChange={event => updateSetting("scrollback", Number(event.currentTarget.value))} /></label>
@@ -934,14 +948,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 <div class="settings-card">
                   <label class="settings-row-unavailable"><span><b>中键关闭标签</b><small>使用鼠标中键快速关闭标签页</small></span><DisabledToggle /></label>
                   <label class="settings-row-unavailable"><span><b>界面动画</b><small>启用窗口和菜单过渡效果</small></span><DisabledToggle /></label>
-                  <label><span><b>服务器指标</b><small>连接后自动采集服务器概览指标</small></span><Toggle checked={getOverviewSettings().enabled} onChange={value => setOverviewSettings({ enabled: value })} /></label>
-                  <Show when={getOverviewSettings().enabled}>
-                    <label><span><b>指标刷新频率</b></span>
-                      <select value={String(getOverviewSettings().refreshIntervalSec)} onChange={event => setOverviewSettings({ refreshIntervalSec: Number(event.currentTarget.value) })}>
-                        <For each={REFRESH_OPTIONS}>{option => <option value={String(option.value)}>{option.label}</option>}</For>
-                      </select>
-                    </label>
-                  </Show>
                   <label class="settings-row-unavailable"><span><b>关闭到托盘</b></span><DisabledSelect value="询问" /></label>
                 </div>
                 <div class="settings-card">
@@ -1262,47 +1268,52 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
             ]} />
           </Show>
           <Show when={page() === "shortcutsBasic"}>
-            <PlaceholderSettingsPage title="快捷键 · 基础" description="应用全局操作快捷键。" sections={[
+            <PlaceholderSettingsPage title="快捷键 · 基础" description="应用全局操作快捷键。" readOnly note="以下为当前版本实际快捷键，暂不支持自定义。" sections={[
               { title: "全局快捷键", groups: [[
-                { label: "快速搜索", value: "Ctrl+Shift+F" },
+                { label: "快速切换", value: "Ctrl+K" },
                 { label: "新建连接", value: "Ctrl+N" },
-                { label: "设置", value: "Ctrl+," },
+                { label: "关闭当前标签", value: "Ctrl+W", hint: "输入框内不触发" },
+                { label: "恢复关闭的标签", value: "Ctrl+Shift+T" },
+                { label: "切换会话", value: "Ctrl+Tab / Ctrl+Shift+Tab" },
+                { label: "AI 助手", value: "Ctrl+Shift+A" },
                 { label: "关闭窗口", value: "Alt+F4" },
               ]] },
             ]} />
           </Show>
           <Show when={page() === "shortcutsEditor"}>
-            <PlaceholderSettingsPage title="快捷键 · 编辑器" description="SQL 与文本编辑器快捷键。" sections={[
+            <PlaceholderSettingsPage title="快捷键 · 编辑器" description="SQL 与文本编辑器快捷键。" readOnly note="以下为当前版本实际快捷键，暂不支持自定义。" sections={[
               { title: "编辑器快捷键", groups: [[
                 { label: "执行查询", value: "Ctrl+Enter" },
-                { label: "格式化 SQL", value: "Shift+Alt+F" },
-                { label: "查找", value: "Ctrl+F" },
+                { label: "保存远程文件", value: "Ctrl+S" },
+                { label: "补全选择", value: "↑ / ↓" },
+                { label: "插入补全", value: "Enter / Tab" },
+                { label: "关闭补全", value: "Esc" },
               ]] },
             ]} />
           </Show>
           <Show when={page() === "shortcutsSsh"}>
-            <PlaceholderSettingsPage title="快捷键 · SSH / 终端" description="终端会话中的快捷操作。" sections={[
+            <PlaceholderSettingsPage title="快捷键 · SSH / 终端" description="终端会话中的快捷操作。" readOnly note="以下为当前版本实际快捷键，暂不支持自定义。" sections={[
               { title: "终端快捷键", groups: [[
-                { label: "复制", value: "Ctrl+Shift+C" },
-                { label: "粘贴", value: "Ctrl+V" },
                 { label: "终端搜索", value: "Ctrl+F" },
+                { label: "复制", value: "Ctrl+C", hint: "有选中文本时复制，否则发送中断" },
+                { label: "粘贴", value: "Ctrl+V", hint: "受终端设置中的 Ctrl+V 粘贴开关控制" },
               ]] },
             ]} />
           </Show>
           <Show when={page() === "shortcutsDatabase"}>
-            <PlaceholderSettingsPage title="快捷键 · 数据库" description="数据库工作区快捷操作。" sections={[
+            <PlaceholderSettingsPage title="快捷键 · 数据库" description="数据库工作区快捷操作。" readOnly note="以下为当前版本实际快捷键，暂不支持自定义。" sections={[
               { title: "数据库快捷键", groups: [[
-                { label: "新建查询", value: "Ctrl+T" },
                 { label: "执行查询", value: "Ctrl+Enter" },
-                { label: "刷新对象树", value: "F5" },
+                { label: "补全选择", value: "↑ / ↓" },
+                { label: "插入补全", value: "Enter / Tab" },
+                { label: "关闭补全", value: "Esc" },
               ]] },
             ]} />
           </Show>
           <Show when={page() === "shortcutsDocker"}>
-            <PlaceholderSettingsPage title="快捷键 · Docker" description="Docker 工作区快捷操作。" sections={[
+            <PlaceholderSettingsPage title="快捷键 · Docker" description="Docker 工作区快捷操作。" readOnly note="以下为当前版本实际快捷键，暂不支持自定义。" sections={[
               { title: "Docker 快捷键", groups: [[
-                { label: "刷新容器", value: "F5" },
-                { label: "查看日志", value: "Ctrl+L" },
+                { label: "专属快捷键", value: "—", hint: "当前版本未提供 Docker 专属快捷键" },
               ]] },
             ]} />
           </Show>
@@ -1364,11 +1375,6 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 </div>
                 <div class="settings-card">
                   <div class="settings-card-title"><strong>SFTP 文件管理</strong><span>设置文件工作区的默认行为</span></div>
-                  <label><span>文件列表布局</span>
-                    <select value={uiStore.filesStacked() ? "stacked" : "side"} onChange={event => uiStore.setFilesStacked(event.currentTarget.value === "stacked")}>
-                      <option value="side">左右布局</option><option value="stacked">上下布局</option>
-                    </select>
-                  </label>
                   <label><span><b>连接后打开文件管理</b><small>SSH 会话建立后自动显示 SFTP 面板</small></span><Toggle checked={terminalSettings().openFileManagerOnConnect} onChange={value => updateSetting("openFileManagerOnConnect", value)} /></label>
                 </div>
               </div>
@@ -1379,11 +1385,9 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                   <label class="settings-row-unavailable"><span><b>SSH/SFTP 路径联动</b><small>终端工作目录与文件管理器路径保持同步</small></span><DisabledToggle /></label>
                   <label><span><b>终端命令输入提示</b><small>输入命令时显示历史与补全建议</small></span><Toggle checked={terminalSettings().commandHints} onChange={value => updateSetting("commandHints", value)} /></label>
                   <label><span><b>SSH 历史命令</b><small>记录并复用历史输入命令</small></span><Toggle checked={terminalSettings().sshHistory} onChange={value => updateSetting("sshHistory", value)} /></label>
-                  <label class="settings-row-unavailable"><span><b>渲染（高性能）</b><small>使用更快的终端渲染模式</small></span><DisabledToggle /></label>
                 </div>
                 <div class="settings-card">
                   <label><span><b>终端声音</b><small>终端响铃时播放提示音</small></span><Toggle checked={terminalSettings().terminalBell} onChange={value => updateSetting("terminalBell", value)} /></label>
-                  <label><span><b>最大缓存行数</b><small>终端可回看的最大历史行数</small></span><input type="number" min="100" max="100000" value={terminalSettings().scrollback} onChange={event => updateSetting("scrollback", Number(event.currentTarget.value))} /></label>
                   <label class="settings-row-unavailable"><span><b>清屏时保留屏幕内容</b><small>执行清屏后保留当前屏幕快照</small></span><DisabledToggle /></label>
                   <label class="settings-row-unavailable"><span><b>日志储存目录</b><small>指定终端会话日志保存位置</small></span><DisabledSelect value="不填写则关闭日志记录" /></label>
                 </div>
@@ -1393,19 +1397,11 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <div class="settings-grid">
                 <div class="settings-card">
                   <label class="settings-row-unavailable"><span><b>默认编辑器</b></span><DisabledSelect value="内置编辑器" /></label>
-                  <label><span><b>文件列表布局</b></span>
-                    <select value={uiStore.filesStacked() ? "stacked" : "side"} onChange={event => uiStore.setFilesStacked(event.currentTarget.value === "stacked")}>
-                      <option value="side">左右布局</option><option value="stacked">上下布局</option>
-                    </select>
-                  </label>
-                  <label class="settings-row-unavailable"><span><b>远程文件显示列</b></span><DisabledSelect value="名称, 大小" /></label>
                   <label class="settings-row-unavailable"><span><b>文件列表读取超时时间（秒）</b></span><DisabledSelect value="60" /></label>
                 </div>
                 <div class="settings-card">
                   <label class="settings-row-unavailable"><span><b>默认保存路径</b></span><DisabledSelect value="不填写则使用默认路径" /></label>
                   <label class="settings-row-unavailable"><span><b>双击打开文件逻辑</b></span><DisabledSelect value="自动判断编辑 / 打开" /></label>
-                  <label class="settings-row-unavailable"><span><b>显示隐藏文件</b></span><DisabledToggle /></label>
-                  <label class="settings-row-unavailable"><span><b>本地文件显示列</b></span><DisabledSelect value="名称, 修改时间, 类型, 大小" /></label>
                 </div>
               </div>
 

@@ -64,6 +64,7 @@ const App: Component = () => {
   const [sidebarWidth, setSidebarWidth] = createSignal(Number(localStorage.getItem("portnest-sidebar-width")) || 264);
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
+  let appMenuRef: HTMLDivElement | undefined;
   const [showAbout, setShowAbout] = createSignal(false);
   const [showAIAssistant, setShowAIAssistant] = createSignal(false);
   const [aiAssistantMode, setAiAssistantMode] = createSignal<AssistantMode>("general");
@@ -260,6 +261,9 @@ const App: Component = () => {
       default: return "已结束";
     }
   };
+  const isBusyStatus = (status: SessionTab["status"]) => status === "connecting" || status === "reconnecting";
+  const sessionStateIcon = (status: SessionTab["status"]) =>
+    isBusyStatus(status) ? "refresh" : status === "error" ? "alert" : "power";
 
   // 服务器概览开合会改变终端区宽度。ResizeObserver 的防抖偶发漏掉最终一次
   // 布局，导致 xterm 画布与容器不一致（终端显示异常）。这里在布局稳定后
@@ -378,6 +382,26 @@ const App: Component = () => {
     onCleanup(unregisterAgentLauncher);
   });
   onCleanup(() => window.removeEventListener("keydown", handleGlobalKeyDown));
+
+  onMount(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (!showAppMenu()) return;
+      const target = event.target instanceof Node ? event.target : null;
+      if (target && appMenuRef?.contains(target)) return;
+      setShowAppMenu(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!showAppMenu() || event.key !== "Escape") return;
+      event.preventDefault();
+      setShowAppMenu(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    });
+  });
 
   onMount(() => {
     const keepTerminalUsable = () => {
@@ -1032,7 +1056,7 @@ const App: Component = () => {
           <button class="titlebar-btn" title="设置" aria-label="设置" onClick={() => void openSettingsWindow()}>
             <Icon name="settings" />
           </button>
-          <div class="app-menu-container">
+          <div class="app-menu-container" ref={appMenuRef}>
             <button class="titlebar-btn" title="更多" aria-label="更多操作" aria-expanded={showAppMenu()} onClick={() => setShowAppMenu(!showAppMenu())}>
               <Icon name="more" />
             </button>
@@ -1095,7 +1119,7 @@ const App: Component = () => {
           </div>
         </div>
       </div>
-      <div class={`app-body ${showAIAssistant() ? "ai-dock-open" : ""} ${uiStore.filesStacked() && activeSession() && !assetListActive() && !uiStore.filesCollapsed() && !showAIAssistant() ? "files-layout-stacked" : ""}`}>
+      <div class={`app-body ${showAIAssistant() ? "ai-dock-open" : ""} ${uiStore.filesStacked() && showRightPanel() && !uiStore.filesCollapsed() && !showAIAssistant() ? "files-layout-stacked" : ""}`}>
         <Sidebar
           width={sidebarWidth()}
           selectedId={activeSession()?.connection.id}
@@ -1327,7 +1351,9 @@ const App: Component = () => {
                     </Show>
                     <Show when={(isDatabaseProtocol(session.connection.protocol) ? session.status !== "connected" : !session.shellId || session.status !== "connected")}>
                       <div class={`session-state-overlay state-${session.status}`}>
-                        <span class={`session-state-icon status-${session.status}`}>{session.status === "connecting" || session.status === "reconnecting" ? "◌" : session.status === "error" ? "!" : "›_"}</span>
+                        <span class={`session-state-icon status-${session.status}`}>
+                          <Icon name={sessionStateIcon(session.status)} size={20} class={isBusyStatus(session.status) ? "status-spin" : undefined} />
+                        </span>
                         <h3>{session.status === "restored" ? "会话已从上次工作区恢复"
                           : session.status === "connecting" ? (session.connection.protocol === "local" ? "正在打开本地终端" : "正在建立 SSH 连接")
                           : session.status === "reconnecting" ? (session.connection.protocol === "local" ? "正在重新打开本地终端" : "正在重新连接")

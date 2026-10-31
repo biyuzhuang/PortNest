@@ -323,6 +323,13 @@ export function getTerminalThemeConfig(): TerminalTheme {
 const TERMINAL_SETTINGS_KEY = "portnest-terminal-settings";
 const [terminalSettingsRevision, setTerminalSettingsRevision] = createSignal(0);
 
+export const TERMINAL_FONT_SIZE_MIN = 9;
+export const TERMINAL_FONT_SIZE_MAX = 28;
+
+export function isTerminalFontSizeValid(value: number): boolean {
+  return Number.isFinite(value) && value >= TERMINAL_FONT_SIZE_MIN && value <= TERMINAL_FONT_SIZE_MAX;
+}
+
 export interface TerminalSettings {
   copyOnSelect: boolean;
   rightClickAction: "paste" | "none";
@@ -363,7 +370,11 @@ export function getTerminalSettings(): TerminalSettings {
   };
   try {
     const stored = localStorage.getItem(TERMINAL_SETTINGS_KEY);
-    if (stored) return { ...defaults, ...JSON.parse(stored) };
+    if (stored) {
+      const merged = { ...defaults, ...JSON.parse(stored) } as TerminalSettings;
+      if (!isTerminalFontSizeValid(merged.fontSize)) merged.fontSize = defaults.fontSize;
+      return merged;
+    }
   } catch {}
   return defaults;
 }

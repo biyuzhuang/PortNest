@@ -30,6 +30,12 @@ import "./components/ConnectionForm.css";
 
 const isSettingsWindow = new URLSearchParams(window.location.search).get("window") === "settings";
 document.addEventListener("contextmenu", event => event.preventDefault(), { capture: true });
+// Bubble phase so xterm's Ctrl+F search runs first; only suppress WebView2's native find.
+document.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+  }
+});
 initTheme();
 render(
   () => isSettingsWindow

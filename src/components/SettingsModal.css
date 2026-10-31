@@ -172,6 +172,8 @@
 .settings-card label > span:has(> small) { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .settings-card label > span > small { font-weight: 400; }
 .settings-card label.disabled { opacity: .58; }
+.settings-card label.settings-row-invalid > span > small { color: var(--error); }
+.settings-card label.settings-row-invalid input { border-color: var(--error); }
 .settings-note { padding: 12px; }
 
 @media (max-width:800px) {
@@ -571,6 +573,38 @@
 .settings-row-unavailable { opacity: .5; pointer-events: none; cursor: default; user-select: none; }
 .settings-card label.settings-row-unavailable:hover { background: transparent; }
 .settings-row-unavailable > span > b { font-weight: 500; }
+.settings-shortcut-card { overflow: hidden; }
+.settings-shortcut-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--settings-line);
+}
+.settings-shortcut-row:last-child { border-bottom: 0; }
+.settings-shortcut-row > span { min-width: 0; font-weight: 500; }
+.settings-shortcut-row > span > small {
+  display: block;
+  margin-top: 2px;
+  color: var(--settings-muted);
+  font-size: var(--fs-11);
+  font-weight: 400;
+}
+.settings-shortcut-key {
+  flex: 0 0 auto;
+  max-width: 64%;
+  padding: 2px 7px;
+  overflow: hidden;
+  color: var(--text-1);
+  background: var(--settings-panel);
+  border: 1px solid var(--settings-line);
+  border-radius: 5px;
+  font: 500 11px/1.5 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .settings-disabled-select {
   display: inline-flex;
   min-width: 96px;
@@ -812,17 +846,9 @@
   background-position: 0 0;
 }
 .terminal-settings-preview.terminal-striped .terminal-preview-stripes { display: block; }
-.terminal-settings-preview.terminal-highlight-enhanced span {
-  color: color-mix(in srgb, var(--preview-green, var(--success)) 78%, white);
-  text-shadow: 0 0 9px color-mix(in srgb, var(--preview-green, var(--success)) 28%, transparent);
-}
 .terminal-settings-preview.terminal-highlight-enhanced b {
-  color: color-mix(in srgb, var(--preview-blue, var(--info)) 76%, white);
+  color: var(--preview-blue, var(--info));
   font-weight: 600;
-  text-shadow: 0 0 9px color-mix(in srgb, var(--preview-blue, var(--info)) 30%, transparent);
-}
-.terminal-settings-preview.terminal-highlight-enhanced {
-  --preview-command-color: color-mix(in srgb, var(--preview-blue, var(--info)) 78%, white);
 }
 
 /* Added-provider workflow for the AI model settings page. */

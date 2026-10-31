@@ -87,7 +87,6 @@ body,
 .ssh-field select,
 .ssh-field textarea,
 .path-input,
-.file-filter-input,
 .mysql-filter,
 .quick-switcher > input {
   border-radius: 8px;
@@ -98,7 +97,6 @@ body,
 .ssh-field select:focus,
 .ssh-field textarea:focus,
 .path-input:focus,
-.file-filter-input:focus,
 .mysql-filter:focus,
 .quick-switcher > input:focus {
   border-color: var(--pn-blue);

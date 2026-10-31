@@ -203,20 +203,6 @@
   line-height: 1;
 }
 
-.asset-ping-icon {
-  display: grid;
-  width: 14px;
-  height: 14px;
-  place-items: center;
-}
-
-.asset-ping-icon > i {
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid currentColor;
-  border-radius: 50%;
-}
-
 /* ---------- table --------------------------------------------------------- */
 
 .asset-table {
@@ -285,6 +271,14 @@
 .asset-connection-row:hover,
 .asset-folder-row:hover {
   background: var(--surface-hover);
+}
+
+.asset-parent-row {
+  color: var(--text-2);
+}
+
+.asset-parent-row .asset-folder-icon {
+  color: var(--text-3);
 }
 
 .asset-connection-row.selected {
