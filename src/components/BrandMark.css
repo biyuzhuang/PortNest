@@ -1,0 +1,13 @@
+.brand-mark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.brand-mark-tile {
+  fill: color-mix(in srgb, var(--accent) 7%, var(--surface-raised));
+  stroke: color-mix(in srgb, var(--accent) 24%, var(--line));
+}
+
+.brand-mark-ring { stroke: var(--accent); }
+.brand-mark-glyph { stroke: var(--success); }
+.brand-mark-glyph-fill { fill: var(--success); }

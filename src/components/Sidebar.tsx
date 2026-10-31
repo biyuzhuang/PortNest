@@ -42,8 +42,15 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   const [dragOverRoot, setDragOverRoot] = createSignal(false);
   const [draggingConnectionId, setDraggingConnectionId] = createSignal<string | null>(null);
   const [draggingFolderId, setDraggingFolderId] = createSignal<string | null>(null);
+  type FolderDropMode = "inside" | "before" | "after";
+  const [folderDropTarget, setFolderDropTarget] = createSignal<{ folderId: string | null; mode: FolderDropMode } | null>(null);
   const [contextMenuFolder, setContextMenuFolder] = createSignal<ConnectionFolder | null>(null);
   const [showFolderMenu, setShowFolderMenu] = createSignal(false);
+
+  let folderDropCleanup: (() => void) | undefined;
+  let folderDragEndedAt = 0;
+  let folderExpandTimer: number | undefined;
+  let pendingExpandFolderId: string | null = null;
 
   const toggleFolder = (folderId: string) => {
     setExpandedFolders((prev) => {
@@ -138,19 +145,25 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     if (folderId === parentId || (parentId && folderContains(folderId, parentId))) return;
     const dragged = state.folders.find(folder => folder.id === folderId);
     if (!dragged) return;
+    const sourceParentId = dragged.parentId;
     const siblings = sortedFolders(parentId).filter(folder => folder.id !== folderId);
     let index = targetId ? siblings.findIndex(folder => folder.id === targetId) : siblings.length;
     if (index < 0) index = siblings.length;
     if (after && targetId) index += 1;
     siblings.splice(index, 0, { ...dragged, parentId });
-    const updates = new Map(siblings.map((folder, order) => [
-      folder.id,
-      { ...folder, parentId, sort_order: order },
-    ]));
+    const updates = new Map<string, ConnectionFolder>();
+    const reindex = (parent: string | null, list: ConnectionFolder[]) => {
+      list.forEach((folder, order) => updates.set(folder.id, { ...folder, parentId: parent, sort_order: order }));
+    };
+    reindex(parentId, siblings);
+    if (sourceParentId !== parentId) {
+      reindex(sourceParentId, sortedFolders(sourceParentId).filter(folder => folder.id !== folderId));
+    }
     const next = state.folders.map(folder => updates.get(folder.id) ?? folder);
-    void connectionStore.saveAssetOrder([...state.connections], next).catch(error =>
-      console.error("[Sidebar] 保存文件夹排序失败:", error)
-    );
+    void connectionStore.saveAssetOrder([...state.connections], next).catch(error => {
+      console.error("[Sidebar] 保存文件夹排序失败:", error);
+      feedback.error("移动文件夹失败：" + error);
+    });
   };
 
   const handleFolderDragOver = (event: DragEvent, folderId: string) => {
@@ -225,6 +238,159 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       setDragOverFolderId(null);
     }
   };
+
+  const expandFolderWithAncestors = (folderId: string | null) => {
+    const ids: string[] = [];
+    const visited = new Set<string>();
+    let current = folderId ? state.folders.find(folder => folder.id === folderId) : undefined;
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      ids.push(current.id);
+      current = current.parentId
+        ? state.folders.find(folder => folder.id === current!.parentId)
+        : undefined;
+    }
+    if (!ids.length) return;
+    setExpandedFolders(previous => {
+      const next = new Set(previous);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const clearFolderExpandTimer = () => {
+    window.clearTimeout(folderExpandTimer);
+    folderExpandTimer = undefined;
+    pendingExpandFolderId = null;
+  };
+
+  const scheduleFolderExpand = (folderId: string | null) => {
+    if (folderId === pendingExpandFolderId) return;
+    window.clearTimeout(folderExpandTimer);
+    folderExpandTimer = undefined;
+    pendingExpandFolderId = folderId;
+    if (!folderId || expandedFolders().has(folderId)) return;
+    folderExpandTimer = window.setTimeout(() => {
+      setExpandedFolders(previous => new Set(previous).add(folderId));
+    }, 500);
+  };
+
+  const autoScrollSidebar = (clientY: number) => {
+    const nav = document.querySelector<HTMLElement>(".sidebar-nav");
+    if (!nav) return;
+    const rect = nav.getBoundingClientRect();
+    if (clientY < rect.top + 24) nav.scrollTop -= 10;
+    else if (clientY > rect.bottom - 24) nav.scrollTop += 10;
+  };
+
+  const resolveFolderDropTarget = (clientX: number, clientY: number, draggedId: string) => {
+    const element = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const header = element?.closest<HTMLElement>(".folder-header[data-folder-id]");
+    if (header) {
+      const folderId = header.dataset.folderId!;
+      if (folderId === draggedId || folderContains(draggedId, folderId)) return null;
+      const rect = header.getBoundingClientRect();
+      const ratio = (clientY - rect.top) / Math.max(rect.height, 1);
+      const mode: FolderDropMode = ratio < 0.28 ? "before" : ratio > 0.72 ? "after" : "inside";
+      return { folderId, mode };
+    }
+    const children = element?.closest<HTMLElement>(".folder-children[data-folder-id]");
+    if (children) {
+      const folderId = children.dataset.folderId!;
+      if (folderId === draggedId || folderContains(draggedId, folderId)) return null;
+      return { folderId, mode: "inside" as FolderDropMode };
+    }
+    if (element?.closest(".connection-list, .sidebar-nav")) {
+      return { folderId: null, mode: "inside" as FolderDropMode };
+    }
+    return null;
+  };
+
+  const applyFolderDrop = (
+    folderId: string,
+    drop: { folderId: string | null; mode: FolderDropMode } | null,
+  ) => {
+    if (!drop) return;
+    const dragged = state.folders.find(folder => folder.id === folderId);
+    if (!dragged) return;
+    if (drop.folderId === null) {
+      if (dragged.parentId === null) return;
+      persistFolderMove(folderId, null);
+    } else if (drop.mode === "inside") {
+      if (dragged.parentId !== drop.folderId) persistFolderMove(folderId, drop.folderId);
+      expandFolderWithAncestors(drop.folderId);
+    } else {
+      const target = state.folders.find(folder => folder.id === drop.folderId);
+      if (!target) return;
+      persistFolderMove(folderId, target.parentId, target.id, drop.mode === "after");
+    }
+    setExpandedFolders(previous => new Set(previous).add(folderId));
+  };
+
+  const beginFolderPointerDrag = (event: PointerEvent, folderId: string) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement | null)?.closest(".folder-toggle")) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let active = false;
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+      window.removeEventListener("keydown", handlePointerKey);
+      clearFolderExpandTimer();
+      setDraggingFolderId(null);
+      setFolderDropTarget(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      folderDropCleanup = undefined;
+      if (active) folderDragEndedAt = Date.now();
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== event.pointerId) return;
+      if (!active) {
+        if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 5) return;
+        active = true;
+        setDraggingFolderId(folderId);
+        document.body.style.cursor = "grabbing";
+        document.body.style.userSelect = "none";
+      }
+      moveEvent.preventDefault();
+      const drop = resolveFolderDropTarget(moveEvent.clientX, moveEvent.clientY, folderId);
+      setFolderDropTarget(drop);
+      scheduleFolderExpand(drop?.mode === "inside" ? drop.folderId : null);
+      autoScrollSidebar(moveEvent.clientY);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== event.pointerId) return;
+      const drop = active ? resolveFolderDropTarget(upEvent.clientX, upEvent.clientY, folderId) : null;
+      cleanup();
+      if (active) applyFolderDrop(folderId, drop);
+    };
+
+    const handlePointerCancel = (cancelEvent: PointerEvent) => {
+      if (cancelEvent.pointerId !== event.pointerId) return;
+      cleanup();
+    };
+
+    const handlePointerKey = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === "Escape") cleanup();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    window.addEventListener("keydown", handlePointerKey);
+    folderDropCleanup = cleanup;
+  };
+
+  onCleanup(() => {
+    folderDropCleanup?.();
+    clearFolderExpandTimer();
+  });
 
   const filteredConnections = createMemo(() => {
     const query = searchQuery().toLowerCase();
@@ -399,6 +565,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     onCleanup(() => document.removeEventListener("mousedown", handleDocMouseDown));
   });
 
+  const folderDropClass = (folderId: string) => {
+    const target = folderDropTarget();
+    return target?.folderId === folderId ? `drop-${target.mode}` : "";
+  };
+
   return (
     <div class={`sidebar ${uiStore.assetTreeVisible() ? "" : "tree-collapsed"}`} style={`--asset-sidebar-width:${props.width || 286}px`} onClick={() => { setShowContextMenu(false); setShowFolderMenu(false); }}>
       <nav class="module-rail" aria-label="功能导航">
@@ -500,17 +671,11 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                 return (
                 <div class="folder-item">
                   <div
-                    class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""} ${uiStore.selectedAssetFolderId() === folder.id ? "selected" : ""}`}
-                    draggable={true}
-                    onDragStart={(event) => {
-                      event.stopPropagation();
-                      event.dataTransfer?.setData("application/x-portnest-folder", folder.id);
-                      event.dataTransfer?.setData("text/plain", `folder:${folder.id}`);
-                      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-                      setDraggingFolderId(folder.id);
-                    }}
-                    onDragEnd={handleDragEnded}
+                    class={`folder-header ${dragOverFolderId() === folder.id ? "drag-over" : ""} ${uiStore.selectedAssetFolderId() === folder.id ? "selected" : ""} ${draggingFolderId() === folder.id ? "dragging" : ""} ${folderDropClass(folder.id)}`}
+                    data-folder-id={folder.id}
+                    onPointerDown={(event) => beginFolderPointerDrag(event, folder.id)}
                     onClick={() => {
+                      if (Date.now() - folderDragEndedAt < 250) return;
                       uiStore.setSelectedAssetFolderId(folder.id);
                       toggleFolder(folder.id);
                     }}
@@ -534,7 +699,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   </div>
                   <Show when={expandedFolders().has(folder.id)}>
                     <div
-                      class={`folder-children ${dragOverFolderId() === folder.id ? "drag-over" : ""}`}
+                      class={`folder-children ${dragOverFolderId() === folder.id ? "drag-over" : ""} ${folderDropClass(folder.id)}`}
+                      data-folder-id={folder.id}
                       onDragEnter={(event) => handleFolderDragOver(event, folder.id)}
                       onDragOver={(event) => handleFolderDragOver(event, folder.id)}
                       onDragLeave={(event) => handleDropZoneLeave(event, folder.id)}
@@ -563,7 +729,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </Show>
 
           <div
-            class={`connection-list ${dragOverRoot() ? "drag-over" : ""}`}
+            class={`connection-list ${dragOverRoot() ? "drag-over" : ""} ${draggingFolderId() && folderDropTarget()?.folderId === null ? "folder-root-drop" : ""}`}
             onDragEnter={handleRootDragOver}
             onDragOver={handleRootDragOver}
             onDragLeave={(event) => handleDropZoneLeave(event, null)}
@@ -571,6 +737,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           >
             <Show when={state.connections.find(connection => connection.id === draggingConnectionId())?.folder_id}>
               <div class="root-drop-hint">拖到这里移出文件夹</div>
+            </Show>
+            <Show when={draggingFolderId() && folderDropTarget()?.folderId === null}>
+              <div class="root-drop-hint">松开以移动到根目录</div>
             </Show>
             <For each={filteredConnections()}>
               {(conn) => (

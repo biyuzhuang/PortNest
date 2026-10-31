@@ -180,6 +180,7 @@ export const FileManager: Component<FileManagerProps> = (props) => {
   let pathInputRef: HTMLInputElement | undefined;
   let lastFollowedCwd = "";
   let probeTimer: number | undefined;
+  let editorLoadRequest = 0;
 
   const getSftpId = () => props.sftpId;
 
@@ -445,9 +446,36 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     setSelectedFile(file);
   };
 
+  const openFileInEditor = async (file: FileInfo) => {
+    const id = getSftpId();
+    if (!id || file.is_dir || editorFile()) return;
+    const requestId = ++editorLoadRequest;
+    setEditorFile(file);
+    setEditorContent("");
+    setEditorOriginal("");
+    setEditorChecksum("");
+    setEditorSaving(false);
+    setEditorLoading(true);
+    try {
+      const result = await api.sftpReadTextFile(id, file.path);
+      if (requestId !== editorLoadRequest) return;
+      setEditorContent(result.content);
+      setEditorOriginal(result.content);
+      setEditorChecksum(result.checksum);
+    } catch (cause) {
+      if (requestId !== editorLoadRequest) return;
+      setEditorFile(null);
+      feedback.error("打开远程文件失败: " + cause);
+    } finally {
+      if (requestId === editorLoadRequest) setEditorLoading(false);
+    }
+  };
+
   const handleFileDoubleClick = (file: FileInfo) => {
     if (file.is_dir) {
       navigateTo(file.path);
+    } else {
+      void openFileInEditor(file);
     }
   };
 
@@ -746,31 +774,15 @@ export const FileManager: Component<FileManagerProps> = (props) => {
     }
   };
 
-  const openRemoteEditor = async () => {
-    const id = getSftpId();
+  const openRemoteEditor = () => {
     const file = contextFile();
     setContextMenu(null);
-    if (!id || !file || file.is_dir) return;
-    setEditorFile(file);
-    setEditorContent("");
-    setEditorOriginal("");
-    setEditorChecksum("");
-    setEditorLoading(true);
-    try {
-      const result = await api.sftpReadTextFile(id, file.path);
-      setEditorContent(result.content);
-      setEditorOriginal(result.content);
-      setEditorChecksum(result.checksum);
-    } catch (cause) {
-      setEditorFile(null);
-      feedback.error("打开远程文件失败: " + cause);
-    } finally {
-      setEditorLoading(false);
-    }
+    if (file) void openFileInEditor(file);
   };
 
   const closeRemoteEditor = async () => {
     if (editorContent() !== editorOriginal() && !await feedback.confirm("远程文件尚未保存，确定放弃修改吗？", "关闭编辑器")) return;
+    editorLoadRequest += 1;
     setEditorFile(null);
   };
 

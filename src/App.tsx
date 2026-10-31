@@ -21,8 +21,9 @@ import { AIAssistant, type AssistantMode } from "./components/AIAssistant";
 import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { ProtocolIcon } from "./components/ProtocolIcon";
 import { Icon } from "./components/Icon";
+import { BrandMark } from "./components/BrandMark";
 import { openSettingsWindow } from "./utils/settingsWindow";
-import { connectionStore } from "./stores/connectionStore";
+import { connectionStore, flattenFolders, folderPathLabel } from "./stores/connectionStore";
 import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
 import { uiStore } from "./stores/uiStore";
@@ -65,6 +66,7 @@ const App: Component = () => {
   const [tabContextMenu, setTabContextMenu] = createSignal<ContextMenuState>(null);
   const [showAppMenu, setShowAppMenu] = createSignal(false);
   let appMenuRef: HTMLDivElement | undefined;
+  let quickSearchInput: HTMLInputElement | undefined;
   const [showAbout, setShowAbout] = createSignal(false);
   const [showAIAssistant, setShowAIAssistant] = createSignal(false);
   const [aiAssistantMode, setAiAssistantMode] = createSignal<AssistantMode>("general");
@@ -98,23 +100,22 @@ const App: Component = () => {
   const [tunnelConnection, setTunnelConnection] = createSignal<ConnectionRecord | null>(null);
   const [showQuickSwitcher, setShowQuickSwitcher] = createSignal(false);
   const [quickQuery, setQuickQuery] = createSignal("");
+
+  createEffect(() => {
+    if (!showQuickSwitcher()) return;
+    queueMicrotask(() => quickSearchInput?.focus());
+  });
   const [tunnelRuntimes, setTunnelRuntimes] = createSignal<TunnelRuntimeInfo[]>([]);
   const reconnectTimers = new Map<string, number>();
   let allowWindowClose = false;
   let unlistenWindowClose: (() => void) | undefined;
 
-  const closeActionStorageKey = "portnest-window-close-action";
-  const rememberedCloseAction = (): "close" | "fold" | null => {
-    const action = localStorage.getItem(closeActionStorageKey);
-    return action === "close" || action === "fold" ? action : null;
-  };
   const openCloseConfirm = () => {
-    setSaveCloseChoice(rememberedCloseAction() !== null);
+    setSaveCloseChoice(uiStore.windowCloseAction() !== "ask");
     setShowCloseConfirm(true);
   };
   const saveClosePreference = (action: "close" | "fold") => {
-    if (saveCloseChoice()) localStorage.setItem(closeActionStorageKey, action);
-    else localStorage.removeItem(closeActionStorageKey);
+    uiStore.setWindowCloseAction(saveCloseChoice() ? action : "ask");
   };
   const confirmWindowClose = async (remember = true) => {
     if (remember) saveClosePreference("close");
@@ -152,7 +153,7 @@ const App: Component = () => {
     setShowAIAssistant(true);
   };
   const requestWindowClose = () => {
-    const action = rememberedCloseAction();
+    const action = uiStore.windowCloseAction();
     if (action === "close") { void confirmWindowClose(false); return; }
     if (action === "fold") { void foldWindow(false); return; }
     openCloseConfirm();
@@ -928,21 +929,6 @@ const App: Component = () => {
     return "";
   };
 
-  const folderBreadcrumb = (folderId: string | null) => {
-    if (!folderId) return "资产列表";
-    const parts: string[] = [];
-    let current = connectionStore.state.folders.find(folder => folder.id === folderId);
-    const visited = new Set<string>();
-    while (current && !visited.has(current.id)) {
-      visited.add(current.id);
-      parts.unshift(current.name);
-      current = current.parentId
-        ? connectionStore.state.folders.find(folder => folder.id === current!.parentId)
-        : undefined;
-    }
-    return ["资产列表", ...parts].join(" / ");
-  };
-
   const handleCreateFolder = async () => {
     setNewFolderTouched(true);
     const name = newFolderName().trim();
@@ -1033,7 +1019,7 @@ const App: Component = () => {
   return (
     <div class="app-container">
       <div class="app-titlebar">
-        <span class="titlebar-title" data-tauri-drag-region><b>P</b><span>PortNest</span></span>
+        <span class="titlebar-title" data-tauri-drag-region><BrandMark size={22} /><span>PortNest</span></span>
         <span class="titlebar-divider" />
         <Show when={activeSession()}>
           <span class="titlebar-crumb" data-tauri-drag-region>
@@ -1097,7 +1083,7 @@ const App: Component = () => {
                   <span class="app-menu-icon"><Icon name="info" size={14} /></span>
                   <span class="app-menu-label">关于 PortNest</span>
                 </button>
-                <button class="app-menu-item" onClick={() => { setShowAppMenu(false); openCloseConfirm(); }}>
+                <button class="app-menu-item" onClick={() => { setShowAppMenu(false); requestWindowClose(); }}>
                   <span class="app-menu-icon"><Icon name="close" size={14} /></span>
                   <span class="app-menu-label">关闭窗口</span>
                   <span class="app-menu-shortcut">Alt+F4</span>
@@ -1420,7 +1406,7 @@ const App: Component = () => {
       </Show>
 
       <Show when={showNewFolderDialog()}>
-        <div class="modal-overlay folder-create-overlay" onClick={() => setShowNewFolderDialog(false)}>
+        <div class="modal-overlay folder-create-overlay">
           <div
             class="folder-create-dialog"
             role="dialog"
@@ -1428,7 +1414,6 @@ const App: Component = () => {
             aria-labelledby="folder-create-title"
             onClick={event => event.stopPropagation()}
             onKeyDown={event => {
-              if (event.key === "Escape") setShowNewFolderDialog(false);
               if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") {
                 event.preventDefault();
                 void handleCreateFolder();
@@ -1452,7 +1437,19 @@ const App: Component = () => {
                 <span class="folder-location-icon"><Icon name="folderOpen" size={16} /></span>
                 <div>
                   <small>创建位置</small>
-                  <strong>{folderBreadcrumb(newFolderParentId())}</strong>
+                  <select
+                    class="folder-location-select"
+                    value={newFolderParentId() ?? ""}
+                    onChange={event => {
+                      setNewFolderParentId(event.currentTarget.value || null);
+                      setNewFolderTouched(false);
+                    }}
+                  >
+                    <option value="">资产列表（根目录）</option>
+                    <For each={flattenFolders(connectionStore.state.folders)}>
+                      {({ folder }) => <option value={folder.id}>{folderPathLabel(connectionStore.state.folders, folder.id)}</option>}
+                    </For>
+                  </select>
                 </div>
               </div>
 
@@ -1484,9 +1481,8 @@ const App: Component = () => {
             </div>
 
             <footer class="folder-create-footer">
-              <span class="folder-dialog-hint"><kbd>Enter</kbd> 创建 <kbd>Esc</kbd> 关闭</span>
+              <span class="folder-dialog-hint"><kbd>Enter</kbd> 创建</span>
               <div class="folder-create-actions">
-                <button type="button" class="connect-cancel-button" onClick={() => setShowNewFolderDialog(false)}>取消</button>
                 <button type="button" class="connect-save-button primary" disabled={!!folderNameError()} onClick={() => void handleCreateFolder()}>创建文件夹</button>
               </div>
             </footer>
@@ -1536,9 +1532,11 @@ const App: Component = () => {
       <Show when={showQuickSwitcher()}>
         <div class="quick-switcher-overlay" onClick={() => setShowQuickSwitcher(false)}>
           <div class="quick-switcher" onClick={event => event.stopPropagation()}>
-            <input autofocus value={quickQuery()} placeholder="搜索连接、主机或用户…" onInput={event => setQuickQuery(event.currentTarget.value)} onKeyDown={event => {
-              if (event.key === "Enter" && quickConnections()[0]) chooseQuickConnection(quickConnections()[0]);
-            }} />
+            <div class="quick-switcher-search">
+              <input ref={quickSearchInput} autofocus value={quickQuery()} placeholder="搜索连接、主机或用户…" onInput={event => setQuickQuery(event.currentTarget.value)} onKeyDown={event => {
+                if (event.key === "Enter" && quickConnections()[0]) chooseQuickConnection(quickConnections()[0]);
+              }} />
+            </div>
             <div class="quick-switcher-results">
               <For each={quickConnections()}>{connection => {
                 const opened = () => sessions().find(session => session.connection.id === connection.id);

@@ -51,6 +51,54 @@ export const countFolderConnections = (
     );
 };
 
+export const folderTrail = (
+  folders: readonly ConnectionFolder[],
+  folderId: string | null,
+): Array<{ id: string; name: string }> => {
+  const trail: Array<{ id: string; name: string }> = [];
+  const visited = new Set<string>();
+  let current = folderId ? folders.find(folder => folder.id === folderId) : undefined;
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    trail.unshift({ id: current.id, name: current.name });
+    current = current.parentId
+      ? folders.find(folder => folder.id === current!.parentId)
+      : undefined;
+  }
+  return trail;
+};
+
+export const folderPathLabel = (
+  folders: readonly ConnectionFolder[],
+  folderId: string | null,
+) => ["资产列表", ...folderTrail(folders, folderId).map(folder => folder.name)].join(" / ");
+
+export const flattenFolders = (folders: readonly ConnectionFolder[]) => {
+  const byParent = new Map<string | null, ConnectionFolder[]>();
+  for (const folder of folders) {
+    const list = byParent.get(folder.parentId) ?? [];
+    list.push(folder);
+    byParent.set(folder.parentId, list);
+  }
+  const result: Array<{ folder: ConnectionFolder; depth: number }> = [];
+  const visited = new Set<string>();
+  const append = (parentId: string | null, depth: number) => {
+    for (const folder of sortAssetsByTreeOrder(byParent.get(parentId) ?? [])) {
+      if (visited.has(folder.id)) continue;
+      visited.add(folder.id);
+      result.push({ folder, depth });
+      append(folder.id, depth + 1);
+    }
+  };
+  append(null, 0);
+  for (const folder of sortAssetsByTreeOrder(folders)) {
+    if (visited.has(folder.id)) continue;
+    visited.add(folder.id);
+    result.push({ folder, depth: 0 });
+  }
+  return result;
+};
+
 const [state, setState] = createStore<ConnectionState>({
   connections: [],
   folders: [],

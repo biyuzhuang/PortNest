@@ -467,9 +467,13 @@
 }
 
 .file-row.header .file-cell.date,
-.file-row.header .file-cell.size,
+.file-row.header .file-cell.size { justify-content: flex-end; }
+
 .file-row.header .file-cell.permissions,
-.file-row.header .file-cell.owner { justify-content: flex-end; }
+.file-row.header .file-cell.owner {
+  justify-content: center;
+  text-align: center;
+}
 
 .file-cell.date,
 .file-cell.size,

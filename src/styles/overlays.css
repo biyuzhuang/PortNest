@@ -33,27 +33,32 @@
   box-shadow: var(--shadow-modal);
 }
 
-.quick-switcher > input {
+.quick-switcher-search {
   order: 0;
-  width: 100%;
-  height: 46px;
-  min-height: 0;
-  flex: 0 0 46px;
-  padding: 0 var(--space-6);
-  color: var(--text-1);
-  background: transparent;
-  border: 0;
+  flex: 0 0 auto;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  font-size: var(--fs-14);
 }
 
-.quick-switcher > input::placeholder { color: var(--text-3); }
+.quick-switcher-search > input {
+  width: 100%;
+  height: var(--h-control);
+  min-height: 0;
+  padding: 0 var(--space-4);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-13);
+}
 
-.quick-switcher > input:focus {
+.quick-switcher-search > input::placeholder { color: var(--text-3); }
+
+.quick-switcher-search > input:focus {
   outline: none;
-  box-shadow: none;
-  border-bottom-color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .quick-switcher-results {
@@ -420,8 +425,28 @@
 }
 
 .folder-location-icon { color: var(--text-3); }
+.folder-location-card > div { min-width: 0; flex: 1; }
 .folder-location-card small { display: block; color: var(--text-3); font-size: 10.5px; }
 .folder-location-card strong { color: var(--text-1); font-size: var(--fs-12); font-weight: 550; }
+
+.folder-location-select {
+  width: 100%;
+  height: 30px;
+  min-height: 0;
+  padding: 0 var(--space-2);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--fs-12);
+}
+
+.folder-location-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 
 .folder-name-field { display: block; }
 .folder-name-field > span { display: block; margin-bottom: 5px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }

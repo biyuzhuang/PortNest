@@ -7,10 +7,11 @@ import {
   TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX, isTerminalFontSizeValid,
   type TerminalSettings,
 } from "../stores/themeStore";
-import { uiStore } from "../stores/uiStore";
+import { uiStore, type WindowCloseAction } from "../stores/uiStore";
 import { REFRESH_OPTIONS, getOverviewSettings, setOverviewSettings } from "../stores/dashboardStore";
 import { clearTerminalBackgroundImage, loadTerminalBackgroundImage, saveTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stores/terminalBackgroundStore";
 import { Icon } from "./Icon";
+import { BrandMark } from "./BrandMark";
 import { AIProviderIcon } from "./AIProviderIcon";
 import { TextContextMenu } from "./TextContextMenu";
 import { check } from "@tauri-apps/plugin-updater";
@@ -741,7 +742,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     <div class={`settings-workspace ${props.standalone ? "standalone" : ""}`}>
       <header class="settings-topbar" onMouseDown={startWindowDrag}>
         <div class="settings-brand">
-          <b>P</b><span>PortNest</span>
+          <BrandMark size={20} /><span>PortNest</span>
         </div>
         <strong>设置</strong>
         <div class="settings-window-actions">
@@ -948,7 +949,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
                 <div class="settings-card">
                   <label class="settings-row-unavailable"><span><b>中键关闭标签</b><small>使用鼠标中键快速关闭标签页</small></span><DisabledToggle /></label>
                   <label class="settings-row-unavailable"><span><b>界面动画</b><small>启用窗口和菜单过渡效果</small></span><DisabledToggle /></label>
-                  <label class="settings-row-unavailable"><span><b>关闭到托盘</b></span><DisabledSelect value="询问" /></label>
+                  <label><span><b>关闭主窗口时</b><small>标题栏关闭按钮的行为</small></span><select value={uiStore.windowCloseAction()} onChange={event => uiStore.setWindowCloseAction(event.currentTarget.value as WindowCloseAction)}><option value="ask">每次询问</option><option value="close">退出应用</option><option value="fold">折叠到托盘</option></select></label>
                 </div>
                 <div class="settings-card">
                   <label class="settings-row-unavailable"><span><b>语言</b></span><DisabledSelect value="简体中文" /></label>
@@ -1382,7 +1383,7 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
               <h3>终端功能</h3>
               <div class="settings-grid">
                 <div class="settings-card">
-                  <label class="settings-row-unavailable"><span><b>SSH/SFTP 路径联动</b><small>终端工作目录与文件管理器路径保持同步</small></span><DisabledToggle /></label>
+                  <label><span><b>SSH/SFTP 路径联动</b><small>终端工作目录与文件管理器路径保持同步</small></span><Toggle checked={uiStore.pathLinked()} onChange={uiStore.setPathLinked} /></label>
                   <label><span><b>终端命令输入提示</b><small>输入命令时显示历史与补全建议</small></span><Toggle checked={terminalSettings().commandHints} onChange={value => updateSetting("commandHints", value)} /></label>
                   <label><span><b>SSH 历史命令</b><small>记录并复用历史输入命令</small></span><Toggle checked={terminalSettings().sshHistory} onChange={value => updateSetting("sshHistory", value)} /></label>
                 </div>

@@ -1,7 +1,8 @@
-import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import {
   connectionStore,
   countFolderConnections,
+  folderTrail,
   sortAssetsByTreeOrder,
 } from "../stores/connectionStore";
 import { api, isDatabaseProtocol, type ConnectionRecord } from "../utils/api";
@@ -55,6 +56,30 @@ export const AssetList: Component<AssetListProps> = (props) => {
   const currentFolder = createMemo(() =>
     connectionStore.state.folders.find(folder => folder.id === folderId())
   );
+
+  const trail = createMemo(() => folderTrail(connectionStore.state.folders, folderId()));
+  let breadcrumbRef: HTMLDivElement | undefined;
+  let breadcrumbObserver: ResizeObserver | undefined;
+
+  const pinBreadcrumbToEnd = () => {
+    queueMicrotask(() => {
+      if (breadcrumbRef) breadcrumbRef.scrollLeft = breadcrumbRef.scrollWidth;
+    });
+  };
+
+  createEffect(() => {
+    folderId();
+    pinBreadcrumbToEnd();
+    queueMicrotask(() => {
+      const element = breadcrumbRef;
+      breadcrumbObserver?.disconnect();
+      if (!element) return;
+      breadcrumbObserver = new ResizeObserver(pinBreadcrumbToEnd);
+      breadcrumbObserver.observe(element);
+    });
+  });
+
+  onCleanup(() => breadcrumbObserver?.disconnect());
 
   const visibleFolders = createMemo(() => {
     if (query().trim()) return [];
@@ -310,9 +335,22 @@ export const AssetList: Component<AssetListProps> = (props) => {
         <div class="asset-toolbar-title">
           <span class="asset-list-icon"><Icon name="list" size={16} /></span>
           <Show when={currentFolder()} fallback={<span class="asset-toolbar-heading">{filterTitle()}</span>}>
-            <button class="asset-breadcrumb" onClick={() => setFolderId(null)}>资产列表</button>
-            <span class="asset-breadcrumb-separator">/</span>
-            <span class="asset-toolbar-heading">{currentFolder()?.name}</span>
+            <div class="asset-breadcrumb" ref={breadcrumbRef} title={trail().map(node => node.name).join(" / ")}>
+              <button class="asset-breadcrumb-link" onClick={() => setFolderId(null)}>资产列表</button>
+              <For each={trail()}>
+                {(node, index) => (
+                  <>
+                    <span class="asset-breadcrumb-separator">/</span>
+                    <Show
+                      when={index() < trail().length - 1}
+                      fallback={<span class="asset-toolbar-heading" title={node.name}>{node.name}</span>}
+                    >
+                      <button class="asset-breadcrumb-link" onClick={() => setFolderId(node.id)}>{node.name}</button>
+                    </Show>
+                  </>
+                )}
+              </For>
+            </div>
           </Show>
         </div>
         <span class="asset-toolbar-meta">{visibleFolders().length} 个文件夹 · {visibleConnections().length} 个连接</span>
@@ -344,7 +382,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
             <i>+</i>
           </button>
           <button
-            class={`asset-icon-button ${showPing() ? "active" : ""}`}
+            class={`asset-icon-button asset-ping-visibility ${showPing() ? "active" : ""}`}
             title={showPing() ? "隐藏 Ping 延迟" : "显示 Ping 延迟"}
             aria-label={showPing() ? "隐藏 Ping 延迟" : "显示 Ping 延迟"}
             onClick={togglePingVisibility}

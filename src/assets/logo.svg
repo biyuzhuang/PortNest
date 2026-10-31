@@ -1,58 +1,8 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0a0e1a"/>
-      <stop offset="1" stop-color="#131a2e"/>
-    </linearGradient>
-    <radialGradient id="promptGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#4ade80" stop-opacity="0.45"/>
-      <stop offset="1" stop-color="#4ade80" stop-opacity="0"/>
-    </radialGradient>
-    <pattern id="dotGrid" x="0" y="0" width="56" height="56" patternUnits="userSpaceOnUse">
-      <circle cx="0" cy="0" r="1.5" fill="#ffffff" fill-opacity="0.08"/>
-    </pattern>
-  </defs>
-
-  <!-- Rounded square background with dot grid overlay -->
-  <rect x="0" y="0" width="1024" height="1024" rx="192" ry="192" fill="url(#bg)"/>
-  <rect x="0" y="0" width="1024" height="1024" rx="192" ry="192" fill="url(#dotGrid)"/>
-
-  <!-- Terminal window frame -->
-  <rect x="144" y="144" width="736" height="736" rx="96" ry="96"
-        fill="#1f2937" stroke="#2d3748" stroke-width="4"/>
-
-  <!-- Top bar (rounded top corners only) -->
-  <path d="M 144 240 Q 144 144 240 144 L 784 144 Q 880 144 880 240 L 880 254 L 144 254 Z"
-        fill="#1a1f2e"/>
-
-  <!-- Separator -->
-  <line x1="144" y1="254" x2="880" y2="254" stroke="#2d3748" stroke-width="2"/>
-
-  <!-- Traffic-light dots -->
-  <circle cx="256" cy="199" r="18" fill="#ef4444"/>
-  <circle cx="344" cy="199" r="18" fill="#eab308"/>
-  <circle cx="432" cy="199" r="18" fill="#22c55e"/>
-
-  <!-- Prompt glow -->
-  <ellipse cx="512" cy="560" rx="280" ry="160" fill="url(#promptGlow)"/>
-
-  <!-- ">" chevron -->
-  <polyline points="400,460 540,560 400,660"
-            fill="none" stroke="#4ade80" stroke-width="36"
-            stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- Cursor block -->
-  <rect x="610" y="464" width="70" height="192" rx="8" ry="8" fill="#4ade80"/>
-
-  <!-- Hub indicator (3 connected nodes) -->
-  <g stroke="#1e5f82" stroke-width="3" fill="none">
-    <line x1="778" y1="772" x2="810" y2="808"/>
-    <line x1="810" y1="808" x2="746" y2="808"/>
-    <line x1="746" y1="808" x2="778" y2="772"/>
-  </g>
-  <circle cx="778" cy="772" r="10" fill="#38bdf8"/>
-  <circle cx="810" cy="808" r="10" fill="#38bdf8"/>
-  <circle cx="746" cy="808" r="10" fill="#38bdf8"/>
-  <circle cx="778" cy="796" r="10" fill="#4ade80"/>
+  <title>PortNest</title>
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="#fdf6f0" stroke="#eed6c3" stroke-width="10"/>
+  <path d="M 771.8 362 A 300 300 0 1 1 589.6 222.2" fill="none" stroke="#a8482a" stroke-width="96" stroke-linecap="round"/>
+  <path d="M 390 390 L 520 512 L 390 634" fill="none" stroke="#3f6b32" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="596" y="435" width="118" height="150" rx="22" fill="#3f6b32"/>
 </svg>

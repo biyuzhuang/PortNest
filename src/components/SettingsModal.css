@@ -430,16 +430,6 @@
   font-size: 12.5px;
   font-weight: 750;
 }
-.settings-brand b {
-  display: grid;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--settings-surface);
-  background: var(--text-primary);
-  font-size: 10px;
-}
 .settings-topbar > strong { color: var(--text-primary); font-size: 12.5px; font-weight: 600; }
 .settings-window-actions {
   display: flex;
@@ -1394,11 +1384,6 @@
    order: visual-refresh → Surfaces → Themes.
    ========================================================================== */
 
-.settings-brand b {
-  color: var(--on-brand);
-  background: var(--pn-brand-gradient);
-  box-shadow: 0 5px 14px color-mix(in srgb, var(--pn-blue) 26%, transparent);
-}
 .settings-footer-primary { color: var(--on-accent); border-color: transparent; }
 .settings-footer-primary:hover:not(:disabled) {
   filter: brightness(1.06);
@@ -1674,4 +1659,19 @@
 
 @media (prefers-reduced-motion: reduce) {
   .settings-footer-primary { transition-duration: .01ms !important; }
+}
+
+/* Keep the import/export action pair on one line inside narrow settings cards. */
+.settings-image-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.settings-image-actions .settings-inline-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.settings-card label > span {
+  min-width: 0;
 }

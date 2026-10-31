@@ -303,3 +303,53 @@
 @media (prefers-reduced-motion: reduce) {
   .folder-toggle { transition: none; }
 }
+
+/* Flatter native tree rows; protocol colours, counts and selection bar stay. */
+.folder-header,
+.connection-item {
+  height: var(--h-row);
+  min-height: var(--h-row);
+  border: 1px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.folder-header:hover,
+.connection-item:hover {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.folder-header.selected,
+.connection-item.selected {
+  border-color: transparent;
+}
+
+.folder-header.drag-over,
+.folder-children.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Pointer folder drag: dim the source and mark the drop zone. */
+.folder-header.dragging { opacity: .55; }
+
+.folder-header.drop-inside,
+.folder-children.drop-inside {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.folder-children.drop-inside {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.folder-header.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.folder-header.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+
+.connection-list.folder-root-drop {
+  background: var(--accent-soft);
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+}

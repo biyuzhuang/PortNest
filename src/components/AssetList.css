@@ -58,19 +58,6 @@
   white-space: nowrap;
 }
 
-.asset-breadcrumb {
-  padding: 0;
-  color: var(--text-2);
-  background: none;
-  border: 0;
-  font: inherit;
-  font-size: var(--fs-16);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.asset-breadcrumb:hover { color: var(--accent); }
-
 .asset-breadcrumb-separator {
   color: var(--text-3);
   font-size: var(--fs-14);
@@ -505,4 +492,121 @@
 
 @media (prefers-reduced-motion: reduce) {
   .asset-latency.testing::before { animation: none; }
+}
+
+/* Responsive toolbar: the full breadcrumb stays on one line and scrolls. */
+.asset-toolbar {
+  container-type: inline-size;
+  container-name: asset-toolbar;
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.asset-toolbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.asset-toolbar-heading {
+  min-width: 0;
+  font-size: var(--fs-14);
+}
+
+.asset-breadcrumb {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+  font-size: var(--fs-14);
+}
+
+.asset-breadcrumb::-webkit-scrollbar { display: none; }
+
+.asset-breadcrumb-link {
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.asset-breadcrumb-link:hover { color: var(--accent); }
+
+.asset-breadcrumb .asset-toolbar-heading {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.asset-breadcrumb-separator {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+.asset-selection.is-empty {
+  display: none;
+}
+
+.asset-search {
+  width: clamp(150px, 28cqw, 248px);
+}
+
+@container asset-toolbar (max-width: 900px) {
+  .asset-toolbar-meta,
+  .asset-selection {
+    display: none;
+  }
+
+  .asset-search {
+    width: 160px;
+  }
+}
+
+@container asset-toolbar (max-width: 560px) {
+  .asset-list-icon,
+  .asset-ping-toggle,
+  .asset-ping-visibility {
+    display: none;
+  }
+
+  .asset-toolbar-title {
+    flex: 1 0 100%;
+  }
+
+  .asset-breadcrumb {
+    gap: var(--space-1);
+  }
+
+  .asset-breadcrumb-link,
+  .asset-breadcrumb .asset-toolbar-heading {
+    font-size: var(--fs-12);
+  }
+
+  .asset-breadcrumb-separator {
+    font-size: 10px;
+  }
+
+  .asset-toolbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .asset-search {
+    width: 120px;
+    min-width: 80px;
+    flex: 1 1 120px;
+  }
 }
