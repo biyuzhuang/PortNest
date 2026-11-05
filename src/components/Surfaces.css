@@ -1,23 +1,12 @@
 /* Surfaces — the final restraint layer.
    Loaded after AssetList.css so it supersedes every earlier visual pass.
-   Same language as the asset tree: neutral surfaces, flat tinted states,
-   hairline dividers, 32–36px rows, one solid primary action. */
+   Same language as the asset tree: neutral surfaces, flat tinted states, hairline dividers, 32–36px rows, one solid primary action. */
 
 /* =========================================================
    1. Floating menus, dropdowns and popovers
    ========================================================= */
 
-.app-menu-dropdown,
-.context-menu,
-.context-submenu,
-.tab-context-menu,
-.text-context-menu,
-.sidebar-context-menu,
-.mysql-context,
-.mysql-autocomplete,
-.app-select-popover,
-.file-options-menu,
-.hexhub-context-menu {
+.app-menu-dropdown, .context-menu, .context-submenu, .tab-context-menu, .text-context-menu, .sidebar-context-menu, .app-select-popover, .file-options-menu, .hexhub-context-menu {
   padding: 5px;
   border: 1px solid var(--ui-menu-line);
   border-radius: var(--ui-radius-menu);
@@ -28,17 +17,7 @@
 }
 .hexhub-context-menu { width: 222px; }
 .app-menu-dropdown { min-width: 214px; animation: context-menu-enter .13s cubic-bezier(.2, .8, .2, 1); }
-.text-context-menu { width: 200px; }
-.app-menu-item,
-.context-menu-item,
-.tab-context-menu-item,
-.text-context-menu button,
-.sidebar-context-menu button,
-.mysql-context button,
-.mysql-autocomplete button,
-.app-select-option,
-.file-options-menu label,
-.hexhub-context-menu .hexhub-context-item {
+.text-context-menu { width: 200px; }.app-menu-item, .context-menu-item, .tab-context-menu-item, .text-context-menu button, .sidebar-context-menu button, .app-select-option, .file-options-menu label, .hexhub-context-menu .hexhub-context-item {
   display: flex;
   width: 100%;
   height: auto;
@@ -57,19 +36,7 @@
   text-align: left;
   cursor: pointer;
   transition: background .12s ease, color .12s ease;
-}
-.app-menu-item:hover,
-.context-menu-item:hover,
-.tab-context-menu-item:hover,
-.text-context-menu button:hover:not(:disabled),
-.sidebar-context-menu button:hover,
-.mysql-context button:hover,
-.mysql-autocomplete button:hover,
-.app-select-option:hover,
-.app-select-option.highlighted,
-.file-options-menu label:hover,
-.hexhub-context-menu .hexhub-context-item:hover:not(:disabled),
-.hexhub-context-menu .hexhub-context-item:focus-visible:not(:disabled) {
+}.app-menu-item:hover, .context-menu-item:hover, .tab-context-menu-item:hover, .text-context-menu button:hover:not(:disabled), .sidebar-context-menu button:hover, .app-select-option:hover, .app-select-option.highlighted, .file-options-menu label:hover, .hexhub-context-menu .hexhub-context-item:hover:not(:disabled), .hexhub-context-menu .hexhub-context-item:focus-visible:not(:disabled) {
   color: var(--ui-text);
   background: var(--ui-menu-hover);
 }
@@ -79,12 +46,7 @@
   color: var(--pn-blue);
   background: var(--ui-menu-selected);
   font-weight: 550;
-}
-.app-menu-item.danger,
-.context-menu-item.danger,
-.tab-context-menu-item.danger,
-.mysql-context button.danger,
-.hexhub-context-menu .hexhub-context-item.danger:hover:not(:disabled) {
+}.app-menu-item.danger, .context-menu-item.danger, .tab-context-menu-item.danger, .hexhub-context-menu .hexhub-context-item.danger:hover:not(:disabled) {
   color: var(--ui-danger);
 }
 .app-menu-item:disabled,
@@ -201,27 +163,11 @@ select,
   color: var(--ui-text);
   background-color: var(--ui-input);
   border-color: var(--ui-line-strong);
-}
-
-/* =========================================================
+}/* =========================================================
    2. One solid primary action
    ========================================================= */
 
-.primary-btn,
-.btn-save,
-.asset-empty button,
-.connect-save-button.primary,
-.ssh-key-manage-button,
-.session-transfer-primary,
-.ai-save-button,
-.ai-send-button,
-.ai-composer-footer button,
-.composer-send.primary,
-button.primary,
-.mysql-panel-actions .primary,
-.mysql-dialog footer button.primary,
-.ssh-tunnel-add,
-.key-import-footer .save {
+.primary-btn, .btn-save, .asset-empty button, .connect-save-button.primary, .ssh-key-manage-button, .session-transfer-primary, .ai-save-button, .ai-send-button, .ai-composer-footer button, .composer-send.primary, button.primary, .ssh-tunnel-add, .key-import-footer .save {
   color: var(--on-accent);
   background: var(--ui-primary);
   border: 1px solid transparent;
@@ -229,22 +175,7 @@ button.primary,
   box-shadow: var(--shadow-card);
   filter: none;
   transform: none;
-}
-.primary-btn:hover:not(:disabled),
-.btn-save:hover:not(:disabled),
-.asset-empty button:hover,
-.connect-save-button.primary:hover:not(:disabled),
-.ssh-key-manage-button:hover:not(:disabled),
-.session-transfer-primary:hover:not(:disabled),
-.ai-save-button:hover:not(:disabled),
-.ai-send-button:hover:not(:disabled),
-.ai-composer-footer button:hover:not(:disabled),
-.composer-send.primary:hover:not(:disabled),
-button.primary:hover:not(:disabled),
-.mysql-panel-actions .primary:hover:not(:disabled),
-.mysql-dialog footer button.primary:hover:not(:disabled),
-.ssh-tunnel-add:hover:not(:disabled),
-.key-import-footer .save:hover:not(:disabled) {
+}.primary-btn:hover:not(:disabled), .btn-save:hover:not(:disabled), .asset-empty button:hover, .connect-save-button.primary:hover:not(:disabled), .ssh-key-manage-button:hover:not(:disabled), .session-transfer-primary:hover:not(:disabled), .ai-save-button:hover:not(:disabled), .ai-send-button:hover:not(:disabled), .ai-composer-footer button:hover:not(:disabled), .composer-send.primary:hover:not(:disabled), button.primary:hover:not(:disabled), .ssh-tunnel-add:hover:not(:disabled), .key-import-footer .save:hover:not(:disabled) {
   background: var(--ui-primary-hover);
   border-color: transparent;
   box-shadow: var(--shadow-menu);
@@ -344,23 +275,6 @@ button.primary:hover:not(:disabled),
 .folder-toggle svg { width: 13px; height: 13px; transition: transform .16s ease; }
 .folder-toggle.expanded svg { transform: rotate(90deg); }
 .folder-header:hover .folder-toggle { color: var(--ui-text); }
-
-/* Database tree */
-
-.mysql-tree-row { min-height: 32px; margin: 1px 5px; padding: 5px 8px; border-radius: 6px; }
-.mysql-tree-row.active {
-  color: var(--pn-blue);
-  background: var(--ui-selected);
-  box-shadow: inset 2px 0 0 var(--pn-blue);
-}
-.mysql-tree-toggle.expanded svg,
-.mysql-group-arrow.expanded svg {
-  transform: rotate(90deg);
-}
-.mysql-object-group { height: 30px; margin: 1px 5px; border-radius: 6px; }
-.mysql-inner-tabs { background: var(--ui-subtle); }
-.mysql-inner-tabs button { height: 38px; background: transparent; font-size: 13px; }
-.mysql-inner-tabs button.active { border-top: 0; border-bottom: 2px solid var(--pn-blue); }
 
 /* AI and settings expandable rows share the same affordance. */
 
@@ -551,58 +465,6 @@ button.primary:hover:not(:disabled),
 .ai-provider-picker-list button { min-height: 34px; border-radius: 6px; }
 .ai-provider-picker-list button:hover { background: var(--ui-menu-hover); }
 
-/* =========================================================
-   7. Remaining workspaces
-   ========================================================= */
-
-/* MySQL / database workspace */
-
-.mysql-workspace { background: var(--ui-surface); }
-.mysql-tree { background: var(--ui-surface); border-right: 1px solid var(--ui-line); }
-.mysql-tree header { background: var(--ui-surface); border-bottom: 1px solid var(--ui-line); box-shadow: none; }
-.mysql-filter-wrap { margin: 9px; }
-.mysql-filter { background: var(--ui-input); border-color: var(--ui-line-strong); }
-.mysql-toolbar { background: var(--ui-surface); border-bottom: 1px solid var(--ui-line); }
-.mysql-toolbar nav button.active {
-  color: var(--pn-blue);
-  background: color-mix(in srgb, var(--pn-blue) 5%, transparent);
-  border-bottom-color: var(--pn-blue);
-}
-.mysql-object-card,
-.mysql-object-card:nth-child(even) {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-line);
-  box-shadow: none;
-}
-.mysql-object-card:hover { background: var(--ui-hover); box-shadow: none; }
-.mysql-object-card-icon { color: var(--pn-teal); }
-.mysql-main table { border: 1px solid var(--ui-line); }
-.mysql-main th { background: var(--ui-subtle); }
-.mysql-main tbody tr:nth-child(even) { background: transparent; }
-.mysql-main tbody tr:hover { background: var(--ui-hover); }
-.mysql-query textarea,
-.mysql-designer input,
-.mysql-designer select {
-  background: var(--ui-input);
-  border-color: var(--ui-line-strong);
-}
-.mysql-query textarea:focus {
-  border-color: var(--pn-blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-blue) 14%, transparent);
-}
-.mysql-data-filters input,
-.mysql-data-filters select {
-  background: var(--ui-input);
-  border-color: var(--ui-line-strong);
-}
-.mysql-dialog { background: var(--ui-surface); border-color: var(--ui-line-strong); }
-.mysql-dialog input,
-.mysql-dialog select {
-  background: var(--ui-input);
-  border-color: var(--ui-line-strong);
-}
-.mysql-empty-icon { background: color-mix(in srgb, var(--pn-blue) 9%, var(--ui-surface)); }
-
 /* Server overview: neutral cards and dark-safe gauges. */
 
 .server-overview { --card-bg: var(--ui-surface); }
@@ -773,8 +635,6 @@ button.primary:hover:not(:disabled),
 
 @media (prefers-reduced-motion: reduce) {
   .folder-toggle svg,
-  .mysql-tree-toggle svg,
-  .mysql-group-arrow svg,
   .app-select-chevron {
     transition-duration: .01ms;
   }

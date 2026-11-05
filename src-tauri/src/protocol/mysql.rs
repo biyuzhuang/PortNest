@@ -12,8 +12,11 @@ use crate::protocol::{
 
 pub(crate) fn ssl_opts_from_mode(mode: &str) -> Result<Option<SslOpts>> {
     match mode.trim().to_ascii_lowercase().as_str() {
-        "" | "disabled" => Ok(None),
-        "required" | "verify_identity" => Ok(Some(SslOpts::default())),
+        "" | "disabled" | "disable" => Ok(None),
+        // mysql_async 只能表达「要」或「不要」TLS：`prefer` / `require` 一律按
+        // 「要求 SSL」处理，避免用户在向导里选了「优先使用 SSL」却得到一条
+        // 「不支持的 SSL 模式」错误。
+        "required" | "require" | "prefer" | "verify_identity" => Ok(Some(SslOpts::default())),
         "skip_verify" => Ok(Some(
             SslOpts::default()
                 .with_danger_accept_invalid_certs(true)

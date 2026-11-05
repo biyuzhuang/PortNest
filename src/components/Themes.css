@@ -30,25 +30,11 @@ body,
 
 ::selection {
   background: color-mix(in srgb, var(--pn-blue) 24%, transparent);
-}
-
-/* =========================================================
+}/* =========================================================
    3. Menus, inputs and one primary action
    ========================================================= */
 
-.app-menu-dropdown,
-.context-menu,
-.context-submenu,
-.tab-context-menu,
-.text-context-menu,
-.sidebar-context-menu,
-.mysql-context,
-.mysql-autocomplete,
-.app-select-popover,
-.file-options-menu,
-.hexhub-context-menu,
-.asset-context-menu,
-.asset-context-submenu {
+.app-menu-dropdown, .context-menu, .context-submenu, .tab-context-menu, .text-context-menu, .sidebar-context-menu, .app-select-popover, .file-options-menu, .hexhub-context-menu, .asset-context-menu, .asset-context-submenu {
   background: var(--ui-menu-bg);
   border: 1px solid var(--ui-line);
   border-radius: var(--skin-menu-radius);
@@ -63,9 +49,7 @@ body,
 .file-options-menu button:hover {
   color: var(--pn-blue);
   background: var(--skin-accent-soft);
-}
-
-.primary-btn, .btn-save, .asset-empty button, .connect-save-button.primary, .ssh-key-manage-button, .session-transfer-primary, .ai-save-button, .ai-send-button, .ai-composer-footer button, .composer-send.primary, button.primary, .mysql-panel-actions .primary, .mysql-dialog footer button.primary, .ssh-tunnel-add, .key-import-footer .save, .ai-tool-approve, .tunnel-runtime-row button {
+}.primary-btn, .btn-save, .asset-empty button, .connect-save-button.primary, .ssh-key-manage-button, .session-transfer-primary, .ai-save-button, .ai-send-button, .ai-composer-footer button, .composer-send.primary, button.primary, .ssh-tunnel-add, .key-import-footer .save, .ai-tool-approve, .tunnel-runtime-row button {
   color: var(--on-accent);
   background: var(--skin-gradient);
   border: 1px solid transparent;
@@ -74,9 +58,7 @@ body,
   filter: none;
   transform: none;
   transition: filter .16s ease, transform .16s ease, box-shadow .16s ease;
-}
-
-.primary-btn:hover:not(:disabled), .btn-save:hover:not(:disabled), .asset-empty button:hover, .connect-save-button.primary:hover:not(:disabled), .ssh-key-manage-button:hover:not(:disabled), .session-transfer-primary:hover:not(:disabled), .ai-save-button:hover:not(:disabled), .ai-send-button:hover:not(:disabled), .ai-composer-footer button:hover:not(:disabled), .composer-send.primary:hover:not(:disabled), button.primary:hover:not(:disabled), .mysql-panel-actions .primary:hover:not(:disabled), .mysql-dialog footer button.primary:hover:not(:disabled), .ssh-tunnel-add:hover:not(:disabled), .key-import-footer .save:hover:not(:disabled), .ai-tool-approve:hover, .tunnel-runtime-row button:hover {
+}.primary-btn:hover:not(:disabled), .btn-save:hover:not(:disabled), .asset-empty button:hover, .connect-save-button.primary:hover:not(:disabled), .ssh-key-manage-button:hover:not(:disabled), .session-transfer-primary:hover:not(:disabled), .ai-save-button:hover:not(:disabled), .ai-send-button:hover:not(:disabled), .ai-composer-footer button:hover:not(:disabled), .composer-send.primary:hover:not(:disabled), button.primary:hover:not(:disabled), .ssh-tunnel-add:hover:not(:disabled), .key-import-footer .save:hover:not(:disabled), .ai-tool-approve:hover, .tunnel-runtime-row button:hover {
   background: var(--skin-gradient);
   filter: brightness(1.07);
   transform: translateY(-1px);
@@ -112,49 +94,16 @@ select:focus {
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--pn-blue);
-}
-
-/* =========================================================
+}/* =========================================================
    4. Cards, panels and expandable rows
    ========================================================= */
 
-.connect-form-section, .connect-modal-v2, .connect-protocol-rail, .session-import-card, .mysql-object-card, .mysql-panel, .file-preview-card, .ai-setup-card, .ai-composer-shell, .ai-model-grid, .workspace-drawer {
+.connect-form-section, .connect-modal-v2, .connect-protocol-rail, .session-import-card, .file-preview-card, .ai-setup-card, .ai-composer-shell, .ai-model-grid, .workspace-drawer {
   border-color: var(--ui-line);
-}
-
-.connect-form-section, .session-import-card, .mysql-object-card, .ai-setup-card, .ai-composer-shell {
+}.connect-form-section, .session-import-card, .ai-setup-card, .ai-composer-shell {
   background: var(--ui-surface);
   border-radius: var(--skin-card-radius);
   box-shadow: var(--skin-card-shadow);
-}
-
-.mysql-inner-tabs button.active {
-  color: var(--pn-blue);
-  background: var(--skin-accent-soft);
-  border-color: var(--skin-accent-line);
-}
-
-.mysql-inner-tabs button:hover {
-  color: var(--ui-text);
-  background: var(--ui-hover);
-}
-
-.mysql-toolbar,
-.mysql-data-panel,
-.mysql-table-wrap {
-  background: var(--ui-surface);
-  border-color: var(--ui-line);
-}
-
-.mysql-tree-row:hover {
-  background: var(--ui-hover);
-}
-
-.mysql-tree-row.active,
-.mysql-tree-row.selected {
-  color: var(--pn-blue);
-  background: var(--skin-accent-soft);
-  box-shadow: inset 2px 0 0 var(--pn-blue);
 }
 
 .file-table-head,

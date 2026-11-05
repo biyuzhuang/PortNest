@@ -1,0 +1,10 @@
+/* 数据库工作区样式入口。
+   顺序即层叠顺序：基础控件 → 导航 → 标签/状态 → 对象 → 数据 → 查询 → 设计器。
+   新增文件请追加在末尾，不要插在中间，否则覆盖胜负会变。 */
+@import "./base.css";
+@import "./nav.css";
+@import "./shell.css";
+@import "./objects.css";
+@import "./data.css";
+@import "./query.css";
+@import "./designer.css";

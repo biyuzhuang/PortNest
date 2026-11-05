@@ -1,0 +1,92 @@
+/* 对象导航窗格 */
+
+.db-nav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-width: 13rem;
+  max-width: 30rem;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface-base);
+}
+
+.db-nav-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-header);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+.db-nav-head strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); font-weight: 600; }
+.db-nav-actions { display: inline-flex; gap: var(--space-1); }
+
+.db-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-2) 0 var(--space-6);
+  overflow: auto;
+}
+
+.db-tree-section { display: flex; flex-direction: column; }
+.db-tree-children { display: flex; flex-direction: column; }
+
+.db-tree-row,
+.db-group-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-row);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border-radius: var(--r-xs);
+  margin: 0 var(--space-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  cursor: default;
+  user-select: none;
+}
+.db-tree-row:hover,
+.db-group-row:hover { background: var(--surface-hover); color: var(--text-1); }
+.db-tree-row.is-active { background: var(--surface-selected); color: var(--text-1); }
+.db-tree-row.is-active .db-tree-label { font-weight: 500; }
+.db-tree-row:focus-visible,
+.db-group-row:focus-visible { outline: var(--space-1) solid var(--accent); outline-offset: -2px; }
+
+.db-tree-row.is-database { font-weight: 500; }
+.db-tree-row.is-object { padding-left: var(--space-6); }
+.db-tree-children .db-tree-row.is-object { padding-left: var(--space-8); }
+
+.db-tree-twisty {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: transform var(--dur-hover) ease;
+}
+.db-tree-twisty.is-open { transform: rotate(90deg); }
+
+.db-tree-icon { display: inline-flex; flex: none; color: var(--text-3); }
+.db-tree-icon.is-database { color: var(--accent); }
+.db-tree-icon.is-object { color: var(--text-3); }
+.db-tree-icon.is-view { color: var(--text-3); }
+
+.db-tree-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-tree-comment { flex: 0 1 auto; margin-left: auto; padding-left: var(--space-3); max-width: 52%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: var(--fs-11); text-align: right; }
+.db-tree-meta { flex: none; color: var(--text-3); font-size: var(--fs-11); font-style: normal; }
+
+.db-group-row { color: var(--text-2); }
+.db-group-row b { font-weight: 500; font-size: var(--fs-12); }
+.db-group-row em { margin-left: auto; color: var(--text-3); font-size: var(--fs-11); font-style: normal; font-variant-numeric: tabular-nums; }
+.db-group-row.is-disabled { opacity: 0.45; cursor: default; }
+
+.db-tree-empty { margin: var(--space-1) 0 var(--space-2) var(--space-9); color: var(--text-3); font-size: var(--fs-11); }

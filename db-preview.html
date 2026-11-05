@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-skin="aurora" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>数据库工作区预览</title>
+  <script>
+    // 在模块加载前装好 invoke 桩，让真实的数据库工作区在浏览器里跑起来
+    window.__TAURI_INTERNALS__ = {
+      invoke: (command, args) => window.__mockInvoke(command, args || {}),
+      transformCallback: () => 0,
+    };
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: var(--surface-shell, #f3f2fa); }
+    #root { height: 100vh; display: flex; flex-direction: column; }
+    #root > .preview-bar {
+      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px;
+      border-bottom: 1px solid #d8d5e9; background: #fff; font: 12px/1 -apple-system, "Segoe UI", sans-serif;
+    }
+    #root > .preview-bar button {
+      height: 24px; padding: 0 10px; border: 1px solid #d8d5e9; border-radius: 4px;
+      background: #fff; color: #16152a; font: inherit; cursor: pointer;
+    }
+    #root > .preview-bar button:hover { background: #f4f2fd; }
+    #root > .preview-bar .spacer { flex: 1; }
+    #root > .preview-host { flex: 1; min-height: 0; display: flex; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/preview/dbPreview.tsx"></script>
+</body>
+</html>

@@ -84,29 +84,9 @@ textarea:disabled {
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--accent);
-}
-
-/* Primary action: the label colour must follow the skin, not be hard-wired to
+}/* Primary action: the label colour must follow the skin, not be hard-wired to
    white — light accents on dark skins need dark ink to stay above 4.5:1. */
-.primary-btn,
-.btn-save,
-.asset-empty button,
-.settings-footer-primary,
-.settings-footer button,
-.connect-save-button.primary,
-.ssh-key-manage-button,
-.session-transfer-primary,
-.ai-save-button,
-.ai-send-button,
-.ai-composer-footer button,
-.composer-send.primary,
-button.primary,
-.mysql-panel-actions .primary,
-.mysql-dialog footer button.primary,
-.ssh-tunnel-add,
-.key-import-footer .save,
-.ai-tool-approve,
-.tunnel-runtime-row button {
+.primary-btn, .btn-save, .asset-empty button, .settings-footer-primary, .settings-footer button, .connect-save-button.primary, .ssh-key-manage-button, .session-transfer-primary, .ai-save-button, .ai-send-button, .ai-composer-footer button, .composer-send.primary, button.primary, .ssh-tunnel-add, .key-import-footer .save, .ai-tool-approve, .tunnel-runtime-row button {
   color: var(--on-accent);
 }
 

@@ -35,6 +35,7 @@ pub mod ai;
 pub mod dashboard;
 pub mod database_admin;
 pub mod mysql_admin;
+pub use mysql_admin::MysqlForeignKeyDefinition;
 pub mod postgres_admin;
 
 pub(crate) fn parse_connection_options(
@@ -1633,6 +1634,386 @@ pub struct QueryResult {
     pub last_insert_id: Option<u64>,
     #[serde(default)]
     pub truncated: bool,
+    /// 实际执行的语句（用于表数据页底部的 SQL 状态栏）
+    #[serde(default)]
+    pub statement: Option<String>,
+}
+
+/// 表数据页的排序要求（列名由后端按 information_schema 白名单校验）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowOrderBy {
+    pub column: String,
+    /// asc | desc
+    pub direction: String,
+}
+
+/// 表数据页的筛选条件：指定列或整表 LIKE 匹配
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowFilter {
+    #[serde(default)]
+    pub column: Option<String>,
+    pub text: String,
+}
+
+/// 多条件筛选的单个条件。operator 走白名单，非法值直接报错。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowFilterCondition {
+    pub column: String,
+    pub operator: String,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub value2: Option<String>,
+}
+
+/// 多条件筛选规格。conditions 为空等价于不筛选。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RowFilterSpec {
+    #[serde(default)]
+    pub conjunction: String,
+    #[serde(default)]
+    pub conditions: Vec<RowFilterCondition>,
+}
+
+const MAX_FILTER_CONDITIONS: usize = 12;
+const MAX_ORDER_COLUMNS: usize = 4;
+
+/// 单引号字符串字面量。反斜杠与单引号都做转义，MySQL/PG 都接受。
+fn sql_string_literal(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('\'', "''");
+    format!("'{escaped}'")
+}
+
+/// 数值比较时输出裸量；非数值则退回字符串字面量。
+/// PG 下「数值列 > '5'」会直接报类型错误，所以这里按内容猜测，而不是按列类型。
+fn sql_comparable_literal(value: &str) -> String {
+    if !value.is_empty() && value.parse::<f64>().is_ok() {
+        value.to_string()
+    } else {
+        sql_string_literal(value)
+    }
+}
+
+fn like_literal(operator: &str, value: &str) -> String {
+    let escaped = value
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_")
+        .replace('\'', "''");
+    match operator {
+        "starts_with" => format!("'{escaped}%'"),
+        "ends_with" => format!("'%{escaped}'"),
+        _ => format!("'%{escaped}%'"),
+    }
+}
+
+/// 把多条件筛选编译成 `WHERE ...` 片段。
+///
+/// 安全边界：列名必须命中 `columns` 白名单；操作符走 match 白名单；条件数有上限；
+/// 所有字面量都经过转义，不拼接用户原文。
+pub fn build_row_filter_clause(
+    spec: &RowFilterSpec,
+    columns: &[String],
+    quote: fn(&str) -> Result<String, String>,
+) -> Result<String, String> {
+    if spec.conditions.is_empty() {
+        return Ok(String::new());
+    }
+    if spec.conditions.len() > MAX_FILTER_CONDITIONS {
+        return Err(format!("筛选条件不能超过 {MAX_FILTER_CONDITIONS} 个"));
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    for condition in &spec.conditions {
+        let column = condition.column.trim();
+        if column.is_empty() {
+            return Err("筛选条件缺少字段名".to_string());
+        }
+        if !columns.iter().any(|item| item == column) {
+            return Err(format!("筛选字段不存在：{column}"));
+        }
+        let ident = quote(column)?;
+        let value = condition.value.as_deref().unwrap_or("").trim();
+        let value2 = condition.value2.as_deref().unwrap_or("").trim();
+
+        let clause = match condition.operator.as_str() {
+            "is_null" => format!("{ident} IS NULL"),
+            "is_not_null" => format!("{ident} IS NOT NULL"),
+            "contains" | "not_contains" | "starts_with" | "ends_with" => {
+                let operator = if condition.operator == "not_contains" { "NOT LIKE" } else { "LIKE" };
+                format!("{ident} {operator} {} ESCAPE '!'", like_literal(&condition.operator, value))
+            }
+            "eq" => format!("{ident} = {}", sql_string_literal(value)),
+            "ne" => format!("{ident} <> {}", sql_string_literal(value)),
+            "gt" => format!("{ident} > {}", sql_comparable_literal(value)),
+            "gte" => format!("{ident} >= {}", sql_comparable_literal(value)),
+            "lt" => format!("{ident} < {}", sql_comparable_literal(value)),
+            "lte" => format!("{ident} <= {}", sql_comparable_literal(value)),
+            "between" => {
+                if value.is_empty() || value2.is_empty() {
+                    return Err("「介于」需要上下两个值".to_string());
+                }
+                format!(
+                    "{ident} BETWEEN {} AND {}",
+                    sql_comparable_literal(value),
+                    sql_comparable_literal(value2)
+                )
+            }
+            other => return Err(format!("不支持的筛选操作符：{other}")),
+        };
+        parts.push(clause);
+    }
+
+    let conjunction = if spec.conjunction.eq_ignore_ascii_case("or") { " OR " } else { " AND " };
+    Ok(format!(" WHERE {}", parts.join(conjunction)))
+}
+
+/// 把多列排序编译成若干 `col DIR` 片段；调用方决定是否追加主键兜底。
+pub fn row_order_terms(
+    orders: &[RowOrderBy],
+    columns: &[String],
+    quote: fn(&str) -> Result<String, String>,
+) -> Result<Vec<String>, String> {
+    if orders.len() > MAX_ORDER_COLUMNS {
+        return Err(format!("排序字段不能超过 {MAX_ORDER_COLUMNS} 个"));
+    }
+    let mut terms = Vec::new();
+    for order in orders {
+        let column = order.column.trim();
+        if column.is_empty() {
+            continue;
+        }
+        if !columns.iter().any(|item| item == column) {
+            return Err(format!("排序字段不存在：{column}"));
+        }
+        let direction = if order.direction.eq_ignore_ascii_case("desc") { "DESC" } else { "ASC" };
+        terms.push(format!("{} {direction}", quote(column)?));
+    }
+    Ok(terms)
+}
+
+/// SQL 工作台一次提交的语句数上限，避免误贴整个 dump 文件把界面拖死。
+const MAX_STATEMENTS_PER_BATCH: usize = 50;
+
+/// 读取 `$tag$` 形式的美元引用起始标记（PostgreSQL 的 DO/函数体大量使用）。
+/// 返回标记本身与长度，例如 `("$$", 2)` 或 `("$body$", 6)`。
+fn dollar_quote_open(bytes: &[u8]) -> Option<(String, usize)> {
+    if bytes.first() != Some(&b'$') {
+        return None;
+    }
+    let mut index = 1usize;
+    while index < bytes.len() {
+        let current = bytes[index];
+        if current == b'$' {
+            return Some((
+                String::from_utf8_lossy(&bytes[..=index]).to_string(),
+                index + 1,
+            ));
+        }
+        if !(current.is_ascii_alphanumeric() || current == b'_') {
+            return None;
+        }
+        index += 1;
+    }
+    None
+}
+
+/// 判断一段文本里是否还有真正的 SQL（而不是只剩注释与分号）。
+fn has_sql_content(piece: &str) -> bool {
+    let bytes = piece.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let current = bytes[index];
+        if current.is_ascii_whitespace() || current == b';' {
+            index += 1;
+            continue;
+        }
+        if current == b'#' {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if current == b'-' && bytes.get(index + 1) == Some(&b'-') {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if current == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+/// 按顶层分号切分语句。
+///
+/// 只做切分，不做校验：字符串、反引号标识符、行注释、块注释与 PostgreSQL 的
+/// `$tag$` 美元引用内部的分号都不会被当作分隔符。
+pub fn split_statements(sql: &str) -> Result<Vec<String>, String> {
+    let bytes = sql.as_bytes();
+    let mut statements: Vec<String> = Vec::new();
+    let mut start = 0usize;
+    let mut index = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut dollar: Option<String> = None;
+    let mut escaped = false;
+
+    while index < bytes.len() {
+        let current = bytes[index];
+
+        if let Some(tag) = dollar.as_ref() {
+            if current == b'$' && bytes[index..].starts_with(tag.as_bytes()) {
+                index += tag.len();
+                dollar = None;
+                continue;
+            }
+            index += 1;
+            continue;
+        }
+
+        if let Some(delimiter) = quote {
+            if escaped {
+                escaped = false;
+                index += 1;
+                continue;
+            }
+            // 反引号标识符里没有反斜杠转义，只有双写
+            if current == b'\\' && delimiter != b'`' {
+                escaped = true;
+                index += 1;
+                continue;
+            }
+            if current == delimiter {
+                if bytes.get(index + 1) == Some(&delimiter) {
+                    index += 2;
+                    continue;
+                }
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if current == b'#' || (current == b'-' && bytes.get(index + 1) == Some(&b'-')) {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if current == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        if current == b'\'' || current == b'"' || current == b'`' {
+            quote = Some(current);
+            index += 1;
+            continue;
+        }
+        if current == b'$' {
+            if let Some((tag, length)) = dollar_quote_open(&bytes[index..]) {
+                dollar = Some(tag);
+                index += length;
+                continue;
+            }
+        }
+        if current == b';' {
+            let piece = sql[start..index].trim();
+            if has_sql_content(piece) {
+                statements.push(piece.to_string());
+            }
+            start = index + 1;
+        }
+        index += 1;
+    }
+
+    let tail = sql[start..].trim();
+    if has_sql_content(tail) {
+        statements.push(tail.to_string());
+    }
+
+    if statements.is_empty() {
+        return Err("SQL 不能为空".to_string());
+    }
+    if statements.len() > MAX_STATEMENTS_PER_BATCH {
+        return Err(format!(
+            "一次最多执行 {MAX_STATEMENTS_PER_BATCH} 条语句，当前 {} 条",
+            statements.len()
+        ));
+    }
+    Ok(statements)
+}
+
+/// 批量执行中单条语句的结果。失败时 `result` 为空、`error` 有内容。
+#[derive(Debug, Clone, Serialize)]
+pub struct StatementOutcome {
+    /// 从 1 开始的语句序号，与界面的「结果 N」一致
+    pub index: usize,
+    pub statement: String,
+    pub result: Option<QueryResult>,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
+/// 批量执行的总体结果。
+///
+/// `transaction` 取值：
+/// - `committed`：包在自动事务里并且已提交
+/// - `rolled_back`：包在自动事务里，失败后已回滚
+/// - `rollback_failed`：回滚本身也失败，需要立即人工确认
+/// - `manual`：语句里自带 BEGIN/COMMIT，由用户自己控制事务
+/// - `none`：只有一条语句（或没有可包裹的语句），未开事务
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchExecutionResult {
+    pub statements: Vec<StatementOutcome>,
+    pub transaction: String,
+    /// 批次里含隐式提交语句（MySQL 的 DDL），回滚无法覆盖它们
+    pub partial: bool,
+    pub error: Option<String>,
+}
+
+/// 取语句的第一个关键字，跳过前导空白与注释。用于判断语句类型。
+pub fn leading_keyword(statement: &str) -> String {
+    let bytes = statement.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let current = bytes[index];
+        if current.is_ascii_whitespace() || current == b'(' {
+            index += 1;
+            continue;
+        }
+        if current == b'#' || (current == b'-' && bytes.get(index + 1) == Some(&b'-')) {
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if current == b'/' && bytes.get(index + 1) == Some(&b'*') {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        break;
+    }
+    statement[index..]
+        .chars()
+        .take_while(|item| item.is_ascii_alphabetic())
+        .collect::<String>()
+        .to_ascii_uppercase()
 }
 
 /// AI 聊天消息
@@ -5065,5 +5446,59 @@ mod sftp_command_tests {
         drop(second);
         assert_eq!(manager.queue_config().active, 0);
         assert_eq!(manager.queue_config().rate_limit_bps, 128 * 1024);
+    }
+}
+
+#[cfg(test)]
+mod sql_batch_tests {
+    use super::split_statements;
+
+    #[test]
+    fn splits_on_top_level_semicolons() {
+        let statements = split_statements("SELECT 1; SELECT 2;").unwrap();
+        assert_eq!(statements, vec!["SELECT 1", "SELECT 2"]);
+    }
+
+    #[test]
+    fn keeps_semicolons_inside_literals_and_comments() {
+        let sql = "SELECT ';' AS a; -- 注释里的 ;\nSELECT `a;b` FROM t /* ; */;";
+        let statements = split_statements(sql).unwrap();
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].contains("';'"));
+        assert!(statements[1].contains("`a;b`"));
+    }
+
+    #[test]
+    fn skips_comment_only_tail() {
+        let statements = split_statements("SELECT 1;\n-- 收尾注释\n").unwrap();
+        assert_eq!(statements, vec!["SELECT 1"]);
+    }
+
+    #[test]
+    fn keeps_postgres_dollar_quoted_body_intact() {
+        let sql = "CREATE FUNCTION f() RETURNS void AS $$ BEGIN PERFORM 1; END; $$ LANGUAGE plpgsql;\nSELECT 1";
+        let statements = split_statements(sql).unwrap();
+        assert_eq!(statements.len(), 2);
+        assert!(statements[0].contains("PERFORM 1; END;"));
+    }
+
+    #[test]
+    fn rejects_empty_input() {
+        assert!(split_statements("  ;; -- nothing\n").is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_batch() {
+        let sql = (0..60).map(|i| format!("SELECT {i};")).collect::<String>();
+        assert!(split_statements(&sql).is_err());
+    }
+
+    #[test]
+    fn extracts_leading_keyword_past_comments() {
+        assert_eq!(super::leading_keyword("  select 1"), "SELECT");
+        assert_eq!(super::leading_keyword("-- note\nDELETE FROM t"), "DELETE");
+        assert_eq!(super::leading_keyword("/* c */ update t set a=1"), "UPDATE");
+        assert_eq!(super::leading_keyword("(SELECT 1) UNION (SELECT 2)"), "SELECT");
+        assert_eq!(super::leading_keyword(""), "");
     }
 }

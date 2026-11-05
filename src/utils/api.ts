@@ -394,6 +394,53 @@ export interface QueryResult {
   execution_time_ms: number;
   last_insert_id?: number;
   truncated?: boolean;
+  /** 实际执行的语句，用于表数据页底部的 SQL 状态栏 */
+  statement?: string | null;
+}
+
+/** 批量执行时单条语句的结果；失败时 result 为 null、error 有内容 */
+export interface StatementOutcome {
+  /** 从 1 开始，与界面「结果 N」对应 */
+  index: number;
+  statement: string;
+  result: QueryResult | null;
+  error: string | null;
+  duration_ms: number;
+}
+
+/** 批量执行的总体结果。transaction 说明这批语句是否在自动事务里 */
+export interface BatchExecutionResult {
+  statements: StatementOutcome[];
+  /** committed | rolled_back | rollback_failed | manual | none */
+  transaction: "committed" | "rolled_back" | "rollback_failed" | "manual" | "none";
+  /** 含隐式提交语句（MySQL DDL），回滚无法覆盖 */
+  partial: boolean;
+  error: string | null;
+}
+
+/** 表数据页排序要求（后端会按 information_schema 校验列名） */
+export interface RowOrderBy { column: string; direction: "asc" | "desc" }
+
+/** 表数据页筛选条件：指定列或整表 LIKE 匹配（v1，保留兼容） */
+export interface RowFilter { column?: string | null; text: string }
+
+/** 多条件筛选的操作符白名单，必须与 Rust 侧 `RowFilterOperator` 一致 */
+export type RowFilterOperator =
+  | "contains" | "not_contains" | "starts_with" | "ends_with"
+  | "eq" | "ne" | "gt" | "gte" | "lt" | "lte"
+  | "between" | "is_null" | "is_not_null";
+
+export interface RowFilterCondition {
+  column: string;
+  operator: RowFilterOperator;
+  value?: string | null;
+  value2?: string | null;
+}
+
+/** 多条件筛选规格（v2）。conditions 为空等价于不筛选。 */
+export interface RowFilterSpec {
+  conjunction: "and" | "or";
+  conditions: RowFilterCondition[];
 }
 
 export interface MysqlDatabaseInfo { name: string; charset?: string; collation?: string }
@@ -402,10 +449,20 @@ export interface MysqlSqlImportResult { total: number; completed: number; failur
 export interface MysqlSqlExportResult { tables: number; rows: number; bytes: number }
 export interface MysqlTableInfo { name: string; kind: string; engine?: string; rows?: number; comment: string; data_length?: number; index_length?: number; auto_increment?: number; collation?: string; created_at?: string; updated_at?: string }
 export interface MysqlColumnInfo { name: string; data_type: string; column_type: string; nullable: boolean; default_value?: string; extra: string; comment: string; key: string; charset?: string; collation?: string; ordinal: number; generation_expression?: string }
-export interface MysqlIndexInfo { name: string; unique: boolean; column?: string; sequence: number; prefix_length?: number; direction?: string; index_type: string }
+export interface MysqlIndexInfo { name: string; unique: boolean; /** 是否主键索引（MySQL 主键名恒为 PRIMARY，PostgreSQL 为 `<表>_pkey`） */ primary?: boolean; column?: string; sequence: number; prefix_length?: number; direction?: string; index_type: string }
 export interface MysqlColumnDefinition { name: string; column_type: string; nullable: boolean; default_value?: string; auto_increment: boolean; charset?: string; collation?: string; comment: string; generation_expression?: string; extra?: string }
 export interface MysqlIndexDefinition { name: string; kind: "PRIMARY" | "UNIQUE" | "INDEX"; columns: Array<{ name: string; prefix_length?: number; direction?: string }> }
-export interface MysqlTableDefinition { database: string; name: string; original_name?: string; engine?: string; charset?: string; collation?: string; comment: string; columns: MysqlColumnDefinition[]; indexes: MysqlIndexDefinition[] }
+export interface MysqlForeignKeyDefinition {
+  name: string;
+  columns: string[];
+  referenced_table: string;
+  /** PostgreSQL 允许跨 schema 引用；MySQL 恒为空 */
+  referenced_schema?: string | null;
+  referenced_columns: string[];
+  on_delete?: string;
+  on_update?: string;
+}
+export interface MysqlTableDefinition { database: string; name: string; original_name?: string; engine?: string; charset?: string; collation?: string; comment: string; columns: MysqlColumnDefinition[]; indexes: MysqlIndexDefinition[]; foreign_keys?: MysqlForeignKeyDefinition[] }
 export interface MysqlAutocompleteItem { table: string; column: string }
 export interface MysqlExplainResult { json_plan?: unknown; columns: string[]; rows: unknown[][]; message?: string }
 export interface MysqlTableChangeSet {
@@ -426,9 +483,59 @@ export type DatabaseIndexInfo = MysqlIndexInfo;
 export type DatabaseColumnDefinition = MysqlColumnDefinition;
 export type DatabaseIndexDefinition = MysqlIndexDefinition;
 export type DatabaseTableDefinition = MysqlTableDefinition;
+export type DatabaseForeignKeyDefinition = MysqlForeignKeyDefinition;
 export type DatabaseAutocompleteItem = MysqlAutocompleteItem;
 export type DatabaseExplainResult = MysqlExplainResult;
 export type DatabaseTableChangeSet = MysqlTableChangeSet;
+
+// ---- 数据库连接诊断（迭代 A） -------------------------------------------
+
+export type DbTestStageStatus = "ok" | "warn" | "skipped" | "failed";
+
+export interface DbTestStage {
+  id: string;
+  label: string;
+  status: DbTestStageStatus;
+  duration_ms: number;
+  detail?: string | null;
+  hint?: string | null;
+}
+
+export interface DbTlsInfo {
+  mode: string;
+  negotiated: boolean;
+  protocol?: string | null;
+  cipher?: string | null;
+  verified?: boolean | null;
+}
+
+export interface DbTestReport {
+  ok: boolean;
+  stages: DbTestStage[];
+  rtt_ms: number;
+  server_version?: string | null;
+  tls?: DbTlsInfo | null;
+  current_database?: string | null;
+  charset?: string | null;
+  timezone?: string | null;
+  read_only?: boolean | null;
+  warnings: string[];
+  error_code?: string | null;
+  error_message?: string | null;
+  error_hint?: string | null;
+}
+
+export interface DbConnectionInfo {
+  protocol: string;
+  state: "connected" | "degraded" | string;
+  latency_ms?: number | null;
+  server_version?: string | null;
+  current_database?: string | null;
+  read_only?: boolean | null;
+  tls_mode?: string | null;
+  pool_min: number;
+  pool_max: number;
+}
 
 /** 支持数据库管理工作区的协议。新增数据库时只需扩展此集合。 */
 export const DATABASE_PROTOCOLS = ["mysql", "postgresql", "highgo"] as const;
@@ -724,11 +831,14 @@ export const api = {
   async databaseListColumns(connectionId: string, database: string, table: string): Promise<DatabaseColumnInfo[]> { return invoke("database_list_columns", { connectionId, database, table }); },
   async databaseListIndexes(connectionId: string, database: string, table: string): Promise<DatabaseIndexInfo[]> { return invoke("database_list_indexes", { connectionId, database, table }); },
   async databaseExecuteSql(connectionId: string, sql: string, database?: string): Promise<QueryResult> { return invoke("database_execute_sql", { connectionId, sql, database: database || null }); },
+  /** 一次提交多条语句，返回逐条结果；后端遇到第一条失败即停止 */
+  async databaseExecuteSqlBatch(connectionId: string, sql: string, database?: string): Promise<BatchExecutionResult> { return invoke("database_execute_sql_batch", { connectionId, sql, database: database || null }); },
   async databaseCancelQuery(connectionId: string): Promise<void> { return invoke("database_cancel_query", { connectionId }); },
   async databaseAutocomplete(connectionId: string, database: string): Promise<DatabaseAutocompleteItem[]> { return invoke("database_autocomplete", { connectionId, database }); },
   async databaseExplainSql(connectionId: string, sql: string, database?: string): Promise<DatabaseExplainResult> { return invoke("database_explain_sql", { connectionId, sql, database: database || null }); },
   async databaseSaveSql(path: string, sql: string): Promise<void> { return invoke("database_save_sql", { path, sql }); },
-  async databaseFetchRows(connectionId: string, database: string, table: string, page = 1, pageSize = 100): Promise<QueryResult> { return invoke("database_fetch_rows", { connectionId, database, table, page, pageSize }); },
+  async databaseFetchRows(connectionId: string, database: string, table: string, page = 1, pageSize = 100, orderBy?: RowOrderBy | null, filter?: RowFilter | null, orders?: RowOrderBy[] | null, filters?: RowFilterSpec | null): Promise<QueryResult> { return invoke("database_fetch_rows", { connectionId, database, table, page, pageSize, orderBy: orderBy ?? null, filter: filter && filter.text.trim() ? filter : null, orders: orders && orders.length ? orders : null, filters: filters && filters.conditions.length ? filters : null }); },
+  async databaseListForeignKeys(connectionId: string, database: string, table: string): Promise<DatabaseForeignKeyDefinition[]> { return invoke("database_list_foreign_keys", { connectionId, database, table }); },
   async databaseCreateDatabase(connectionId: string, name: string, charset = "utf8mb4", collation?: string): Promise<void> { return invoke("database_create_database", { connectionId, name, charset, collation: collation || null }); },
   async databaseDropDatabase(connectionId: string, database: string): Promise<void> { return invoke("database_drop_database", { connectionId, database }); },
   async databaseCreateTable(connectionId: string, definition: DatabaseTableDefinition): Promise<{ statements: string[]; completed: number; error?: string }> { return invoke("database_create_table", { connectionId, definition }); },
@@ -741,6 +851,12 @@ export const api = {
   async databaseImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("database_import_csv", { connectionId, database, table, csv }); },
   async databaseImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<DatabaseSqlImportResult> { return invoke("database_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
   async databaseExportSql(connectionId: string, path: string, database: string): Promise<DatabaseSqlExportResult> { return invoke("database_export_sql", { connectionId, options: { path, database } }); },
+  /** 用尚未保存的配置探测一条数据库连接（分阶段报告） */
+  async databaseTestConnection(config: ConnectionConfig): Promise<DbTestReport> { return invoke("database_test_connection", { config }); },
+  /** 连通性检查，返回往返耗时（毫秒） */
+  async databasePing(connectionId: string): Promise<number> { return invoke("database_ping", { connectionId }); },
+  /** 已建立连接的服务器信息（版本 / 当前库 / TLS / 只读） */
+  async databaseConnectionInfo(connectionId: string): Promise<DbConnectionInfo> { return invoke("database_connection_info", { connectionId }); },
 
   async sftpCreateFile(sftpId: string, path: string): Promise<void> {
     return sshInvoke("sftp_create_file", { sftpId, path });

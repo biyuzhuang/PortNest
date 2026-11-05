@@ -560,6 +560,27 @@
 
 .app-statusbar-spacer { flex: 1; }
 
+/* 数据库连接降级时的重试入口：与普通状态项同高，不额外占位 */
+.app-statusbar-retry {
+  padding: 0 var(--space-2);
+  color: var(--warning);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
+  border-radius: var(--r-xs);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-hover) var(--ease-out);
+}
+
+.app-statusbar-retry:hover {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.app-statusbar-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .status-dot {
   width: 6px;
   height: 6px;

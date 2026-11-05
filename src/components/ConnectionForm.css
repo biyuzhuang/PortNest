@@ -263,6 +263,133 @@
   font-size: 10px;
 }
 
+/* ---- 数据库连接测试报告 ------------------------------------------------ */
+
+.db-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-1);
+  background: var(--surface-base);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.db-report.is-ok { border-color: color-mix(in srgb, var(--success) 38%, var(--line)); }
+.db-report.is-failed { border-color: color-mix(in srgb, var(--danger) 42%, var(--line)); }
+
+.db-report .mono,
+.db-report-stage-detail,
+.db-report-stage-time,
+.db-report-error-code { font-family: var(--font-mono); }
+
+.db-report-head { display: flex; align-items: center; gap: var(--space-3); }
+
+.db-report-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+
+.db-report.is-ok .db-report-status { color: var(--success); }
+.db-report.is-failed .db-report-status { color: var(--danger); }
+.db-report-version { margin-left: auto; color: var(--text-3); font-size: var(--fs-11); }
+
+.db-report-stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-report-stage {
+  display: grid;
+  grid-template-columns: var(--icon-md) max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--h-row);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-12);
+}
+
+.db-report-stage-icon { display: inline-flex; color: var(--text-3); }
+.db-report-stage.is-ok .db-report-stage-icon { color: var(--success); }
+.db-report-stage.is-warn .db-report-stage-icon { color: var(--warning); }
+.db-report-stage.is-failed .db-report-stage-icon { color: var(--danger); }
+.db-report-stage.is-skipped { color: var(--text-3); }
+
+.db-report-stage-label { color: var(--text-2); white-space: nowrap; }
+.db-report-stage.is-failed .db-report-stage-label { color: var(--danger); font-weight: 600; }
+.db-report-stage.is-ok .db-report-stage-label { color: var(--text-1); }
+
+.db-report-stage-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-1);
+  font-size: var(--fs-11);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-report-stage.is-skipped .db-report-stage-detail { color: var(--text-3); }
+
+.db-report-stage-time {
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.db-report-stage-hint {
+  grid-column: 2 / -1;
+  margin: 0 0 var(--space-1);
+  color: var(--text-2);
+  font-size: var(--fs-11);
+}
+
+.db-report-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-report-warnings li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--warning);
+  font-size: var(--fs-11);
+}
+
+.db-report-warnings svg { flex: none; margin-top: 1px; }
+
+.db-report-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-radius: var(--r-sm);
+}
+
+.db-report-error-message { margin: 0; color: var(--danger); font-size: var(--fs-12); }
+.db-report-error-hint { margin: 0; color: var(--text-2); font-size: var(--fs-11); }
+.db-report-error-code { color: var(--text-3); font-size: var(--fs-11); }
+
+/* 报告占据表单区整行，不挤进底部按钮行 */
+.connect-form-report { padding: 0 var(--space-5); }
+
 @media (min-width: 761px) {
   .connect-modal-v2 {
     width: min(920px, calc(100vw - var(--space-8)));

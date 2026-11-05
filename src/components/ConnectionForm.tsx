@@ -1,8 +1,9 @@
 import { Component, For, Index, Show, createSignal, onMount } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { api, isDatabaseProtocol, isPostgresCompatibleProtocol, type ConnectionConfig, type TunnelRule, type TunnelType } from "../utils/api";
+import { api, isDatabaseProtocol, isPostgresCompatibleProtocol, type ConnectionConfig, type DbTestReport, type TunnelRule, type TunnelType } from "../utils/api";
 import { connectionStore } from "../stores/connectionStore";
 import { SshKeyPicker } from "./SshKeyPicker";
+import { TestReportPanel } from "./TestReportPanel";
 import { Icon } from "./Icon";
 import { ProtocolIcon } from "./ProtocolIcon";
 import { SelectMenu } from "./SelectMenu";
@@ -29,6 +30,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabType>("general");
   const [testing, setTesting] = createSignal(false);
   const [testResult, setTestResult] = createSignal<string | null>(null);
+  const [dbReport, setDbReport] = createSignal<DbTestReport | null>(null);
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const [protocol, setProtocol] = createSignal(props.connection?.protocol || props.defaultProtocol || "ssh");
@@ -102,6 +104,8 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
   const selectProtocol = (next: string) => {
     setProtocol(next);
     setTouched(new Set<string>());
+    setDbReport(null);
+    setTestResult(null);
     if (next === "local") {
       if (activeTab() === "tunnel" || activeTab() === "proxy") setActiveTab("general");
       if (encoding() === "UTF-8") setEncoding("auto");
@@ -246,10 +250,14 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     if (!isValid()) return;
     setTesting(true);
     setTestResult(null);
+    setDbReport(null);
     try {
       if (protocol() === "ssh") {
         const result = await api.testSshRoute(buildConfig());
         setTestResult(`${result.success ? "success" : "error"}:${result.route} · 阶段 ${result.stage} · ${result.message}${result.suggestion ? `；建议：${result.suggestion}` : ""}`);
+      } else if (isDatabase()) {
+        // 数据库走分阶段报告：DNS → TCP → TLS → 认证 → 服务器信息
+        setDbReport(await api.databaseTestConnection(buildConfig()));
       } else {
         setTestResult(`success:${await api.testConnection(buildConfig())}`);
       }
@@ -650,7 +658,11 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                       ariaLabel="SSL 模式"
                       options={[
                         { value: "disabled", label: "禁用", description: "仅使用普通连接" },
-                        { value: "prefer", label: "优先使用 SSL", description: "服务器支持时自动加密" },
+                        // MySQL 驱动只能表达「要」或「不要」TLS，没有 prefer 语义，
+                        // 因此只在 PostgreSQL 系协议下提供该项。
+                        ...(isPostgresCompatibleProtocol(protocol())
+                          ? [{ value: "prefer", label: "优先使用 SSL", description: "服务器支持时自动加密" }]
+                          : []),
                         { value: "required", label: "要求 SSL（校验证书和主机名）", description: "严格校验证书与主机名" },
                         { value: "skip_verify", label: "要求 SSL（跳过证书校验）", description: "加密连接但不校验证书" },
                       ]}
@@ -664,6 +676,12 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
               </div>
             </main>
           </div>
+
+          <Show when={isDatabase() && dbReport()}>
+            <div class="connect-form-report">
+              <TestReportPanel report={dbReport()!} />
+            </div>
+          </Show>
 
           <footer class="connect-modal-footer">
             <div class="connect-modal-feedback">

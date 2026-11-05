@@ -52,47 +52,23 @@ body,
 .main-content,
 .main-content.with-tabs {
   background: var(--workspace-surface);
-}
+}/* Floating menus */
 
-/* Floating menus */
-
-.asset-context-menu,
-.context-menu,
-.tab-context-menu,
-.app-menu-dropdown,
-.mysql-context {
+.asset-context-menu, .context-menu, .tab-context-menu, .app-menu-dropdown {
   border-color: var(--pn-card-border);
   background: color-mix(in srgb, var(--workspace-surface) 92%, transparent);
   box-shadow: var(--shadow-menu);
   backdrop-filter: blur(18px);
-}
-.app-menu-item:hover,
-.asset-context-menu button:hover,
-.context-menu-item:hover,
-.tab-context-menu-item:hover,
-.mysql-context button:hover {
+}.app-menu-item:hover, .asset-context-menu button:hover, .context-menu-item:hover, .tab-context-menu-item:hover {
   color: var(--pn-blue);
   background: linear-gradient(90deg, color-mix(in srgb, var(--pn-blue) 11%, transparent), color-mix(in srgb, var(--pn-teal) 4.5%, transparent));
-}
+}/* Common inputs */
 
-/* Common inputs */
-
-.ssh-field input,
-.ssh-field select,
-.ssh-field textarea,
-.path-input,
-.mysql-filter,
-.quick-switcher > input {
+.ssh-field input, .ssh-field select, .ssh-field textarea, .path-input, .quick-switcher > input {
   border-radius: 8px;
   border-color: var(--workspace-line-strong);
   background: color-mix(in srgb, var(--workspace-surface) 82%, var(--workspace-subtle));
-}
-.ssh-field input:focus,
-.ssh-field select:focus,
-.ssh-field textarea:focus,
-.path-input:focus,
-.mysql-filter:focus,
-.quick-switcher > input:focus {
+}.ssh-field input:focus, .ssh-field select:focus, .ssh-field textarea:focus, .path-input:focus, .quick-switcher > input:focus {
   border-color: var(--pn-blue);
   box-shadow: var(--pn-focus-glow);
 }
@@ -193,31 +169,6 @@ button.primary:hover:not(:disabled) {
 .overview-tile { border-color: var(--workspace-line); }
 .overview-tile:nth-child(2) .overview-tile-value { color: var(--pn-violet); }
 .overview-tile:nth-child(3) .overview-tile-value { color: var(--pn-teal); }
-
-/* Database workspace */
-
-.mysql-tree,
-.mysql-main {
-  background: var(--bg-secondary);
-}
-.mysql-tree { border-right-color: var(--workspace-line); }
-.mysql-tree header strong { color: var(--text-primary); }
-.mysql-tree header button:hover,
-.mysql-new-query:hover {
-  filter: brightness(1.06);
-}
-.mysql-object-type-icon { color: var(--pn-blue); }
-.mysql-tree-row.object.active {
-  color: var(--pn-blue);
-  background: var(--pn-blue-soft);
-  box-shadow: inset 3px 0 0 var(--pn-blue);
-}
-.mysql-new-query { color: var(--on-accent); background: var(--pn-brand-gradient); border-radius: 8px; }
-.mysql-panel-actions button { border-radius: 7px; }
-.mysql-toolbar nav button.active { border-color: color-mix(in srgb, var(--pn-blue) 36%, var(--border)); }
-.mysql-empty-icon { color: var(--pn-blue); border-radius: 12px; }
-.mysql-empty button { color: var(--on-accent); background: var(--pn-brand-gradient); border: 0; border-radius: 8px; }
-.mysql-object-card:hover { border-color: color-mix(in srgb, var(--pn-blue) 36%, var(--border)); }
 
 /* Settings */
 
@@ -479,13 +430,6 @@ button.primary:hover:not(:disabled) {
 }
 .overview-tile:nth-child(3) {
   background: linear-gradient(135deg, color-mix(in srgb, var(--pn-teal) 8%, transparent), transparent);
-}
-.mysql-object-card {
-  background: linear-gradient(160deg, color-mix(in srgb, var(--pn-blue) 5.5%, transparent), var(--bg-secondary) 42%);
-  border-color: color-mix(in srgb, var(--pn-blue) 18%, var(--border));
-}
-.mysql-object-card:nth-child(even) {
-  background: linear-gradient(160deg, color-mix(in srgb, var(--pn-teal) 5.5%, transparent), var(--bg-secondary) 42%);
 }
 [data-theme="dark"] .asset-sidebar,
 [data-theme="dark"] .app-body > .main-content,

@@ -3,6 +3,7 @@
 pub mod ai;
 pub mod commands;
 pub mod connection;
+pub mod db;
 pub mod error;
 pub mod protocol;
 pub mod storage;
@@ -202,7 +203,9 @@ pub fn run() {
             commands::database_admin::database_list_tables,
             commands::database_admin::database_list_columns,
             commands::database_admin::database_list_indexes,
+            commands::database_admin::database_list_foreign_keys,
             commands::database_admin::database_execute_sql,
+            commands::database_admin::database_execute_sql_batch,
             commands::database_admin::database_autocomplete,
             commands::database_admin::database_explain_sql,
             commands::database_admin::database_cancel_query,
@@ -220,6 +223,9 @@ pub fn run() {
             commands::database_admin::database_import_csv,
             commands::database_admin::database_import_sql,
             commands::database_admin::database_export_sql,
+            commands::database_admin::database_test_connection,
+            commands::database_admin::database_ping,
+            commands::database_admin::database_connection_info,
             commands::chat_with_ai,
             commands::ai::ai_get_config,
             commands::ai::ai_get_configs,

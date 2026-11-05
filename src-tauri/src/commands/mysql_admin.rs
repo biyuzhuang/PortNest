@@ -1,14 +1,15 @@
-use super::{AppState, QueryColumn, QueryResult, QueryResultRow};
+use super::{AppState, QueryColumn, QueryResult, QueryResultRow, RowFilter, RowFilterSpec, RowOrderBy};
 use base64::Engine;
 use mysql_async::consts::ColumnType;
 use mysql_async::{
-    prelude::Queryable, Column, OptsBuilder, Params, Pool, PoolConstraints, PoolOpts, Row, Value,
+    prelude::Queryable, Column, Conn, OptsBuilder, Params, Pool, PoolConstraints, PoolOpts, Row,
+    Value,
 };
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -87,143 +88,13 @@ fn quote_identifier(value: &str) -> Result<String, String> {
     Ok(format!("`{}`", trimmed.replace('`', "``")))
 }
 
-fn single_statement(sql: &str) -> Result<&str, String> {
-    let sql = sql.trim();
-    if sql.is_empty() {
-        return Err("SQL 不能为空".to_string());
+/// 兼容旧调用点：切分后必须恰好一条。
+fn single_statement(sql: &str) -> Result<String, String> {
+    let mut statements = super::split_statements(sql)?;
+    if statements.len() != 1 {
+        return Err("SQL 工作台每次只允许执行一条语句".to_string());
     }
-
-    let bytes = sql.as_bytes();
-    let mut index = 0usize;
-    let mut quote: Option<u8> = None;
-    let mut escaped = false;
-    let mut line_comment = false;
-    let mut block_comment = false;
-    let mut statement_end: Option<usize> = None;
-
-    while index < bytes.len() {
-        let current = bytes[index];
-
-        if let Some(end) = statement_end {
-            if current.is_ascii_whitespace() || current == b';' {
-                index += 1;
-                continue;
-            }
-            if current == b'#' {
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-                continue;
-            }
-            if current == b'-' && index + 1 < bytes.len() && bytes[index + 1] == b'-' {
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-                continue;
-            }
-            if current == b'/' && index + 1 < bytes.len() && bytes[index + 1] == b'*' {
-                index += 2;
-                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
-                {
-                    index += 1;
-                }
-                if index + 1 >= bytes.len() {
-                    return Err("SQL 注释未闭合".to_string());
-                }
-                index += 2;
-                continue;
-            }
-            let _ = end;
-            return Err("SQL 工作台每次只允许执行一条语句".to_string());
-        }
-
-        if line_comment {
-            if current == b'\n' {
-                line_comment = false;
-            }
-            index += 1;
-            continue;
-        }
-
-        if block_comment {
-            if current == b'*' && index + 1 < bytes.len() && bytes[index + 1] == b'/' {
-                block_comment = false;
-                index += 2;
-            } else {
-                index += 1;
-            }
-            continue;
-        }
-
-        if let Some(delimiter) = quote {
-            if escaped {
-                escaped = false;
-                index += 1;
-                continue;
-            }
-            if current == b'\\' && delimiter != b'`' {
-                escaped = true;
-                index += 1;
-                continue;
-            }
-            if current == delimiter {
-                if index + 1 < bytes.len() && bytes[index + 1] == delimiter {
-                    index += 2;
-                } else {
-                    quote = None;
-                    index += 1;
-                }
-                continue;
-            }
-            index += 1;
-            continue;
-        }
-
-        match current {
-            b'\'' | b'"' | b'`' => {
-                quote = Some(current);
-                index += 1;
-            }
-            b'#' => {
-                line_comment = true;
-                index += 1;
-            }
-            b'-' if index + 1 < bytes.len() && bytes[index + 1] == b'-' => {
-                let followed_by_space = index + 2 >= bytes.len()
-                    || bytes[index + 2].is_ascii_whitespace()
-                    || bytes[index + 2].is_ascii_control();
-                if followed_by_space {
-                    line_comment = true;
-                    index += 2;
-                } else {
-                    index += 1;
-                }
-            }
-            b'/' if index + 1 < bytes.len() && bytes[index + 1] == b'*' => {
-                block_comment = true;
-                index += 2;
-            }
-            b';' => {
-                if sql[..index].trim().is_empty() {
-                    return Err("SQL 不能为空".to_string());
-                }
-                statement_end = Some(index);
-                index += 1;
-            }
-            _ => index += 1,
-        }
-    }
-
-    if quote.is_some() || block_comment {
-        return Err("SQL 包含未闭合的引号或注释".to_string());
-    }
-
-    let end = statement_end.unwrap_or(sql.len());
-    let statement = sql[..end].trim();
-    if statement.is_empty() {
-        return Err("SQL 不能为空".to_string());
-    }
-    Ok(statement)
+    Ok(statements.remove(0))
 }
 
 const MYSQL_POOL_MIN: usize = 1;
@@ -368,6 +239,70 @@ pub async fn mysql_disconnect(
     Ok(())
 }
 
+/// 读取连接配置里的 SSL 模式（不建池，只解析 options）
+fn configured_ssl_mode(state: &AppState, connection_id: &str) -> Result<Option<String>, String> {
+    let connection = state
+        .db
+        .get_connections()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|item| item.id == connection_id)
+        .ok_or_else(|| "连接不存在".to_string())?;
+    let options = match connection.options.as_deref() {
+        Some(raw) if !raw.trim().is_empty() => serde_json::from_str::<serde_json::Value>(raw)
+            .map_err(|e| format!("MySQL 连接选项无效: {e}"))?,
+        _ => serde_json::json!({}),
+    };
+    Ok(options
+        .get("ssl_mode")
+        .and_then(|value| value.as_str())
+        .map(str::to_string))
+}
+
+/// 读取 NULL 安全的字符串值。
+///
+/// 注意：`Row::get::<String,_>()` 内部走 `FromValue::from_value`，遇到 NULL 会直接
+/// panic（mysql_common src/value/convert/mod.rs:122）。必须走 `get_opt`。
+fn row_opt_string(row: &Row, column: &str) -> Option<String> {
+    row.get_opt::<String, _>(column).and_then(Result::ok)
+}
+
+fn row_opt_i64(row: &Row, column: &str) -> Option<i64> {
+    row.get_opt::<i64, _>(column).and_then(Result::ok)
+}
+
+/// 连通性检查 + 服务器信息，供状态栏与重连按钮使用。
+pub(crate) async fn ping_and_info(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<crate::db::DbConnectionInfo, String> {
+    let pool = pool_for(state, connection_id).await?;
+    let started = Instant::now();
+    let mut conn = pool
+        .get_conn()
+        .await
+        .map_err(|e| format!("获取连接失败: {e}"))?;
+    let rows: Vec<Row> = conn
+        .query("SELECT VERSION() AS version, DATABASE() AS current_db, @@read_only AS ro")
+        .await
+        .map_err(|e| format!("读取服务器信息失败: {e}"))?;
+    let latency_ms = started.elapsed().as_millis() as u64;
+    let row = rows
+        .first()
+        .ok_or_else(|| "服务器未返回版本信息".to_string())?;
+    Ok(crate::db::DbConnectionInfo {
+        protocol: "mysql".to_string(),
+        state: "connected".to_string(),
+        latency_ms: Some(latency_ms),
+        server_version: row_opt_string(row, "version"),
+        current_database: row_opt_string(row, "current_db"),
+        read_only: row_opt_i64(row, "ro").map(|value| value != 0),
+        tls_mode: configured_ssl_mode(state, connection_id)?,
+        pool_min: MYSQL_POOL_MIN as u16,
+        pool_max: MYSQL_POOL_MAX as u16,
+    })
+}
+
 #[tauri::command]
 pub async fn mysql_cancel_query(
     state: tauri::State<'_, AppState>,
@@ -447,6 +382,10 @@ pub struct MysqlColumnInfo {
 pub struct MysqlIndexInfo {
     pub name: String,
     pub unique: bool,
+    /// 是否主键索引。MySQL 的主键名恒为 PRIMARY，PostgreSQL 的却是 `<表名>_pkey`，
+    /// 前端不能靠名字判断，必须由后端标出来。
+    #[serde(default)]
+    pub primary: bool,
     pub column: Option<String>,
     pub sequence: u32,
     pub prefix_length: Option<u64>,
@@ -575,6 +514,7 @@ pub async fn mysql_list_indexes(
     Ok(rows
         .into_iter()
         .map(|r| MysqlIndexInfo {
+            primary: r.0 == "PRIMARY",
             name: r.0,
             unique: r.1 == 0,
             column: r.2,
@@ -584,6 +524,19 @@ pub async fn mysql_list_indexes(
             index_type: r.6,
         })
         .collect())
+}
+
+/// 读取外键约束。按约束名聚合多列外键，并带上 ON DELETE / ON UPDATE 动作。
+#[tauri::command]
+pub async fn mysql_list_foreign_keys(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    database: String,
+    table: String,
+) -> Result<Vec<MysqlForeignKeyDefinition>, String> {
+    let pool = pool_for(&state, &connection_id).await?;
+    let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
+    load_foreign_keys(&mut conn, &database, &table).await
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -628,7 +581,7 @@ pub async fn mysql_explain_sql(
     sql: String,
     database: Option<String>,
 ) -> Result<MysqlExplainResult, String> {
-    let sql = single_statement(&sql)?.to_string();
+    let sql = single_statement(&sql)?;
     let pool = pool_for(&state, &connection_id).await?;
     let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
     if let Some(database) = database.as_deref().filter(|value| !value.is_empty()) {
@@ -714,6 +667,21 @@ pub struct MysqlIndexDefinition {
     pub columns: Vec<MysqlIndexColumn>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MysqlForeignKeyDefinition {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub referenced_table: String,
+    /// PostgreSQL 允许跨 schema 引用；MySQL 同库内不需要，恒为 None
+    #[serde(default)]
+    pub referenced_schema: Option<String>,
+    pub referenced_columns: Vec<String>,
+    #[serde(default)]
+    pub on_delete: Option<String>,
+    #[serde(default)]
+    pub on_update: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct MysqlTableDefinition {
     pub database: String,
@@ -727,6 +695,9 @@ pub struct MysqlTableDefinition {
     pub columns: Vec<MysqlColumnDefinition>,
     #[serde(default)]
     pub indexes: Vec<MysqlIndexDefinition>,
+    /// 旧前端不传该字段 → 空数组 → 生成的 DDL 与之前完全一致
+    #[serde(default)]
+    pub foreign_keys: Vec<MysqlForeignKeyDefinition>,
 }
 
 fn sql_string(value: &str) -> String {
@@ -979,6 +950,90 @@ fn build_index(def: &MysqlIndexDefinition) -> Result<String, String> {
     }
 }
 
+fn normalize_fk_action(value: Option<&str>) -> Result<Option<String>, String> {
+    let action = value
+        .map(|item| item.trim().to_ascii_uppercase())
+        .filter(|item| !item.is_empty());
+    match action {
+        None => Ok(None),
+        Some(action)
+            if matches!(
+                action.as_str(),
+                "CASCADE" | "SET NULL" | "RESTRICT" | "NO ACTION" | "SET DEFAULT"
+            ) =>
+        {
+            Ok(Some(action))
+        }
+        Some(other) => Err(format!("不支持的外键动作: {other}")),
+    }
+}
+
+fn build_foreign_key(def: &MysqlForeignKeyDefinition) -> Result<String, String> {
+    if def
+        .referenced_schema
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|value| !value.is_empty())
+    {
+        return Err(format!(
+            "MySQL 外键只能引用同库的表，不支持 schema 前缀：{}",
+            def.name
+        ));
+    }
+    if def.columns.is_empty() || def.referenced_columns.is_empty() {
+        return Err(format!("外键 {} 至少需要一个字段", def.name));
+    }
+    if def.columns.len() != def.referenced_columns.len() {
+        return Err(format!(
+            "外键 {} 的字段数与被引用字段数不一致",
+            def.name
+        ));
+    }
+    let columns = def
+        .columns
+        .iter()
+        .map(|column| quote_identifier(column))
+        .collect::<Result<Vec<_>, String>>()?
+        .join(", ");
+    let referenced = def
+        .referenced_columns
+        .iter()
+        .map(|column| quote_identifier(column))
+        .collect::<Result<Vec<_>, String>>()?
+        .join(", ");
+    let mut sql = format!(
+        "CONSTRAINT {} FOREIGN KEY ({columns}) REFERENCES {}({referenced})",
+        quote_identifier(&def.name)?,
+        quote_identifier(&def.referenced_table)?
+    );
+    if let Some(action) = normalize_fk_action(def.on_delete.as_deref())? {
+        sql.push_str(&format!(" ON DELETE {action}"));
+    }
+    if let Some(action) = normalize_fk_action(def.on_update.as_deref())? {
+        sql.push_str(&format!(" ON UPDATE {action}"));
+    }
+    Ok(sql)
+}
+
+/// 外键比对只关心「引用到哪里」与「级联动作」，名称已作为 key 单独比对。
+fn foreign_key_matches(current: &MysqlForeignKeyDefinition, desired: &MysqlForeignKeyDefinition) -> bool {
+    let action = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(|item| item.trim().to_ascii_uppercase())
+            .filter(|item| !item.is_empty() && item != "NO ACTION")
+    };
+    current.columns == desired.columns
+        && current.referenced_table == desired.referenced_table
+        && current.referenced_columns == desired.referenced_columns
+        && action(&current.on_delete) == action(&desired.on_delete)
+        && action(&current.on_update) == action(&desired.on_update)
+}
+
+fn drop_foreign_key_clause(name: &str) -> Result<String, String> {
+    Ok(format!("DROP FOREIGN KEY {}", quote_identifier(name)?))
+}
+
 fn create_table_sql(def: &MysqlTableDefinition) -> Result<String, String> {
     if def.columns.is_empty() {
         return Err("表至少需要一个字段".to_string());
@@ -992,6 +1047,12 @@ fn create_table_sql(def: &MysqlTableDefinition) -> Result<String, String> {
         def.indexes
             .iter()
             .map(build_index)
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    parts.extend(
+        def.foreign_keys
+            .iter()
+            .map(build_foreign_key)
             .collect::<Result<Vec<_>, _>>()?,
     );
     let mut sql = format!(
@@ -1134,6 +1195,47 @@ async fn load_current_indexes(
     Ok(grouped.into_values().collect())
 }
 
+/// 读取某张表的外键约束，按约束名把多列外键聚合成一条。
+async fn load_foreign_keys(
+    conn: &mut Conn,
+    database: &str,
+    table: &str,
+) -> Result<Vec<MysqlForeignKeyDefinition>, String> {
+    let rows: Vec<(String, String, String, String, Option<String>, Option<String>)> = conn
+        .exec(
+            "SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, \
+                    r.DELETE_RULE, r.UPDATE_RULE \
+             FROM information_schema.KEY_COLUMN_USAGE k \
+             LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r \
+               ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME \
+             WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL \
+             ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
+            (database, table),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut grouped: Vec<MysqlForeignKeyDefinition> = Vec::new();
+    for (name, column, referenced_table, referenced_column, on_delete, on_update) in rows {
+        match grouped.iter_mut().find(|item| item.name == name) {
+            Some(item) => {
+                item.columns.push(column);
+                item.referenced_columns.push(referenced_column);
+            }
+            None => grouped.push(MysqlForeignKeyDefinition {
+                name,
+                columns: vec![column],
+                referenced_table,
+                referenced_schema: None,
+                referenced_columns: vec![referenced_column],
+                on_delete,
+                on_update,
+            }),
+        }
+    }
+    Ok(grouped)
+}
+
 fn desired_index_unique(index: &MysqlIndexDefinition) -> Result<bool, String> {
     match index.kind.as_str() {
         "PRIMARY" | "UNIQUE" => Ok(true),
@@ -1189,6 +1291,7 @@ async fn alter_table_plan(pool: &Pool, def: &MysqlTableDefinition) -> Result<Vec
     let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
     let current_columns = load_current_columns(&mut conn, &def.database, original).await?;
     let current_indexes = load_current_indexes(&mut conn, &def.database, original).await?;
+    let current_foreign_keys = load_foreign_keys(&mut conn, &def.database, original).await?;
     if current_columns.is_empty() {
         return Err("原表不存在或无权访问".to_string());
     }
@@ -1206,11 +1309,61 @@ async fn alter_table_plan(pool: &Pool, def: &MysqlTableDefinition) -> Result<Vec
         }
     }
 
+    let mut desired_foreign_keys = HashMap::new();
+    for key in &def.foreign_keys {
+        if key.name.trim().is_empty() {
+            return Err("外键名不能为空".to_string());
+        }
+        if desired_foreign_keys.insert(key.name.as_str(), key).is_some() {
+            return Err(format!("外键名重复: {}", key.name));
+        }
+        for column in &key.columns {
+            if !desired_columns.contains(column.as_str()) {
+                return Err(format!("外键 {} 引用了不存在的字段: {column}", key.name));
+            }
+        }
+    }
+
+    // 外键先删后加：旧约束可能引用即将被修改或删除的字段，顺序反了会报 1215/1553
+    let mut foreign_key_drops: Vec<String> = Vec::new();
+    let mut foreign_key_adds: Vec<String> = Vec::new();
+    for current in &current_foreign_keys {
+        match desired_foreign_keys.get(current.name.as_str()) {
+            Some(desired) if foreign_key_matches(current, desired) => {}
+            Some(desired) => {
+                foreign_key_drops.push(format!(
+                    "ALTER TABLE {db}.{old} {}",
+                    drop_foreign_key_clause(&current.name)?
+                ));
+                foreign_key_adds.push(format!(
+                    "ALTER TABLE {db}.{old} ADD {}",
+                    build_foreign_key(desired)?
+                ));
+            }
+            None => foreign_key_drops.push(format!(
+                "ALTER TABLE {db}.{old} {}",
+                drop_foreign_key_clause(&current.name)?
+            )),
+        }
+    }
+    for desired in &def.foreign_keys {
+        if !current_foreign_keys
+            .iter()
+            .any(|current| current.name == desired.name)
+        {
+            foreign_key_adds.push(format!(
+                "ALTER TABLE {db}.{old} ADD {}",
+                build_foreign_key(desired)?
+            ));
+        }
+    }
+
     let current_columns_by_name: HashMap<&str, &CurrentColumn> = current_columns
         .iter()
         .map(|column| (column.name.as_str(), column))
         .collect();
     let mut statements = Vec::new();
+    statements.extend(foreign_key_drops);
 
     for column in &def.columns {
         match current_columns_by_name.get(column.name.as_str()) {
@@ -1268,6 +1421,9 @@ async fn alter_table_plan(pool: &Pool, def: &MysqlTableDefinition) -> Result<Vec
             ));
         }
     }
+
+    // 外键要等字段与索引都就位后再建
+    statements.extend(foreign_key_adds);
 
     for current in &current_columns {
         if !desired_columns.contains(current.name.as_str()) {
@@ -1638,6 +1794,10 @@ pub async fn mysql_fetch_rows(
     table: String,
     page: u64,
     page_size: u64,
+    order_by: Option<RowOrderBy>,
+    filter: Option<RowFilter>,
+    orders: Option<Vec<RowOrderBy>>,
+    filters: Option<RowFilterSpec>,
 ) -> Result<QueryResult, String> {
     let size = page_size.clamp(1, 1000);
     let offset = page
@@ -1645,20 +1805,81 @@ pub async fn mysql_fetch_rows(
         .and_then(|page_index| page_index.checked_mul(size))
         .ok_or_else(|| "页码或分页大小无效".to_string())?;
     let pool = pool_for(&state, &connection_id).await?;
-    let (_, primary) = table_columns_and_keys(&pool, &database, &table).await?;
-    let order_by = if primary.is_empty() {
-        String::new()
-    } else {
-        let columns = primary
-            .iter()
-            .map(|column| quote_identifier(column))
-            .collect::<Result<Vec<_>, _>>()?
-            .join(",");
-        format!(" ORDER BY {columns}")
+    let (columns, primary) = table_columns_and_keys(&pool, &database, &table).await?;
+
+    // 多列排序优先；未传时回落到旧的单列参数，再回落到主键顺序
+    let column_list: Vec<String> = columns.iter().cloned().collect();
+    let mut order_terms = super::row_order_terms(orders.as_deref().unwrap_or(&[]), &column_list, quote_identifier)?;
+    if order_terms.is_empty() {
+        if let Some(order) = order_by.as_ref().filter(|item| !item.column.trim().is_empty()) {
+            let column = order.column.trim();
+            if !columns.contains(column) {
+                return Err(format!("排序字段不存在：{column}"));
+            }
+            let direction = if order.direction.eq_ignore_ascii_case("desc") {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            order_terms.push(format!("{} {direction}", quote_identifier(column)?));
+        }
+    }
+    let order_clause = match order_terms.is_empty() {
+        false => format!(" ORDER BY {}", order_terms.join(",")),
+        true => {
+            if primary.is_empty() {
+                String::new()
+            } else {
+                let columns = primary
+                    .iter()
+                    .map(|column| quote_identifier(column))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(",");
+                format!(" ORDER BY {columns}")
+            }
+        }
     };
+
+    // 多条件筛选优先；旧的单列 LIKE 参数保持原样，一行没改
+    let multi_where = match filters.as_ref() {
+        Some(spec) if !spec.conditions.is_empty() => {
+            super::build_row_filter_clause(spec, &column_list, quote_identifier)?
+        }
+        _ => String::new(),
+    };
+    let where_clause = if multi_where.is_empty() {
+        match filter.as_ref().map(|item| (item, item.text.trim())) {
+        Some((item, text)) if !text.is_empty() => {
+            let pattern = like_pattern(text);
+            let targets: Vec<String> = match item.column.as_deref() {
+                Some(column) if !column.trim().is_empty() => {
+                    let column = column.trim();
+                    if !columns.contains(column) {
+                        return Err(format!("筛选字段不存在：{column}"));
+                    }
+                    vec![quote_identifier(column)?]
+                }
+                _ => columns
+                    .iter()
+                    .map(|column| quote_identifier(column))
+                    .collect::<Result<Vec<_>, _>>()?,
+            };
+            let clause = targets
+                .iter()
+                .map(|column| format!("{column} LIKE {pattern} ESCAPE '!'"))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            format!(" WHERE {clause}")
+        }
+        _ => String::new(),
+        }
+    } else {
+        multi_where
+    };
+
     let fetch_size = size.saturating_add(1);
     let sql = format!(
-        "SELECT * FROM {}.{}{order_by} LIMIT {fetch_size} OFFSET {offset}",
+        "SELECT * FROM {}.{}{where_clause}{order_clause} LIMIT {fetch_size} OFFSET {offset}",
         quote_identifier(&database)?,
         quote_identifier(&table)?
     );
@@ -1671,6 +1892,92 @@ pub async fn mysql_fetch_rows(
     Ok(result)
 }
 
+/// 生成 LIKE 模式串：转义 `!`（转义符）、`%`、`_` 与单引号
+fn like_pattern(text: &str) -> String {
+    let escaped = text
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_")
+        .replace('\'', "''");
+    format!("'%{escaped}%'")
+}
+
+/// 在一条连接上执行单条语句。批量执行与单条执行共用，避免两套取值逻辑漂移。
+async fn run_statement(conn: &mut Conn, sql: &str) -> Result<QueryResult, String> {
+    let start = std::time::Instant::now();
+    let mut result = conn.query_iter(sql).await.map_err(|e| e.to_string())?;
+    let affected_rows = result.affected_rows();
+    let last_insert_id = result.last_insert_id();
+    let column_meta: Vec<Column> = result
+        .columns()
+        .map(|columns| columns.to_vec())
+        .unwrap_or_default();
+    let columns = column_meta
+        .iter()
+        .map(|column| column.name_str().to_string())
+        .collect::<Vec<_>>();
+    let column_metadata = column_meta
+        .iter()
+        .map(query_column_metadata)
+        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    let mut truncated = false;
+    while let Some(row) = result.next().await.map_err(|e| e.to_string())? {
+        if rows.len() >= MYSQL_MAX_RESULT_ROWS {
+            truncated = true;
+            result.drop_result().await.map_err(|e| e.to_string())?;
+            break;
+        }
+        let values = (0..row.len())
+            .map(|index| {
+                row.as_ref(index)
+                    .map(|value| value_to_json(value, column_meta.get(index)))
+                    .unwrap_or(serde_json::Value::Null)
+            })
+            .collect();
+        rows.push(QueryResultRow { values });
+    }
+    Ok(QueryResult {
+        columns,
+        column_metadata,
+        rows,
+        affected_rows,
+        execution_time_ms: start.elapsed().as_millis() as u64,
+        last_insert_id,
+        truncated,
+        statement: Some(sql.to_string()),
+    })
+}
+
+/// 取连接并挂上「正在执行」标记，同时切到目标数据库。
+async fn prepare_execution(
+    state: &tauri::State<'_, AppState>,
+    connection_id: &str,
+    database: Option<&str>,
+    manager: Arc<MysqlManager>,
+) -> Result<(Conn, Option<RunningQueryGuard>), String> {
+    let pool = pool_for(state, connection_id).await?;
+    let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
+    let thread_id: Option<u64> = conn
+        .query_first("SELECT CONNECTION_ID()")
+        .await
+        .ok()
+        .flatten();
+    let guard = thread_id.map(|thread_id| {
+        manager.set_running(connection_id, thread_id);
+        RunningQueryGuard {
+            manager: manager.clone(),
+            connection_id: connection_id.to_string(),
+        }
+    });
+    if let Some(database) = database.filter(|value| !value.is_empty()) {
+        conn.query_drop(format!("USE {}", quote_identifier(database)?))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok((conn, guard))
+}
+
 #[tauri::command]
 pub async fn mysql_execute_sql(
     state: tauri::State<'_, AppState>,
@@ -1678,73 +1985,136 @@ pub async fn mysql_execute_sql(
     sql: String,
     database: Option<String>,
 ) -> Result<QueryResult, String> {
-    let sql = single_statement(&sql)?.to_string();
+    let sql = single_statement(&sql)?;
     let manager = state.mysql_manager.clone();
-    let running_connection_id = connection_id.clone();
-    let pool = pool_for(&state, &connection_id).await?;
     let query = async move {
-        let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
-        let thread_id: Option<u64> = conn
-            .query_first("SELECT CONNECTION_ID()")
-            .await
-            .ok()
-            .flatten();
-        let _running_guard = thread_id.map(|thread_id| {
-            manager.set_running(&running_connection_id, thread_id);
-            RunningQueryGuard {
-                manager: manager.clone(),
-                connection_id: running_connection_id,
-            }
-        });
-        if let Some(database) = database.as_deref().filter(|value| !value.is_empty()) {
-            conn.query_drop(format!("USE {}", quote_identifier(database)?))
+        let (mut conn, _guard) =
+            prepare_execution(&state, &connection_id, database.as_deref(), manager).await?;
+        run_statement(&mut conn, &sql).await
+    };
+    tokio::time::timeout(Duration::from_millis(MYSQL_QUERY_TIMEOUT_MS), query)
+        .await
+        .map_err(|_| format!("SQL 执行超时（{} 秒）", MYSQL_QUERY_TIMEOUT_MS / 1000))?
+}
+
+/// MySQL 里会隐式提交当前事务的语句。DDL 都在这一类，无法用 ROLLBACK 撤销。
+fn implicitly_commits(statement: &str) -> bool {
+    matches!(
+        super::leading_keyword(statement).as_str(),
+        "CREATE"
+            | "ALTER"
+            | "DROP"
+            | "TRUNCATE"
+            | "RENAME"
+            | "GRANT"
+            | "REVOKE"
+            | "LOCK"
+            | "UNLOCK"
+            | "ANALYZE"
+            | "OPTIMIZE"
+            | "REPAIR"
+            | "FLUSH"
+            | "RESET"
+            | "INSTALL"
+            | "UNINSTALL"
+            | "LOAD"
+    )
+}
+
+/// 语句里自带事务控制时不再外包一层，否则会和用户的 BEGIN/COMMIT 打架。
+fn manages_transaction(statement: &str) -> bool {
+    matches!(
+        super::leading_keyword(statement).as_str(),
+        "BEGIN" | "START" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" | "RELEASE"
+    )
+}
+
+/// 顺序执行多条语句，遇到第一条失败就停下，并在失败时回滚整批。
+///
+/// 停在第一条失败而不是继续，是与 Navicat/Workbench 一致的行为：
+/// 后续语句通常依赖前面的结果，继续执行只会放大错误。
+///
+/// 回滚的边界要说清楚：MySQL 的 DDL 会隐式提交，所以「先插数据再改表、最后又失败」
+/// 这类批次只能回滚 DDL 之后的 DML，`partial` 会标成 true。
+#[tauri::command]
+pub async fn mysql_execute_sql_batch(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<super::BatchExecutionResult, String> {
+    let statements = super::split_statements(&sql)?;
+    let manager = state.mysql_manager.clone();
+    let query = async move {
+        let (mut conn, _guard) =
+            prepare_execution(&state, &connection_id, database.as_deref(), manager).await?;
+        let manual = statements.iter().any(|item| manages_transaction(item));
+        let wrap = statements.len() > 1 && !manual;
+        let partial = statements.iter().any(|item| implicitly_commits(item));
+        if wrap {
+            conn.query_drop("START TRANSACTION")
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("开启事务失败: {e}"))?;
         }
-        let start = std::time::Instant::now();
-        let mut result = conn.query_iter(&sql).await.map_err(|e| e.to_string())?;
-        let affected_rows = result.affected_rows();
-        let last_insert_id = result.last_insert_id();
-        let column_meta: Vec<Column> = result
-            .columns()
-            .map(|columns| columns.to_vec())
-            .unwrap_or_default();
-        let columns = column_meta
-            .iter()
-            .map(|column| column.name_str().to_string())
-            .collect::<Vec<_>>();
-        let column_metadata = column_meta
-            .iter()
-            .map(query_column_metadata)
-            .collect::<Vec<_>>();
-        let mut rows = Vec::new();
-        let mut truncated = false;
-        while let Some(row) = result.next().await.map_err(|e| e.to_string())? {
-            if rows.len() >= MYSQL_MAX_RESULT_ROWS {
-                truncated = true;
-                result.drop_result().await.map_err(|e| e.to_string())?;
-                break;
+
+        let mut outcomes = Vec::with_capacity(statements.len());
+        let mut failure: Option<String> = None;
+        for (offset, statement) in statements.iter().enumerate() {
+            let index = offset + 1;
+            let started = std::time::Instant::now();
+            match run_statement(&mut conn, statement).await {
+                Ok(result) => outcomes.push(super::StatementOutcome {
+                    index,
+                    statement: statement.clone(),
+                    result: Some(result),
+                    error: None,
+                    duration_ms: started.elapsed().as_millis() as u64,
+                }),
+                Err(error) => {
+                    outcomes.push(super::StatementOutcome {
+                        index,
+                        statement: statement.clone(),
+                        result: None,
+                        error: Some(error.clone()),
+                        duration_ms: started.elapsed().as_millis() as u64,
+                    });
+                    failure = Some(error);
+                    break;
+                }
             }
-            let values = (0..row.len())
-                .map(|index| {
-                    row.as_ref(index)
-                        .map(|value| value_to_json(value, column_meta.get(index)))
-                        .unwrap_or(serde_json::Value::Null)
-                })
-                .collect();
-            rows.push(QueryResultRow { values });
         }
-        Ok::<QueryResult, String>(QueryResult {
-            columns,
-            column_metadata,
-            rows,
-            affected_rows,
-            execution_time_ms: start.elapsed().as_millis() as u64,
-            last_insert_id,
-            truncated,
+
+        let mut transaction = if manual {
+            "manual".to_string()
+        } else if wrap {
+            "committed".to_string()
+        } else {
+            "none".to_string()
+        };
+
+        match (&failure, wrap) {
+            (Some(_), true) => match conn.query_drop("ROLLBACK").await {
+                Ok(_) => transaction = "rolled_back".to_string(),
+                Err(rollback) => {
+                    transaction = "rollback_failed".to_string();
+                    failure = failure.map(|error| format!("{error}\n回滚失败: {rollback}"));
+                }
+            },
+            (None, true) => {
+                conn.query_drop("COMMIT")
+                    .await
+                    .map_err(|e| format!("提交事务失败: {e}"))?;
+            }
+            _ => {}
+        }
+
+        Ok::<super::BatchExecutionResult, String>(super::BatchExecutionResult {
+            statements: outcomes,
+            transaction,
+            partial: partial && failure.is_some(),
+            error: failure,
         })
     };
-
     tokio::time::timeout(Duration::from_millis(MYSQL_QUERY_TIMEOUT_MS), query)
         .await
         .map_err(|_| format!("SQL 执行超时（{} 秒）", MYSQL_QUERY_TIMEOUT_MS / 1000))?
@@ -1812,11 +2182,13 @@ fn build_row_mutation_sql(
             if original.is_empty() {
                 return Err("缺少原始行数据".to_string());
             }
-            let where_keys = if primary.is_empty() {
-                original.keys().cloned().collect::<Vec<_>>()
-            } else {
-                primary.to_vec()
-            };
+            // 没有主键就不能定位单行：全列匹配会一次改掉多行（NULL 还永远匹配不上）
+            if primary.is_empty() {
+                return Err(
+                    "表没有主键，无法安全地定位单行；请到 SQL 工作台按条件修改".to_string(),
+                );
+            }
+            let where_keys = primary.to_vec();
             let where_sql = where_keys
                 .iter()
                 .map(|key| quote_identifier(key).map(|q| format!("{q} <=> ?")))
@@ -1862,6 +2234,11 @@ pub async fn mysql_mutate_row(
 ) -> Result<u64, String> {
     let pool = pool_for(&state, &connection_id).await?;
     let (allowed, primary) = table_columns_and_keys(&pool, &database, &table).await?;
+    if action != "insert" && primary.is_empty() {
+        return Err(format!(
+            "表 {table} 没有主键，无法安全地更新或删除单行。请改用 SQL 工作台。"
+        ));
+    }
     let full = format!(
         "{}.{}",
         quote_identifier(&database)?,
@@ -1913,6 +2290,11 @@ pub async fn mysql_apply_table_changes(
     }
     let pool = pool_for(&state, &connection_id).await?;
     let (allowed, primary) = table_columns_and_keys(&pool, &database, &table).await?;
+    if (!changes.updates.is_empty() || !changes.deletes.is_empty()) && primary.is_empty() {
+        return Err(format!(
+            "表 {table} 没有主键，无法安全地更新或删除单行。请改用 SQL 工作台。"
+        ));
+    }
     let full = format!(
         "{}.{}",
         quote_identifier(&database)?,
@@ -2610,6 +2992,105 @@ pub async fn mysql_export_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn sample_definition(foreign_keys: Vec<MysqlForeignKeyDefinition>) -> MysqlTableDefinition {
+        MysqlTableDefinition {
+            database: "sakila".to_string(),
+            name: "film".to_string(),
+            original_name: None,
+            engine: Some("InnoDB".to_string()),
+            charset: None,
+            collation: None,
+            comment: String::new(),
+            columns: vec![MysqlColumnDefinition {
+                name: "language_id".to_string(),
+                column_type: "SMALLINT".to_string(),
+                nullable: false,
+                default_value: None,
+                auto_increment: false,
+                charset: None,
+                collation: None,
+                comment: String::new(),
+                generation_expression: None,
+                extra: String::new(),
+            }],
+            indexes: Vec::new(),
+            foreign_keys,
+        }
+    }
+
+    fn language_key() -> MysqlForeignKeyDefinition {
+        MysqlForeignKeyDefinition {
+            name: "fk_film_language".to_string(),
+            columns: vec!["language_id".to_string()],
+            referenced_table: "language".to_string(),
+            referenced_schema: None,
+            referenced_columns: vec!["language_id".to_string()],
+            on_delete: Some("cascade".to_string()),
+            on_update: None,
+        }
+    }
+
+    #[test]
+    fn builds_foreign_key_with_normalized_actions() {
+        assert_eq!(
+            build_foreign_key(&language_key()).unwrap(),
+            "CONSTRAINT `fk_film_language` FOREIGN KEY (`language_id`) REFERENCES `language`(`language_id`) ON DELETE CASCADE"
+        );
+    }
+
+    #[test]
+    fn rejects_schema_qualified_reference_in_mysql() {
+        let mut key = language_key();
+        key.referenced_schema = Some("lookup".to_string());
+        assert!(build_foreign_key(&key).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_foreign_key_action() {
+        let mut key = language_key();
+        key.on_delete = Some("explode".to_string());
+        assert!(build_foreign_key(&key).is_err());
+    }
+
+    #[test]
+    fn rejects_mismatched_foreign_key_columns() {
+        let mut key = language_key();
+        key.referenced_columns.push("extra".to_string());
+        assert!(build_foreign_key(&key).is_err());
+    }
+
+    #[test]
+    fn create_table_includes_foreign_keys_only_when_given() {
+        let without = create_table_sql(&sample_definition(Vec::new())).unwrap();
+        assert!(!without.contains("FOREIGN KEY"));
+        let with = create_table_sql(&sample_definition(vec![language_key()])).unwrap();
+        assert!(with.contains("FOREIGN KEY (`language_id`) REFERENCES `language`(`language_id`)"));
+        assert!(with.contains("ON DELETE CASCADE"));
+    }
+
+    #[test]
+    fn classifies_transaction_sensitive_statements() {
+        assert!(implicitly_commits("CREATE TABLE t (id INT)"));
+        assert!(implicitly_commits("-- note\nDROP TABLE t"));
+        assert!(!implicitly_commits("INSERT INTO t VALUES (1)"));
+        assert!(manages_transaction("START TRANSACTION"));
+        assert!(manages_transaction("commit"));
+        assert!(!manages_transaction("SELECT 1"));
+    }
+
+    #[test]
+    fn refuses_row_mutation_without_primary_key() {
+        let mut values = HashMap::new();
+        values.insert("title".to_string(), serde_json::json!("x"));
+        let mut original = HashMap::new();
+        original.insert("title".to_string(), serde_json::json!("y"));
+        let allowed: HashSet<String> = ["title".to_string()].into_iter().collect();
+        assert!(build_row_mutation_sql("`db`.`t`", "update", &values, &original, &[], &allowed).is_err());
+        assert!(build_row_mutation_sql("`db`.`t`", "delete", &HashMap::new(), &original, &[], &allowed).is_err());
+        // insert 不受主键限制
+        assert!(build_row_mutation_sql("`db`.`t`", "insert", &values, &HashMap::new(), &[], &allowed).is_ok());
+    }
+
     #[test]
     fn identifiers_are_quoted() {
         assert_eq!(quote_identifier("a`b").unwrap(), "`a``b`");

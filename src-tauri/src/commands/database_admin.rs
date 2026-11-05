@@ -160,6 +160,25 @@ pub async fn database_list_indexes(
 }
 
 #[tauri::command]
+pub async fn database_list_foreign_keys(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    database: String,
+    table: String,
+) -> Result<Vec<super::MysqlForeignKeyDefinition>, String> {
+    match connection_protocol(&state, &connection_id)?.as_str() {
+        "mysql" => {
+            super::mysql_admin::mysql_list_foreign_keys(state, connection_id, database, table).await
+        }
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_list_foreign_keys(state, connection_id, database, table)
+                .await
+        }
+        protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
+    }
+}
+
+#[tauri::command]
 pub async fn database_autocomplete(
     state: tauri::State<'_, AppState>,
     connection_id: String,
@@ -198,6 +217,10 @@ pub async fn database_fetch_rows(
     table: String,
     page: u64,
     page_size: u64,
+    order_by: Option<super::RowOrderBy>,
+    filter: Option<super::RowFilter>,
+    orders: Option<Vec<super::RowOrderBy>>,
+    filters: Option<super::RowFilterSpec>,
 ) -> Result<QueryResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => {
@@ -208,6 +231,10 @@ pub async fn database_fetch_rows(
                 table,
                 page,
                 page_size,
+                order_by,
+                filter,
+                orders,
+                filters,
             )
             .await
         }
@@ -219,6 +246,10 @@ pub async fn database_fetch_rows(
                 table,
                 page,
                 page_size,
+                order_by,
+                filter,
+                orders,
+                filters,
             )
             .await
         }
@@ -237,6 +268,25 @@ pub async fn database_execute_sql(
         "mysql" => super::mysql_admin::mysql_execute_sql(state, connection_id, sql, database).await,
         "postgresql" | "highgo" => {
             super::postgres_admin::postgres_execute_sql(state, connection_id, sql, database).await
+        }
+        protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
+    }
+}
+
+#[tauri::command]
+pub async fn database_execute_sql_batch(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+    sql: String,
+    database: Option<String>,
+) -> Result<super::BatchExecutionResult, String> {
+    match connection_protocol(&state, &connection_id)?.as_str() {
+        "mysql" => {
+            super::mysql_admin::mysql_execute_sql_batch(state, connection_id, sql, database).await
+        }
+        "postgresql" | "highgo" => {
+            super::postgres_admin::postgres_execute_sql_batch(state, connection_id, sql, database)
+                .await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
@@ -510,4 +560,48 @@ pub async fn database_export_sql(
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }
+}
+
+/// 用**尚未保存**的配置探测一条数据库连接，返回分阶段报告。
+///
+/// 与 `test_connection` 分开：后者还要服务 SSH / 本地终端，返回类型保持字符串不变。
+#[tauri::command]
+pub async fn database_test_connection(
+    config: super::ConnectionConfigRequest,
+) -> Result<crate::db::DbTestReport, String> {
+    let protocol = config.protocol.trim().to_ascii_lowercase();
+    if !matches!(protocol.as_str(), "mysql" | "postgresql" | "highgo") {
+        return Err(format!("{protocol} 不是数据库协议"));
+    }
+    Ok(crate::db::probe(&config).await)
+}
+
+async fn connection_info_for(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<crate::db::DbConnectionInfo, String> {
+    match connection_protocol(state, connection_id)?.as_str() {
+        "mysql" => super::mysql_admin::ping_and_info(state, connection_id).await,
+        "postgresql" | "highgo" => super::postgres_admin::ping_and_info(state, connection_id).await,
+        protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
+    }
+}
+
+/// 连通性检查，返回往返耗时（毫秒）
+#[tauri::command]
+pub async fn database_ping(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<u64, String> {
+    let info = connection_info_for(&state, &connection_id).await?;
+    Ok(info.latency_ms.unwrap_or(0))
+}
+
+/// 已建立连接的服务器信息（版本 / 当前库 / TLS 模式 / 只读）
+#[tauri::command]
+pub async fn database_connection_info(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<crate::db::DbConnectionInfo, String> {
+    connection_info_for(&state, &connection_id).await
 }

@@ -26,6 +26,7 @@ import { openSettingsWindow } from "./utils/settingsWindow";
 import { connectionStore, flattenFolders, folderPathLabel } from "./stores/connectionStore";
 import { initTheme, getTerminalSettings } from "./stores/themeStore";
 import { sessionStore, type SessionTab } from "./stores/sessionStore";
+import { dbStatusStore } from "./stores/dbStatusStore";
 import { uiStore } from "./stores/uiStore";
 import { aiContextStore } from "./stores/aiContextStore";
 import { feedback } from "./stores/feedbackStore";
@@ -551,10 +552,13 @@ const App: Component = () => {
       })();
     } else if (isDatabaseProtocol(conn.protocol)) {
       const sessionId = createSession(conn);
+      dbStatusStore.markConnecting(conn.id);
       try {
         await api.databaseConnect(conn.id);
         sessionStore.update(sessionId, { status: "connected", error: undefined, viewMode: "database" });
+        void dbStatusStore.refresh(conn.id);
       } catch (e) {
+        dbStatusStore.markFailed(conn.id, String(e));
         sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" });
       }
     } else {
@@ -576,6 +580,7 @@ const App: Component = () => {
     }
     if (isDatabaseProtocol(session.connection.protocol) && !remainingSessions.some(item => item.connection.id === session.connection.id)) {
       try { await api.databaseDisconnect(session.connection.id); } catch (e) { console.error("[database] disconnect failed", e); }
+      dbStatusStore.clear(session.connection.id);
     }
 
     // The active SFTP channel is owned by RightPanel and shares this Shell's
@@ -612,9 +617,23 @@ const App: Component = () => {
     })();
   });
 
+  // 活动数据库会话的探活：30s 一次，窗口失焦时跳过，避免后台产生无意义查询。
+  // 失败即把状态置为 degraded，状态栏出现「连接已失效 · 重试」，但不清空已打开的标签。
+  createEffect(() => {
+    const session = activeSession();
+    if (!session || !isDatabaseProtocol(session.connection.protocol)) return;
+    if (session.status !== "connected") return;
+    const connectionId = session.connection.id;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (dbStatusStore.status(connectionId) === "degraded") return;
+      void dbStatusStore.refresh(connectionId);
+    }, 30_000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
   const handleCloseSession = async (sessionId: string) => {
     console.log("[App] handleCloseSession:", sessionId);
-
     const currentSessions = sessions();
     const session = currentSessions.find(s => s.id === sessionId);
     const closingIndex = currentSessions.findIndex(s => s.id === sessionId);
@@ -669,8 +688,14 @@ const App: Component = () => {
     if (!session) return;
     if (isDatabaseProtocol(session.connection.protocol)) {
       sessionStore.update(sessionId, { status: "connecting", error: undefined });
-      try { await api.databaseConnect(session.connection.id); sessionStore.update(sessionId, { status: "connected", viewMode: "database" }); }
-      catch (e) { sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" }); }
+      try {
+        await api.databaseConnect(session.connection.id);
+        sessionStore.update(sessionId, { status: "connected", viewMode: "database" });
+        void dbStatusStore.refresh(session.connection.id);
+      } catch (e) {
+        dbStatusStore.markFailed(session.connection.id, String(e));
+        sessionStore.update(sessionId, { status: "error", error: String(e), viewMode: "database" });
+      }
       return;
     }
     if (session.connection.protocol !== "ssh" && session.connection.protocol !== "local") return;
@@ -822,8 +847,14 @@ const App: Component = () => {
       });
     } else if (isDatabaseProtocol(session.connection.protocol)) {
       void api.databaseConnect(session.connection.id)
-        .then(() => sessionStore.update(newSessionId, { status: "connected", viewMode: "database" }))
-        .catch(error => sessionStore.update(newSessionId, { status: "error", error: String(error), viewMode: "database" }));
+        .then(() => {
+          sessionStore.update(newSessionId, { status: "connected", viewMode: "database" });
+          void dbStatusStore.refresh(session.connection.id);
+        })
+        .catch(error => {
+          dbStatusStore.markFailed(session.connection.id, String(error));
+          sessionStore.update(newSessionId, { status: "error", error: String(error), viewMode: "database" });
+        });
     }
   };
 
@@ -1579,6 +1610,38 @@ const App: Component = () => {
               ? "本机"
               : `${activeSession()!.connection.host}:${activeSession()!.connection.port}`}
           </span>
+        </Show>
+        <Show when={activeSession() && isDatabaseProtocol(activeSession()!.connection.protocol)}>
+          <Show
+            when={dbStatusStore.status(activeSession()!.connection.id) === "degraded"}
+            fallback={
+              <>
+                <Show when={dbStatusStore.info(activeSession()!.connection.id)?.server_version}>
+                  <span class="app-statusbar-item mono">
+                    {dbStatusStore.info(activeSession()!.connection.id)!.server_version}
+                  </span>
+                </Show>
+                <Show when={dbStatusStore.info(activeSession()!.connection.id)?.latency_ms != null}>
+                  <span class="app-statusbar-item mono">
+                    {dbStatusStore.info(activeSession()!.connection.id)!.latency_ms}ms
+                  </span>
+                </Show>
+              </>
+            }
+          >
+            <button
+              type="button"
+              class="app-statusbar-item app-statusbar-retry"
+              title={dbStatusStore.entry(activeSession()!.connection.id)?.error || "重新建立数据库连接"}
+              onClick={() => {
+                const session = activeSession();
+                if (session) void handleReconnect(session.id);
+              }}
+            >
+              <span class="status-dot status-error" />
+              连接已失效 · 重试
+            </button>
+          </Show>
         </Show>
         <span class="app-statusbar-spacer" />
         <Show when={activeSession() && !isDatabaseProtocol(activeSession()!.connection.protocol)}>

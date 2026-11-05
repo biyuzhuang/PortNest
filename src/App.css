@@ -1235,17 +1235,9 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
-}
-.asset-mono,
-.terminal-search-bar input,
-.mysql-query textarea,
-.mysql-main td.object-name,
-.mysql-object-card strong {
+}.asset-mono, .terminal-search-bar input {
   font-family: var(--font-mono);
-}
-.protocol-badge,
-.session-tab-badge,
-.mysql-result-meta {
+}.protocol-badge, .session-tab-badge {
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
@@ -1387,34 +1379,12 @@ textarea:focus {
   transform: translateY(0) scale(.97);
 }
 .folder-header { transition: color .15s ease, background .15s ease, border-color .15s ease; }
-.folder-header:hover { border-color: color-mix(in srgb, var(--border) 76%, transparent); }.folder-icon { display: inline-grid; place-items: center; }
-
-/* Inline icon rhythm in tables, toolbars and dense controls */
-
-.mysql-panel-actions button,
-.mysql-toolbar button,
-.mysql-empty button,
-.mysql-view-switch button {
+.folder-header:hover { border-color: color-mix(in srgb, var(--border) 76%, transparent); }.folder-icon { display: inline-grid; place-items: center; }/* Inline icon rhythm in tables {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
 }
-.mysql-view-switch button { width: 28px; padding: 0; }
-.mysql-view-switch svg,
-.mysql-panel-actions svg,
-.mysql-toolbar svg {
-  width: 14px;
-  height: 14px;
-}
-.mysql-main td.object-name svg,
-.mysql-object-card-icon svg,
-.mysql-sortable svg {
-  display: inline-block;
-  margin-right: 4px;
-  vertical-align: -2px;
-}
-.mysql-object-card-icon { display: inline-grid; place-items: center; }
 
 /* Connection creation / editing workspace */
 
@@ -1998,7 +1968,6 @@ textarea:focus {
 
 /* HexHub-inspired workspace shell: quiet neutral surfaces, compact chrome,
    and denser asset management. PortNest keeps its own branding and icons. */
-
 
 body,
 .app-container {

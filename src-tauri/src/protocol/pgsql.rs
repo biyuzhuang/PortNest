@@ -314,6 +314,11 @@ impl PgClient {
         self.server_version.as_deref()
     }
 
+    /// 本次连接是否真的走了 TLS（供「测试连接」报告回填 TLS 阶段）
+    pub fn is_tls(&self) -> bool {
+        matches!(self.transport, PgTransport::Tls(_))
+    }
+
     pub fn cancel_token(&self) -> PgCancelToken {
         PgCancelToken {
             host: self.host.clone(),

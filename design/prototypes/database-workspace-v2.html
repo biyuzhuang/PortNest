@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>PortNest · 数据库工作区视觉稿 v2</title>
+<style>
+/* =============================================================================
+   静态视觉稿 —— 只为确认布局、密度、区域归属，不代表最终代码结构。
+   尺寸全部取自 src/styles/tokens.css；除 1px 发丝线外不使用裸 px 字面量
+   （拖拽/冻结列的固定宽度是原型里的一次性写法，落地时改用 token）。
+   ============================================================================= */
+
+:root {
+  --h-titlebar: 36px;
+  --h-header: 36px;
+  --h-row: 28px;
+  --h-control: 32px;
+  --h-tab: 32px;
+  --h-status: 26px;
+  --w-rail: 54px;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+             "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+
+  --icon-sm: 14px;
+  --icon-md: 16px;
+
+  --dur-hover: 120ms;
+  --ease-out: cubic-bezier(.2, .7, .3, 1);
+
+  --shadow-menu: 0 12px 32px rgba(16, 14, 32, .16), 0 2px 6px rgba(16, 14, 32, .06);
+}
+
+/* aurora light —— 与 tokens.css 一致 */
+:root[data-theme="light"] {
+  --surface-shell: #f3f2fa;
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f7f6fc;
+  --surface-selected: #ece9fd;
+  --surface-hover: #f4f2fd;
+
+  --text-1: #16152a;
+  --text-2: #5a5c72;
+  --text-3: #65677a;
+  --on-accent: #ffffff;
+
+  --accent: #5a4be0;
+  --accent-soft: #eeebff;
+  --accent-line: #d9d2fb;
+
+  --line: #d8d5e9;
+  --line-strong: #c7c1e0;
+  --line-control: #87829d;
+
+  --success: #0f7a4f;
+  --warning: #9a5b00;
+  --danger: #c22f38;
+  --info: #1a6bb5;
+  --protocol-mysql: #d75b92;
+}
+
+:root[data-theme="dark"] {
+  --surface-shell: #0a0912;
+  --surface-base: #12101c;
+  --surface-raised: #191627;
+  --surface-sunken: #07060c;
+  --surface-selected: #241f3d;
+  --surface-hover: #1d1a2c;
+
+  --text-1: #edecf7;
+  --text-2: #b3aec8;
+  --text-3: #948fa9;
+  --on-accent: #12101c;
+
+  --accent: #a99bff;
+  --accent-soft: #221d3b;
+  --accent-line: #382f5e;
+
+  --line: #342d48;
+  --line-strong: #41385e;
+  --line-control: #70698b;
+
+  --success: #4fd6a0;
+  --warning: #e6b45c;
+  --danger: #ff8b93;
+  --info: #79b8ff;
+  --protocol-mysql: #e58bb0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-13);
+  color: var(--text-1);
+  background: var(--surface-shell);
+  overflow: hidden;
+}
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+input, select { font: inherit; color: inherit; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- 应用外壳 ---------- */
+
+.app {
+  display: grid;
+  grid-template-rows: var(--h-titlebar) var(--h-tab) minmax(0, 1fr) var(--h-status);
+  height: 100%;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) 0 var(--space-5);
+  background: var(--surface-base);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-13);
+  font-weight: 650;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-11);
+  font-weight: 700;
+}
+.titlebar-spacer { flex: 1; }
+
+/* 原型工具栏（仅视觉稿存在） */
+.proto-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--surface-shell);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.proto-switch button {
+  height: 24px;
+  padding: 0 var(--space-4);
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.proto-switch button[aria-pressed="true"] {
+  background: var(--surface-base);
+  color: var(--text-1);
+  box-shadow: 0 1px 2px rgba(16, 14, 32, .06);
+}
+.theme-toggle {
+  height: 24px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* ---------- ③ 会话标签栏（连接级） ---------- */
+
+.sessionbar {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  background: var(--surface-shell);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+.session-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  margin: var(--space-1) 0;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.session-tab.is-active {
+  background: var(--surface-base);
+  color: var(--text-1);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full, 99px);
+  background: var(--success);
+  flex: none;
+}
+.dot.is-warn { background: var(--warning); }
+
+/* ---------- 数据库工作区：7 区域 ---------- */
+
+.db-ws {
+  display: grid;
+  grid-template-columns: var(--tree-w, 264px) 0 minmax(0, 1fr) 0;
+  min-height: 0;
+  background: var(--surface-base);
+}
+.db-ws.has-info { grid-template-columns: var(--tree-w, 264px) 0 minmax(0, 1fr) 320px; }
+
+/* ② 导航窗格 */
+.tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-base);
+  border-right: 1px solid var(--line);
+}
+.tree-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--h-header);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+.tree-head strong { flex: 1; font-size: var(--fs-12); font-weight: 650; color: var(--text-2); }
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-xs);
+  color: var(--text-3);
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--accent); }
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--h-control);
+  margin: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: 0;
+  font-size: var(--fs-12);
+}
+.tree-body { flex: 1; min-height: 0; overflow: auto; padding-bottom: var(--space-5); }
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--h-row);
+  padding: 0 var(--space-4);
+  border-radius: 0;
+  color: var(--text-2);
+  cursor: default;
+  user-select: none;
+}
+.tree-row:hover { background: var(--surface-hover); }
+.tree-row.is-active {
+  background: var(--surface-selected);
+  color: var(--text-1);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tree-row .twist {
+  width: 12px;
+  color: var(--text-3);
+  font-size: 9px;
+  flex: none;
+}
+.tree-row b { font-weight: 600; color: var(--text-1); font-size: var(--fs-13); }
+.tree-row em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: var(--fs-11);
+  color: var(--text-3);
+}
+.tree-group { padding-left: var(--space-6); }
+.tree-leaf { padding-left: 34px; }
+.tree-leaf .kind { color: var(--text-3); font-size: var(--fs-11); }
+.tree-leaf.is-active { padding-left: 34px; }
+
+/* 拖拽手柄 */
+.splitter {
+  position: relative;
+  cursor: col-resize;
+  background: var(--line);
+}
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+/* 主区 */
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-base);
+}
+
+/* ③ 对象标签栏 */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: var(--h-tab);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.tabs::-webkit-scrollbar { height: 0; }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--text-1); background: var(--surface-hover); }
+.tab.is-active {
+  color: var(--text-1);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tab .x { color: var(--text-3); font-size: var(--fs-11); }
+.tab .x:hover { color: var(--danger); }
+.tab-new { padding: 0 var(--space-3); color: var(--text-3); }
+
+/* ④ 对象工具栏 */
+.objbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: var(--space-2);
+}
+.objbar::-webkit-scrollbar { height: 0; }
+  min-height: var(--h-header);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.objbar .spacer { flex: 1; }
+.tbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-3);
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+  flex: none;
+}
+.tbtn:hover { background: var(--surface-hover); color: var(--accent); }
+.tbtn.is-primary { background: var(--accent); color: var(--on-accent); }
+.tbtn.is-primary:hover { background: var(--accent); color: var(--on-accent); opacity: .92; }
+.tsep { width: 1px; height: 16px; background: var(--line); margin: 0 var(--space-1); }
+.counter { font-size: var(--fs-11); color: var(--text-3); white-space: nowrap; flex: none; }
+
+.seg {
+  display: flex;
+  padding: var(--space-1);
+  background: var(--surface-shell);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.seg button {
+  height: 20px;
+  padding: 0 var(--space-3);
+  border-radius: var(--r-xs);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--surface-base);
+  color: var(--text-1);
+  box-shadow: 0 1px 2px rgba(16, 14, 32, .06);
+}
+
+/* 内容视口 */
+.viewport { flex: 1; min-height: 0; overflow: auto; }
+.screen { display: none; }
+.screen.is-active { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+
+/* ---------- ⑤ 对象面板：Detail 视图 ---------- */
+
+.objects-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-12);
+}
+.objects-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: var(--h-row);
+  padding: 0 var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.objects-table thead th.num { text-align: right; }
+.objects-table td {
+  height: var(--h-row);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.objects-table td.name { color: var(--text-1); font-weight: 500; }
+.objects-table tbody tr:hover { background: var(--surface-hover); }
+.objects-table tbody tr.is-selected {
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.col-check { width: 34px; text-align: center; }
+.objects-table td.col-check { padding: 0; }
+.chk { accent-color: var(--accent); }
+
+/* ---------- 表数据：Grid ---------- */
+
+.grid-wrap { height: 100%; overflow: auto; }
+.datagrid {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-12);
+}
+.datagrid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-1);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.datagrid thead th .th-name { display: block; font-size: var(--fs-12); }
+.datagrid thead th .th-type {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-weight: 400;
+  color: var(--text-3);
+}
+.datagrid thead th.sticky-1 { position: sticky; left: 0; z-index: 3; }
+.datagrid thead th.sticky-2 { position: sticky; left: 34px; z-index: 3; }
+.datagrid thead th.is-sorted { color: var(--accent); }
+.datagrid tbody td {
+  height: var(--h-row);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--line) 35%, transparent);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.datagrid tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-sunken) 55%, transparent); }
+.datagrid tbody tr:hover { background: var(--surface-hover); }
+.datagrid tbody td.sticky-1 { position: sticky; left: 0; z-index: 1; background: var(--surface-base); }
+.datagrid tbody td.sticky-2 { position: sticky; left: 34px; z-index: 1; background: var(--surface-base); }
+.datagrid tbody tr:nth-child(even) td.sticky-1,
+.datagrid tbody tr:nth-child(even) td.sticky-2 { background: color-mix(in srgb, var(--surface-sunken) 70%, var(--surface-base)); }
+.datagrid tbody tr:hover td.sticky-1,
+.datagrid tbody tr:hover td.sticky-2 { background: var(--surface-hover); }
+.datagrid td.rownum { color: var(--text-3); font-size: var(--fs-11); text-align: right; padding-right: var(--space-5); }
+.datagrid td.is-dirty {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 38%, transparent);
+  color: var(--text-1);
+}
+.null { color: var(--text-3); font-style: italic; }
+.pk { color: var(--warning); }
+
+/* Filter & Sort 条形面板 */
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-11);
+  color: var(--text-2);
+}
+.chip .op { color: var(--text-3); }
+.chip .x { color: var(--text-3); }
+.chip .x:hover { color: var(--danger); }
+.and-badge { font-size: var(--fs-11); color: var(--text-3); }
+
+/* 数据面板底栏（分页） */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--h-control);
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--line);
+  background: var(--surface-base);
+  font-size: var(--fs-11);
+  color: var(--text-3);
+}
+.pager .spacer { flex: 1; }
+.pager select {
+  height: 24px;
+  padding: 0 var(--space-2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-11);
+}
+.pager .pg {
+  min-width: 24px;
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-xs);
+  color: var(--text-2);
+}
+.pager .pg:hover { background: var(--surface-hover); }
+.pager .pg.is-on { background: var(--accent); color: var(--on-accent); }
+
+/* ---------- 表数据：Form 视图 ---------- */
+
+.formview {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) 248px;
+  justify-content: start;
+  gap: var(--space-6);
+  padding: var(--space-6);
+  min-height: 100%;
+  align-content: start;
+}
+.form-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.form-card header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: var(--h-header);
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+.form-card header strong { font-size: var(--fs-12); }
+.form-card header span { font-size: var(--fs-11); color: var(--text-3); }
+.form-fields { padding: var(--space-5); display: grid; gap: var(--space-4); }
+.field {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-4);
+}
+.field label {
+  text-align: right;
+  font-size: var(--fs-12);
+  color: var(--text-2);
+}
+.field label .type { display: block; font-size: var(--fs-11); color: var(--text-3); font-family: var(--font-mono); }
+.field input, .field select, .field textarea {
+  height: var(--h-control);
+  padding: 0 var(--space-4);
+  background: var(--surface-base);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+  outline: 0;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.field textarea { height: 64px; padding: var(--space-3) var(--space-4); resize: vertical; font-family: var(--font-mono); }
+.field.is-dirty input { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--surface-base)); }
+
+.record-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-self: start;
+}
+.record-nav .card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  padding: var(--space-4);
+}
+.record-nav h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.record-nav .card { overflow: hidden; }
+.record-nav .jump { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; }
+.record-nav input { min-width: 0; height: 24px; padding: 0 var(--space-2); border: 1px solid var(--line); border-radius: var(--r-xs); background: var(--surface-sunken); font-size: var(--fs-11); }
+.record-nav .jump .tbtn { height: 24px; padding: 0 var(--space-3); white-space: nowrap; }
+.record-list { display: grid; gap: 1px; margin-top: var(--space-3); }
+.record-list button {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-11);
+  color: var(--text-2);
+}
+.record-list button:hover { background: var(--surface-hover); }
+.record-list button.is-on { background: var(--surface-selected); color: var(--text-1); }
+
+/* ---------- 表设计器 ---------- */
+
+.designer { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.designer-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-height: var(--h-tab);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.designer-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  border-bottom: 2px solid transparent;
+}
+.designer-tabs button[aria-selected="true"] {
+  color: var(--text-1);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.designer-tabs .badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 var(--space-1);
+  border-radius: var(--r-full, 99px);
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.designer-body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-5); }
+.designer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: 0 var(--space-5);
+  border-top: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.designer-actions .spacer { flex: 1; }
+
+.dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
+.dtable thead th {
+  height: var(--h-row);
+  padding: 0 var(--space-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.dtable tbody td {
+  height: var(--h-row-lg, 38px);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+}
+.dtable input, .dtable select {
+  width: 100%;
+  height: 26px;
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-12);
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.dtable select {
+  padding-right: var(--space-6);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2365677a' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+}
+.dtable input[type="checkbox"] { appearance: auto; -webkit-appearance: auto; width: auto; accent-color: var(--accent); }
+.dtable input:hover, .dtable select:hover { border-color: var(--line); }
+.dtable input:focus, .dtable select:focus { border-color: var(--accent); background: var(--surface-base); box-shadow: 0 0 0 2px var(--accent-soft); }
+.dtable tr.is-pk td:first-child { box-shadow: inset 2px 0 0 var(--warning); }
+.dtable .drag { width: 20px; color: var(--text-3); cursor: grab; text-align: center; }
+.dtable .del { color: var(--text-3); }
+.dtable .del:hover { color: var(--danger); }
+.dtable tbody tr:hover { background: var(--surface-hover); }
+
+.diff-wrap { display: grid; gap: var(--space-4); }
+.diff-group h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.diff-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: baseline;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-12);
+}
+.tag {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-11);
+  text-align: center;
+}
+.tag.add { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.tag.del { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.tag.chg { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+.before { color: var(--text-3); text-decoration: line-through; }
+.after { color: var(--text-1); font-weight: 500; }
+
+.code {
+  padding: var(--space-5);
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow: auto;
+  word-break: break-word;
+}
+.code .kw { color: var(--accent); }
+
+.empty-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-3);
+  height: 100%;
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--text-3);
+}
+.empty-state h3 { margin: 0; font-size: var(--fs-13); color: var(--text-1); }
+.empty-state p { margin: 0; font-size: var(--fs-12); max-width: 34em; }
+
+/* ---------- 查询编辑器 ---------- */
+
+.query { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+
+.editor-wrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  height: var(--editor-h, 324px);
+  min-height: 120px;
+  overflow: hidden;
+  background: var(--surface-base);
+}
+.gutter {
+  padding: var(--space-4) var(--space-3) var(--space-4) var(--space-4);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 20px;
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--line);
+  user-select: none;
+}
+.code-area {
+  position: relative;
+  padding: var(--space-4) var(--space-5);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 20px;
+  color: var(--text-1);
+  tab-size: 4;
+}
+.code-line { white-space: pre; }
+.code-line.is-current {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  margin: 0 calc(var(--space-5) * -1);
+  padding: 0 var(--space-5);
+}
+.sql-kw { color: var(--accent); font-weight: 600; }
+.sql-str { color: var(--success); }
+.sql-num { color: var(--info); }
+.sql-cm { color: var(--text-3); font-style: italic; }
+.caret {
+  display: inline-block;
+  width: 1px;
+  height: 13px;
+  background: var(--accent);
+  vertical-align: -2px;
+}
+
+.hsplit {
+  position: relative;
+  height: 6px;
+  flex: none;
+  cursor: row-resize;
+  background: var(--surface-base);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.hsplit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 32px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--r-full);
+  background: var(--line-strong);
+}
+
+.rtabs {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-height: var(--h-tab);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.rtabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  border-bottom: 2px solid transparent;
+}
+.rtabs button[aria-selected="true"] {
+  color: var(--text-1);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.rbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.rpane { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.rpane.on { display: flex; }
+
+.msg-list {
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 22px;
+  color: var(--text-2);
+}
+.msg-list .t { color: var(--text-3); margin-right: var(--space-4); }
+.msg-list .ok { color: var(--success); }
+.msg-list .dim { color: var(--text-3); }
+
+.profile { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-6); align-content: start; }
+.profile .stat {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+}
+.profile .stat span { display: block; font-size: var(--fs-11); color: var(--text-3); }
+.profile .stat b { display: block; margin-top: var(--space-2); font-size: var(--fs-18); font-weight: 600; color: var(--text-1); font-variant-numeric: tabular-nums; }
+
+.plan { padding: var(--space-5); display: grid; gap: var(--space-2); align-content: start; }
+.plan-node {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 96px 76px;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  font-size: var(--fs-12);
+}
+.plan-node .op { font-weight: 600; color: var(--text-1); }
+.plan-node .obj { color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-11); }
+.plan-node .rows { text-align: right; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-2); }
+.plan-bar { height: 6px; border-radius: var(--r-full); background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.plan-bar i { display: block; height: 100%; background: var(--accent); }
+.plan-node.is-warn { border-color: color-mix(in srgb, var(--warning) 46%, var(--line)); }
+.plan-node.is-warn .plan-bar i { background: var(--warning); }
+.plan-node.is-warn .op { color: var(--warning); }
+
+/* ⑥ 信息窗格 */
+.info {
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-base);
+  border-left: 1px solid var(--line);
+}
+.db-ws.has-info .info { display: flex; }
+.info-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--h-header);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.info-head .spacer { flex: 1; }
+.info-body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-4); display: grid; gap: var(--space-4); align-content: start; }
+.info-block h4 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-11);
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 600;
+}
+.kv { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: var(--space-2) var(--space-3); font-size: var(--fs-12); }
+.kv dt { color: var(--text-3); text-align: right; }
+.kv dd { margin: 0; color: var(--text-1); overflow-wrap: anywhere; }
+
+/* ⑦ 全局状态栏 */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--surface-base);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-11);
+  color: var(--text-3);
+}
+.statusbar .item { display: inline-flex; align-items: center; gap: var(--space-2); }
+.statusbar .spacer { flex: 1; }
+.statusbar .retry { color: var(--warning); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ① 标题栏 -->
+  <header class="titlebar">
+    <span class="brand"><span class="brand-mark">P</span>PortNest</span>
+    <span class="spacer titlebar-spacer"></span>
+    <div class="proto-switch" role="group" aria-label="原型界面切换">
+      <button data-screen="objects" aria-pressed="true">对象面板</button>
+      <button data-screen="grid" aria-pressed="false">表数据</button>
+      <button data-screen="form" aria-pressed="false">记录表单</button>
+      <button data-screen="query" aria-pressed="false">SQL 查询</button>
+      <button data-screen="designer" aria-pressed="false">表设计器</button>
+    </div>
+    <button class="theme-toggle" id="themeBtn">切换到深色</button>
+    <button class="tbtn" id="infoBtn">信息窗格</button>
+  </header>
+
+  <!-- ③ 会话标签栏（连接级，保留） -->
+  <div class="sessionbar">
+    <div class="session-tab is-active"><span class="dot"></span>生产库 · sakila</div>
+    <div class="session-tab"><span class="dot is-warn"></span>本地 · classicmodels</div>
+    <div class="session-tab"><span class="dot"></span>demo-server</div>
+  </div>
+
+  <!-- 数据库工作区 -->
+  <div class="db-ws" id="ws">
+
+    <!-- ② 导航窗格 -->
+    <aside class="tree" id="treePane">
+      <div class="tree-head">
+        <strong>MySQL 对象</strong>
+        <button class="icon-btn" title="新建数据库">＋</button>
+        <button class="icon-btn" title="刷新">⟳</button>
+      </div>
+      <label class="search">
+        <span>⌕</span>
+        <input placeholder="搜索数据库或表">
+      </label>
+      <div class="tree-body">
+        <div class="tree-row"><span class="twist">▾</span><b>sakila</b><em>16</em></div>
+        <div class="tree-group">
+          <div class="tree-row"><span class="twist">▾</span><span>▦</span><b style="font-size:12px">表</b><em>16</em></div>
+          <div class="tree-leaf tree-row is-active"><span class="twist"></span><span class="kind">▦</span><span>film</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>actor</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>address</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>category</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>city</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>customer</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>film_actor</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>inventory</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>payment</span></div>
+          <div class="tree-leaf tree-row"><span class="twist"></span><span class="kind">▦</span><span>rental</span></div>
+          <div class="tree-row"><span class="twist">▸</span><span>◫</span><b style="font-size:12px">视图</b><em>2</em></div>
+          <div class="tree-row" style="opacity:.48"><span class="twist"></span><span>⌕</span><b style="font-size:12px">查询</b><em>0</em></div>
+          <div class="tree-row" style="opacity:.48"><span class="twist"></span><span>◧</span><b style="font-size:12px">ER 图</b><em>0</em></div>
+          <div class="tree-row" style="opacity:.48"><span class="twist"></span><span>ƒ</span><b style="font-size:12px">存储过程</b><em>0</em></div>
+        </div>
+        <div class="tree-row" style="margin-top:var(--space-3)"><span class="twist">▸</span><b>classicmodels</b><em>9</em></div>
+      </div>
+    </aside>
+
+    <div class="splitter" id="splitter"></div>
+
+    <!-- 主区 -->
+    <main class="main">
+      <!-- ③ 对象标签栏 -->
+      <div class="tabs">
+        <div class="tab is-active">▦ sakila <span class="x">×</span></div>
+        <div class="tab">▦ film <span class="x">×</span></div>
+        <div class="tab">⌕ 查询 1 <span class="x">×</span></div>
+        <button class="tab-new" title="新建查询">＋</button>
+      </div>
+
+      <!-- ⑤ 对象面板 -->
+      <section class="screen is-active" data-view="objects">
+        <div class="objbar">
+          <button class="tbtn">＋ 新建查询</button>
+          <button class="tbtn">＋ 新建表</button>
+          <button class="tbtn">⟳ 刷新</button>
+          <span class="tsep"></span>
+          <button class="tbtn">导出 SQL</button>
+          <span class="spacer"></span>
+          <span class="counter">已选 1 项 · 共 16 项</span>
+          <label class="search" style="margin:0;width:176px;height:24px">
+            <span>⌕</span><input placeholder="名称 / 注释">
+          </label>
+          <div class="seg" role="group" aria-label="视图">
+            <button aria-pressed="false">列表</button>
+            <button aria-pressed="true">详情</button>
+            <button aria-pressed="false">图标</button>
+          </div>
+        </div>
+        <div class="viewport">
+          <table class="objects-table">
+            <thead>
+              <tr>
+                <th class="col-check"><input class="chk" type="checkbox" aria-label="全选"></th>
+                <th>名称</th>
+                <th>注释</th>
+                <th class="num">预估行数</th>
+                <th class="num">数据长度</th>
+                <th class="num">索引长度</th>
+                <th class="num">自增</th>
+                <th>引擎</th>
+                <th>编码</th>
+                <th>更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="is-selected"><td class="col-check"><input class="chk" type="checkbox" checked></td><td class="name">film</td><td>影片</td><td class="num mono">1,000</td><td class="num mono">192 KB</td><td class="num mono">128 KB</td><td class="num mono">1001</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">actor</td><td>演员</td><td class="num mono">200</td><td class="num mono">16 KB</td><td class="num mono">32 KB</td><td class="num mono">201</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">address</td><td>地址</td><td class="num mono">603</td><td class="num mono">96 KB</td><td class="num mono">64 KB</td><td class="num mono">606</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">category</td><td>分类</td><td class="num mono">16</td><td class="num mono">16 KB</td><td class="num mono">32 KB</td><td class="num mono">17</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">customer</td><td>客户</td><td class="num mono">599</td><td class="num mono">80 KB</td><td class="num mono">96 KB</td><td class="num mono">600</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">film_actor</td><td>影片演员关联</td><td class="num mono">5,462</td><td class="num mono">192 KB</td><td class="num mono">160 KB</td><td class="num mono">—</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">inventory</td><td>库存</td><td class="num mono">4,581</td><td class="num mono">176 KB</td><td class="num mono">128 KB</td><td class="num mono">4582</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">payment</td><td>付款</td><td class="num mono">16,049</td><td class="num mono">1.5 MB</td><td class="num mono">640 KB</td><td class="num mono">16050</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">rental</td><td>租赁</td><td class="num mono">16,005</td><td class="num mono">1.5 MB</td><td class="num mono">704 KB</td><td class="num mono">16006</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">staff</td><td>员工</td><td class="num mono">2</td><td class="num mono">64 KB</td><td class="num mono">48 KB</td><td class="num mono">3</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+              <tr><td class="col-check"><input class="chk" type="checkbox"></td><td class="name">store</td><td>门店</td><td class="num mono">2</td><td class="num mono">64 KB</td><td class="num mono">32 KB</td><td class="num mono">3</td><td>InnoDB</td><td>utf8mb4_general_ci</td><td class="mono">2026-05-26 16:40</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 表数据：Grid -->
+      <section class="screen" data-view="grid">
+        <div class="objbar">
+          <button class="tbtn is-primary">+ 新增记录</button>
+          <button class="tbtn">删除</button>
+          <span class="tsep"></span>
+          <button class="tbtn">应用 3 项修改</button>
+          <button class="tbtn">撤销</button>
+          <span class="tsep"></span>
+          <div class="seg" role="group" aria-label="数据视图">
+            <button aria-pressed="true">网格</button>
+            <button aria-pressed="false">表单</button>
+          </div>
+          <button class="tbtn">筛选与排序</button>
+          <span class="spacer"></span>
+          <span class="counter mono">1001 行 · 46ms</span>
+          <button class="tbtn">复制为 SQL</button>
+          <button class="tbtn">⟳</button>
+        </div>
+
+        <div class="filterbar">
+          <span class="and-badge">满足</span>
+          <span class="chip"><b>rating</b><span class="op">等于</span><span>PG</span><button class="x">×</button></span>
+          <span class="and-badge">且</span>
+          <span class="chip"><b>length</b><span class="op">大于</span><span class="mono">120</span><button class="x">×</button></span>
+          <button class="tbtn">＋ 条件</button>
+          <span class="spacer"></span>
+          <span class="and-badge">排序：<b>title</b> 升序，<b>film_id</b> 降序</span>
+        </div>
+
+        <div class="viewport" style="overflow:hidden">
+          <div class="grid-wrap">
+            <table class="datagrid">
+              <thead>
+                <tr>
+                  <th class="col-check sticky-1" style="width:34px"><input class="chk" type="checkbox" aria-label="全选"></th>
+                  <th class="sticky-2" style="width:44px"><span class="th-name">#</span></th>
+                  <th class="is-sorted"><span class="th-name">film_id ▾</span><span class="th-type">smallint unsigned</span></th>
+                  <th><span class="th-name">title ▴</span><span class="th-type">varchar(255)</span></th>
+                  <th><span class="th-name">description</span><span class="th-type">text</span></th>
+                  <th><span class="th-name">release_year</span><span class="th-type">year</span></th>
+                  <th><span class="th-name">rating</span><span class="th-type">enum</span></th>
+                  <th class="num"><span class="th-name">length</span><span class="th-type">smallint</span></th>
+                  <th class="num"><span class="th-name">rental_rate</span><span class="th-type">decimal(4,2)</span></th>
+                  <th><span class="th-name">last_update</span><span class="th-type">timestamp</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">1</td><td class="mono pk">1</td><td>ACADEMY DINOSAUR</td><td>A Epic Drama of a Feminist And a Mad Scientist…</td><td class="mono">2006</td><td>PG</td><td class="num mono">86</td><td class="num mono">0.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">2</td><td class="mono pk">2</td><td>ACE GOLDFINGER</td><td>A Astounding Tale of a Secret Agent…</td><td class="mono">2006</td><td>G</td><td class="num mono">48</td><td class="num mono">4.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox" checked></td><td class="rownum sticky-2">3</td><td class="mono pk">3</td><td>ADAPTATION HOLES</td><td class="is-dirty">A Lacklustre Reflection of a Astronaut…</td><td class="mono">2006</td><td>PG</td><td class="num mono is-dirty">142</td><td class="num mono">2.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">4</td><td class="mono pk">4</td><td>AFFAIR PREJUDICE</td><td class="null">NULL</td><td class="mono">2006</td><td>R</td><td class="num mono">117</td><td class="num mono">2.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">5</td><td class="mono pk">5</td><td>AFRICAN EGG</td><td>A Fast-Paced Documentary of a Pastry Chef…</td><td class="mono">2006</td><td>G</td><td class="num mono">130</td><td class="num mono">2.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">6</td><td class="mono pk">6</td><td>AGENT TRUMAN</td><td>A Intrepid Panorama of a Robot…</td><td class="mono">2006</td><td>PG</td><td class="num mono">169</td><td class="num mono">2.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">7</td><td class="mono pk">7</td><td>AIRPLANE SIERRA</td><td>A Touching Saga of a Hunter And a Butler…</td><td class="mono">2006</td><td>PG-13</td><td class="num mono">62</td><td class="num mono">4.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">8</td><td class="mono pk">8</td><td>AIRPORT POLLOCK</td><td class="null">NULL</td><td class="mono">2006</td><td>R</td><td class="num mono">54</td><td class="num mono">0.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">9</td><td class="mono pk">9</td><td>ALABAMA DEVIL</td><td>A Thoughtful Panorama of a Dentist…</td><td class="mono">2006</td><td>PG-13</td><td class="num mono">114</td><td class="num mono">2.99</td><td class="mono">2026-05-26 16:40</td></tr>
+                <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">10</td><td class="mono pk">10</td><td>ALADDIN CALENDAR</td><td>A Action-Packed Tale of a Aviator…</td><td class="mono">2006</td><td>NC-17</td><td class="num mono">63</td><td class="num mono">4.99</td><td class="mono">2026-05-26 16:40</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="pager">
+          <span class="mono">1–10 / 1,001 行</span>
+          <span class="spacer"></span>
+          <span>每页</span>
+          <select><option>50</option><option selected>100</option><option>200</option><option>500</option></select>
+          <button class="pg">‹</button>
+          <button class="pg is-on">1</button>
+          <button class="pg">2</button>
+          <button class="pg">3</button>
+          <button class="pg">›</button>
+        </div>
+      </section>
+
+      <!-- 表数据：Form -->
+      <section class="screen" data-view="form">
+        <div class="objbar">
+          <button class="tbtn is-primary">+ 新增记录</button>
+          <button class="tbtn">删除</button>
+          <span class="tsep"></span>
+          <button class="tbtn">应用 1 项修改</button>
+          <button class="tbtn">撤销</button>
+          <span class="tsep"></span>
+          <div class="seg" role="group" aria-label="数据视图">
+            <button aria-pressed="false">网格</button>
+            <button aria-pressed="true">表单</button>
+          </div>
+          <span class="spacer"></span>
+          <span class="counter mono">记录 3 / 1,001</span>
+        </div>
+        <div class="viewport">
+          <div class="formview">
+            <div class="form-card">
+              <header>
+                <strong>film #3</strong>
+                <span>ADAPTATION HOLES</span>
+                <span style="margin-left:auto" class="mono">2026-05-26 16:40</span>
+              </header>
+              <div class="form-fields">
+                <div class="field"><label>film_id<span class="type">smallint unsigned</span></label><input value="3" readonly style="background:var(--surface-sunken)"></div>
+                <div class="field"><label>title<span class="type">varchar(255)</span></label><input value="ADAPTATION HOLES"></div>
+                <div class="field is-dirty"><label>description<span class="type">text</span></label><textarea>A Lacklustre Reflection of a Astronaut And a Database Administrator</textarea></div>
+                <div class="field"><label>release_year<span class="type">year</span></label><input value="2006"></div>
+                <div class="field"><label>rating<span class="type">enum</span></label><select><option>G</option><option selected>PG</option><option>PG-13</option><option>R</option><option>NC-17</option></select></div>
+                <div class="field is-dirty"><label>length<span class="type">smallint</span></label><input value="142"></div>
+                <div class="field"><label>rental_rate<span class="type">decimal(4,2)</span></label><input value="2.99"></div>
+                <div class="field"><label>last_update<span class="type">timestamp</span></label><input value="2026-05-26 16:40:11"></div>
+              </div>
+            </div>
+            <div class="record-nav">
+              <div class="card">
+                <h4>跳转记录</h4>
+                <div class="jump"><button class="tbtn" aria-label="上一条">‹</button><input value="3" aria-label="记录序号"><button class="tbtn" aria-label="下一条">›</button></div>
+                <div class="record-list">
+                  <button><span class="mono">1</span><span>ACADEMY DINOSAUR</span></button>
+                  <button><span class="mono">2</span><span>ACE GOLDFINGER</span></button>
+                  <button class="is-on"><span class="mono">3</span><span>ADAPTATION HOLES</span></button>
+                  <button><span class="mono">4</span><span>AFFAIR PREJUDICE</span></button>
+                  <button><span class="mono">5</span><span>AFRICAN EGG</span></button>
+                </div>
+              </div>
+              <div class="card">
+                <h4>预览字段</h4>
+                <div class="kv"><dt>主键</dt><dd class="mono">film_id</dd><dt>外键</dt><dd>language_id → language</dd></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SQL 查询 -->
+      <section class="screen" data-view="query">
+        <div class="objbar">
+          <button class="tbtn is-primary">▸ 运行</button>
+          <button class="tbtn">运行已选择</button>
+          <button class="tbtn" disabled style="opacity:.45">■ 停止</button>
+          <span class="tsep"></span>
+          <button class="tbtn">美化</button>
+          <button class="tbtn">注释</button>
+          <button class="tbtn">Explain</button>
+          <span class="tsep"></span>
+          <button class="tbtn">保存</button>
+          <button class="tbtn">历史</button>
+          <button class="tbtn">收藏</button>
+          <span class="spacer"></span>
+          <span class="counter">自动提交 · 只读</span>
+          <span class="counter mono">sakila</span>
+        </div>
+
+        <div class="query">
+          <div class="editor-wrap" id="editorWrap">
+            <div class="gutter">
+              <div>1</div>
+              <div>2</div>
+              <div>3</div>
+              <div>4</div>
+              <div>5</div>
+              <div>6</div>
+              <div>7</div>
+              <div>8</div>
+              <div>9</div>
+              <div>10</div>
+              <div>11</div>
+              <div>12</div>
+              <div>13</div>
+              <div>14</div>
+            </div>
+            <div class="code-area">
+              <div class="code-line"><span class="sql-cm">-- 找出时长超过 120 分钟的 PG 级影片</span></div>
+              <div class="code-line"><span class="sql-kw">SELECT</span></div>
+              <div class="code-line is-current">    f.film_id,</div>
+              <div class="code-line">    f.title,</div>
+              <div class="code-line">    f.rating,</div>
+              <div class="code-line">    f.length,</div>
+              <div class="code-line">    c.name <span class="sql-kw">AS</span> category</div>
+              <div class="code-line"><span class="sql-kw">FROM</span> film f</div>
+              <div class="code-line"><span class="sql-kw">JOIN</span> film_category fc <span class="sql-kw">ON</span> fc.film_id = f.film_id</div>
+              <div class="code-line"><span class="sql-kw">JOIN</span> category c <span class="sql-kw">ON</span> c.category_id = fc.category_id</div>
+              <div class="code-line"><span class="sql-kw">WHERE</span> f.rating = <span class="sql-str">'PG'</span></div>
+              <div class="code-line">  <span class="sql-kw">AND</span> f.length &gt; <span class="sql-num">120</span></div>
+              <div class="code-line"><span class="sql-kw">ORDER BY</span> f.title</div>
+              <div class="code-line"><span class="sql-kw">LIMIT</span> <span class="sql-num">100</span>;<span class="caret"></span></div>
+
+            </div>
+          </div>
+
+          <div class="hsplit" id="hsplit"></div>
+
+          <div class="rbody">
+            <div class="rtabs" id="resultTabs">
+              <button aria-selected="true" data-pane="rows">结果 1</button>
+              <button aria-selected="false" data-pane="messages">消息</button>
+              <button aria-selected="false" data-pane="profile">概况</button>
+              <button aria-selected="false" data-pane="plan">执行计划</button>
+            </div>
+
+            <div class="rpane on" data-pane="rows">
+              <div class="objbar" style="border-bottom:1px solid var(--line)">
+                <button class="tbtn">复制</button>
+                <button class="tbtn">导出 CSV</button>
+                <button class="tbtn">复制为 SQL</button>
+                <span class="tsep"></span>
+                <button class="tbtn">筛选与排序</button>
+                <span class="spacer"></span>
+                <span class="counter mono">1–13 / 13 行 · 46ms</span>
+                <button class="tbtn">固定首列</button>
+              </div>
+              <div class="viewport" style="overflow:auto">
+                <table class="datagrid">
+                  <thead>
+                    <tr>
+                      <th class="col-check sticky-1" style="width:34px"><input class="chk" type="checkbox" aria-label="全选"></th>
+                      <th class="sticky-2" style="width:40px"><span class="th-name">#</span></th>
+                      <th><span class="th-name">film_id</span><span class="th-type">smallint unsigned</span></th>
+                      <th class="is-sorted"><span class="th-name">title ▴</span><span class="th-type">varchar(255)</span></th>
+                      <th><span class="th-name">rating</span><span class="th-type">enum</span></th>
+                      <th class="num"><span class="th-name">length</span><span class="th-type">smallint</span></th>
+                      <th><span class="th-name">category</span><span class="th-type">varchar(25)</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">1</td><td class="mono pk">5</td><td>AFRICAN EGG</td><td>G</td><td class="num mono">130</td><td>Family</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">2</td><td class="mono pk">6</td><td>AGENT TRUMAN</td><td>PG</td><td class="num mono">169</td><td>Foreign</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">3</td><td class="mono pk">9</td><td>ALABAMA DEVIL</td><td>PG-13</td><td class="num mono">114</td><td>Horror</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">4</td><td class="mono pk">14</td><td>ALICE FANTASIA</td><td>PG</td><td class="num mono">147</td><td>Classics</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">5</td><td class="mono pk">18</td><td>ALTER VICTORY</td><td>PG</td><td class="num mono">156</td><td>Documentary</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">6</td><td class="mono pk">25</td><td>ANGELS LIFE</td><td>PG</td><td class="num mono">182</td><td>Comedy</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">7</td><td class="mono pk">33</td><td>APACHE DIVINE</td><td>PG</td><td class="num mono">137</td><td>Action</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">8</td><td class="mono pk">41</td><td>ARSENIC INDEPENDENCE</td><td>PG</td><td class="num mono">128</td><td>Drama</td></tr>
+                    <tr><td class="col-check sticky-1"><input class="chk" type="checkbox"></td><td class="rownum sticky-2">9</td><td class="mono pk">52</td><td>BALLROOM MOCKINGBIRD</td><td>PG</td><td class="num mono">171</td><td>Music</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="rpane" data-pane="messages">
+              <div class="msg-list">
+                <div><span class="t">10:31:07</span><span class="ok">[成功]</span> 查询已执行，返回 13 行，耗时 46 ms</div>
+                <div><span class="t">10:31:07</span><span class="dim">[信息]</span> 服务器: MySQL 8.4.2 · 数据库: sakila</div>
+                <div><span class="t">10:31:07</span><span class="dim">[信息]</span> 自动提交已开启，事务已结束</div>
+                <div><span class="t">10:30:54</span><span class="ok">[成功]</span> 查询已执行，返回 1000 行，耗时 38 ms</div>
+                <div><span class="t">10:29:12</span><span class="dim">[警告]</span> 结果超过 5000 行上限，已截断</div>
+              </div>
+            </div>
+
+            <div class="rpane" data-pane="profile">
+              <div class="profile">
+                <div class="stat"><span>执行耗时</span><b>46 ms</b></div>
+                <div class="stat"><span>返回行数</span><b>13</b></div>
+                <div class="stat"><span>扫描行数</span><b>1,000</b></div>
+                <div class="stat"><span>临时表</span><b>否</b></div>
+              </div>
+            </div>
+
+            <div class="rpane" data-pane="plan">
+              <div class="objbar" style="border-bottom:1px solid var(--line);justify-content:space-between">
+                <div class="seg" role="group" aria-label="执行计划格式">
+                  <button aria-pressed="true">可视化</button>
+                  <button aria-pressed="false">JSON</button>
+                  <button aria-pressed="false">文本</button>
+                </div>
+                <span class="counter">预估总代价 258.4</span>
+              </div>
+              <div class="plan">
+                <div class="plan-node">
+                  <span>▾</span>
+                  <span><span class="op">Limit</span> <span class="obj">100 rows</span></span>
+                  <span class="plan-bar"><i style="width:18%"></i></span>
+                  <span class="rows">13 rows</span>
+                </div>
+                <div class="plan-node">
+                  <span>▾</span>
+                  <span><span class="op">Sort</span> <span class="obj">f.title ASC</span></span>
+                  <span class="plan-bar"><i style="width:34%"></i></span>
+                  <span class="rows">13 rows</span>
+                </div>
+                <div class="plan-node">
+                  <span>▾</span>
+                  <span><span class="op">Nested Loop Join</span> <span class="obj">c → fc → f</span></span>
+                  <span class="plan-bar"><i style="width:52%"></i></span>
+                  <span class="rows">13 rows</span>
+                </div>
+                <div class="plan-node is-warn">
+                  <span>▾</span>
+                  <span><span class="op">Table Scan</span> <span class="obj">film f · 全表扫描</span></span>
+                  <span class="plan-bar"><i style="width:100%"></i></span>
+                  <span class="rows">1,000 rows</span>
+                </div>
+                <div class="plan-node">
+                  <span>▸</span>
+                  <span><span class="op">Index Lookup</span> <span class="obj">idx_fk_film_id</span></span>
+                  <span class="plan-bar"><i style="width:12%"></i></span>
+                  <span class="rows">1 row</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 表设计器 -->
+      <section class="screen" data-view="designer">
+        <div class="designer">
+          <div class="designer-tabs" role="tablist">
+            <button role="tab" aria-selected="true">字段 <span class="badge">8</span></button>
+            <button role="tab" aria-selected="false">索引 <span class="badge">3</span></button>
+            <button role="tab" aria-selected="false">外键 <span class="badge">2</span></button>
+            <button role="tab" aria-selected="false">选项</button>
+            <button role="tab" aria-selected="false">注释</button>
+            <button role="tab" aria-selected="false">SQL 预览</button>
+            <button role="tab" aria-selected="false">变更 <span class="badge">3</span></button>
+          </div>
+
+          <div class="designer-body">
+            <table class="dtable">
+              <thead>
+                <tr>
+                  <th style="width:20px"></th>
+                  <th style="width:180px">名称</th>
+                  <th style="width:160px">类型</th>
+                  <th style="width:64px">长度</th>
+                  <th style="width:64px">非空</th>
+                  <th style="width:140px">默认值</th>
+                  <th style="width:56px">自增</th>
+                  <th>注释</th>
+                  <th style="width:36px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="is-pk">
+                  <td class="drag">⠿</td>
+                  <td><input value="film_id"></td>
+                  <td><select><option selected>smallint unsigned</option><option>int</option><option>bigint</option></select></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox" checked disabled></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox" checked></td>
+                  <td><input value="主键"></td>
+                  <td class="del">×</td>
+                </tr>
+                <tr>
+                  <td class="drag">⠿</td>
+                  <td><input value="title"></td>
+                  <td><select><option selected>varchar</option><option>text</option></select></td>
+                  <td><input value="255"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox" checked></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox"></td>
+                  <td><input value="影片标题"></td>
+                  <td class="del">×</td>
+                </tr>
+                <tr>
+                  <td class="drag">⠿</td>
+                  <td><input value="description"></td>
+                  <td><select><option>varchar</option><option selected>text</option></select></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox"></td>
+                  <td><input value="NULL"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox"></td>
+                  <td><input value="剧情简介"></td>
+                  <td class="del">×</td>
+                </tr>
+                <tr>
+                  <td class="drag">⠿</td>
+                  <td><input value="length"></td>
+                  <td><select><option selected>smallint</option></select></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox"></td>
+                  <td><input value="" placeholder="—"></td>
+                  <td style="text-align:center"><input class="chk" type="checkbox"></td>
+                  <td><input value="时长（分钟）"></td>
+                  <td class="del">×</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="designer-actions">
+            <button class="tbtn">＋ 字段</button>
+            <button class="tbtn">＋ 索引</button>
+            <button class="tbtn">＋ 外键</button>
+            <span class="spacer"></span>
+            <span class="counter">3 项未保存变更</span>
+            <button class="tbtn">预览 SQL</button>
+            <button class="tbtn is-primary">应用设计</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ⑥ 信息窗格 -->
+    <aside class="info" id="infoPane">
+      <div class="info-head">
+        <span>对象信息</span>
+        <span class="spacer"></span>
+        <button class="icon-btn" id="infoClose" title="关闭">×</button>
+      </div>
+      <div class="info-body">
+        <div class="info-block">
+          <h4>表</h4>
+          <dl class="kv">
+            <dt>名称</dt><dd class="mono">film</dd>
+            <dt>引擎</dt><dd>InnoDB</dd>
+            <dt>编码</dt><dd class="mono">utf8mb4_general_ci</dd>
+            <dt>行数</dt><dd class="mono">1,000</dd>
+            <dt>大小</dt><dd class="mono">320 KB</dd>
+            <dt>自增</dt><dd class="mono">1001</dd>
+          </dl>
+        </div>
+        <div class="info-block">
+          <h4>外键</h4>
+          <dl class="kv">
+            <dt>language_id</dt><dd class="mono">→ language.id</dd>
+            <dt></dt><dd style="color:var(--text-3)">ON DELETE RESTRICT</dd>
+          </dl>
+        </div>
+        <div class="info-block">
+          <h4>建表语句</h4>
+          <div class="code" style="font-size:var(--fs-11);padding:var(--space-4)">CREATE TABLE `film` (
+  `film_id` smallint unsigned NOT NULL AUTO_INCREMENT,
+  `title` varchar(255) NOT NULL,
+  PRIMARY KEY (`film_id`)
+) ENGINE=InnoDB;</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ⑦ 全局状态栏 -->
+  <footer class="statusbar">
+    <span class="item"><span class="dot"></span>已连接</span>
+    <span class="item"><b style="color:var(--text-2)">sakila</b></span>
+    <span class="item mono">192.0.2.10:3306</span>
+    <span class="item mono">MySQL 8.4.2</span>
+    <span class="item mono">46ms</span>
+    <span class="item">可写模式</span>
+    <span class="spacer"></span>
+    <span class="item">1 个标签</span>
+    <span class="item mono">v0.6.2</span>
+  </footer>
+</div>
+
+<script>
+// 视觉稿交互：界面切换、主题切换、信息窗格、树拖拽
+const ws = document.getElementById('ws');
+const splitter = document.getElementById('splitter');
+const treePane = document.getElementById('treePane');
+
+const viewFor = name => {
+  const btn = document.querySelector(`.proto-switch button[data-screen="${name}"]`);
+  if (!btn) return;
+  document.querySelectorAll('.proto-switch button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  btn.setAttribute('aria-pressed', 'true');
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('is-active', s.dataset.view === name));
+};
+
+document.querySelectorAll('.proto-switch button').forEach(btn => {
+  btn.addEventListener('click', () => { viewFor(btn.dataset.screen); history.replaceState(null, '', '#' + btn.dataset.screen); });
+});
+
+// 支持 #grid / #form / #designer，可叠加 -dark / -info，便于截图与评审
+const applyHash = () => {
+  const parts = location.hash.slice(1).split('-');
+  const view = parts[0];
+  if (['objects', 'grid', 'form', 'query', 'designer'].includes(view)) viewFor(view);
+  const dark = parts.includes('dark');
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.getElementById('themeBtn').textContent = dark ? '切换到浅色' : '切换到深色';
+  ws.classList.toggle('has-info', parts.includes('info'));
+  const pane = parts.find(x => ['rows', 'messages', 'profile', 'plan'].includes(x));
+  if (pane) selectPane(pane);
+};
+
+const themeBtn = document.getElementById('themeBtn');
+themeBtn.addEventListener('click', () => {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+  themeBtn.textContent = dark ? '切换到深色' : '切换到浅色';
+});
+
+const infoBtn = document.getElementById('infoBtn');
+const syncInfo = () => ws.classList.toggle('has-info');
+infoBtn.addEventListener('click', syncInfo);
+document.getElementById('infoClose').addEventListener('click', syncInfo);
+
+// 结果区页签切换
+const resultTabs = document.getElementById('resultTabs');
+const selectPane = name => {
+  if (!resultTabs) return;
+  resultTabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.pane === name)));
+  document.querySelectorAll('.rpane').forEach(p => p.classList.toggle('on', p.dataset.pane === name));
+};
+if (resultTabs) {
+  resultTabs.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-pane]');
+    if (btn) selectPane(btn.dataset.pane);
+  });
+}
+
+// 编辑器 / 结果区水平分隔条
+const hsplit = document.getElementById('hsplit');
+const editorWrap = document.getElementById('editorWrap');
+let hdrag = false;
+if (hsplit) {
+  hsplit.addEventListener('mousedown', e => { hdrag = true; e.preventDefault(); document.body.style.cursor = 'row-resize'; });
+  window.addEventListener('mousemove', e => {
+    if (!hdrag || !editorWrap) return;
+    const top = editorWrap.getBoundingClientRect().top;
+    const h = Math.min(560, Math.max(120, e.clientY - top));
+    editorWrap.style.setProperty('--editor-h', h + 'px');
+  });
+  window.addEventListener('mouseup', () => { hdrag = false; document.body.style.cursor = ''; });
+}
+
+// 拖拽改宽
+let dragging = false;
+splitter.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); document.body.style.cursor = 'col-resize'; });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const w = Math.min(480, Math.max(200, e.clientX));
+  ws.style.setProperty('--tree-w', w + 'px');
+});
+window.addEventListener('mouseup', () => { dragging = false; document.body.style.cursor = ''; });
+
+// 所有依赖就绪后再应用一次 URL 状态
+applyHash();
+window.addEventListener('hashchange', applyHash);
+</script>
+</body>
+</html>

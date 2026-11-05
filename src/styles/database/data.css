@@ -1,0 +1,202 @@
+/* 表视图：数据 / 筛选 / 表单 / 导入导出 */
+
+.db-section { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+
+.db-section-nav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--h-control);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+.db-section-nav nav { display: inline-flex; align-items: stretch; height: 100%; gap: var(--space-1); }
+.db-section-nav nav button {
+  position: relative;
+  padding: 0 var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.db-section-nav nav button:hover { color: var(--text-1); }
+.db-section-nav nav button:disabled { opacity: 0.4; cursor: default; }
+.db-section-nav nav button.is-active { color: var(--accent); }
+.db-section-nav nav button.is-active::after {
+  content: "";
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: 0;
+  height: var(--space-1);
+  background: var(--accent);
+}
+
+.db-data { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+
+/* 筛选 chip 条 */
+
+.db-chips { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); overflow: hidden; }
+.db-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-7);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
+.db-chip.is-sort { border-color: var(--line); background: var(--surface-sunken); color: var(--text-2); }
+.db-chip button { display: inline-flex; border: 0; background: transparent; color: inherit; cursor: pointer; opacity: 0.7; padding: 0; }
+.db-chip button:hover { opacity: 1; }
+.db-chip-clear { border: 0; background: transparent; color: var(--text-3); font-size: var(--fs-11); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+
+/* 筛选面板 */
+
+.db-filters {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+.db-filters-head { display: flex; align-items: center; gap: var(--space-2); height: var(--h-row-lg); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); font-size: var(--fs-12); }
+.db-filters-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-height: 280px; overflow: auto; }
+.db-filters-row { display: flex; align-items: center; gap: var(--space-3); }
+.db-filters-label { color: var(--text-2); font-size: var(--fs-12); min-width: 2.25rem; }
+.db-filters-note { color: var(--text-3); font-size: var(--fs-11); }
+.db-filters-empty { margin: 0; color: var(--text-3); font-size: var(--fs-11); }
+.db-filters-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.db-filters-foot { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--line); }
+.db-filters-preview {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-xs);
+  background: var(--surface-base);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  overflow-wrap: anywhere;
+}
+
+.db-cond { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.db-cond .db-select { min-width: 120px; }
+.db-cond .db-input { min-width: 120px; flex: 1; }
+.db-cond-priority { color: var(--text-3); font-size: var(--fs-11); }
+
+/* 复制为… 下拉 */
+
+.db-menu-group { position: relative; }
+.db-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  min-width: 140px;
+  padding: var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 20%, transparent);
+}
+.db-menu-group:hover .db-menu,
+.db-menu-group:focus-within .db-menu { display: flex; }
+.db-menu button {
+  height: var(--h-row);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-12);
+  text-align: left;
+  cursor: pointer;
+}
+.db-menu button:hover { background: var(--surface-hover); color: var(--text-1); }
+
+/* 表单视图 */
+
+.db-formview {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 15.5rem;
+  background: var(--surface-sunken);
+  gap: var(--space-5);
+  min-height: 0;
+  padding: var(--space-5);
+  overflow: auto;
+}
+.db-formview-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-base);
+  align-self: start;
+}
+.db-formview-head { display: flex; align-items: baseline; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
+.db-formview-head div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.db-formview-head strong { font-size: var(--fs-14); }
+.db-formview-head small { color: var(--text-3); font-size: var(--fs-11); }
+.db-formview-dirty { color: #8a5a00; }
+
+.db-formview-fields { display: flex; flex-direction: column; gap: var(--space-2); }
+.db-field { display: grid; grid-template-columns: 9.25rem minmax(0, 1fr); align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); border-radius: var(--r-xs); }
+.db-field:hover { background: var(--surface-hover); }
+.db-field.is-dirty { background: color-mix(in srgb, #d9a441 12%, transparent); }
+.db-field-label { display: flex; flex-direction: column; gap: 0; text-align: right; min-width: 0; }
+.db-field-label span { color: var(--text-2); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
+.db-field-label small { color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-11); }
+.db-field-input { min-width: 0; }
+.db-field-value {
+  display: block;
+  width: 100%;
+  min-height: var(--h-row);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: var(--fs-12);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.db-field-value:hover { border-color: var(--line); background: var(--surface-sunken); }
+
+.db-record-nav { display: flex; flex-direction: column; gap: var(--space-3); align-self: start; }
+.db-record-card { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-base); }
+.db-record-card h4 { margin: 0 0 var(--space-3); color: var(--text-2); font-size: var(--fs-12); font-weight: 500; }
+.db-record-jump { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-2); }
+.db-record-jump .db-input { text-align: center; }
+.db-record-total { color: var(--text-3); font-size: var(--fs-11); white-space: nowrap; }
+.db-record-warn { margin: 0; color: #8a5a00; font-size: var(--fs-11); line-height: 1.5; }
+
+/* 导入导出 */
+
+.db-transfer { display: flex; flex: 1; flex-wrap: wrap; gap: var(--space-5); padding: var(--space-6); align-content: start; }
+.db-transfer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(360px, 100%);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-base);
+}
+.db-transfer-card h4 { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-13); font-weight: 500; }
+.db-transfer-card p { margin: 0; color: var(--text-3); font-size: var(--fs-12); line-height: 1.6; }

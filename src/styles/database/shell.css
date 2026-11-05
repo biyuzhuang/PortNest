@@ -1,0 +1,144 @@
+/* 标签栏 / 状态栏 / 信息窗格 */
+
+.db-tabs {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  height: var(--h-tab);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-shell);
+}
+
+.db-tabs-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.db-tabs-scroll::-webkit-scrollbar { height: 0; }
+
+.db-tab {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 12.5rem;
+  height: 100%;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.db-tab:hover { background: var(--surface-hover); color: var(--text-1); }
+.db-tab.is-active { background: var(--surface-base); color: var(--text-1); }
+.db-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--space-1);
+  background: var(--accent);
+}
+.db-tab-icon { display: inline-flex; color: var(--text-3); }
+.db-tab.is-active .db-tab-icon { color: var(--accent); }
+.db-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-tab-dirty { width: var(--space-2); height: var(--space-2); border-radius: var(--r-full); background: #d9a441; flex: none; }
+.db-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--r-xs);
+  color: var(--text-3);
+  opacity: 0;
+}
+.db-tab:hover .db-tab-close,
+.db-tab.is-active .db-tab-close { opacity: 1; }
+.db-tab-close:hover { background: var(--surface-hover); color: var(--text-1); }
+
+.db-tab-new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-tab);
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.db-tab-new:hover { background: var(--surface-hover); color: var(--text-1); }
+
+/* 状态栏 */
+
+.db-status {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--h-status);
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--line);
+  background: var(--surface-shell);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  overflow: hidden;
+}
+.db-status-spacer { flex: 1; }
+.db-status-sep { width: 1px; height: var(--space-4); background: var(--line); }
+.db-status-dot { width: var(--space-2); height: var(--space-2); border-radius: var(--r-full); background: #3f9d5a; flex: none; }
+.db-status-dot[data-state="busy"] { background: #d9a441; animation: db-blink 1.1s ease-in-out infinite; }
+@keyframes db-blink { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+.db-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-6);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: var(--fs-11);
+  cursor: pointer;
+}
+.db-status-btn:hover { background: var(--surface-hover); color: var(--text-1); }
+.db-status-btn.is-on { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent); }
+
+/* 信息窗格 */
+
+.db-info {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 20rem;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.db-info-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-header);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-12);
+}
+.db-info-body { flex: 1; min-height: 0; padding: var(--space-4); overflow: auto; }
+.db-info-body h4 { margin: var(--space-4) 0 var(--space-2); color: var(--text-3); font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.db-info-body h4:first-child { margin-top: 0; }
+.db-info-empty { padding: var(--space-6); color: var(--text-3); font-size: var(--fs-12); }
