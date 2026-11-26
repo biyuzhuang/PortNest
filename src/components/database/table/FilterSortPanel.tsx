@@ -64,7 +64,7 @@ export const FilterSortPanel: Component<Props> = props => {
         <strong>筛选与排序</strong>
         <span class="db-toolbar-spacer" />
         <button class="db-icon-btn" aria-label="关闭" title="关闭" onClick={() => props.onClose()}>
-          <Icon name="close" size={13} />
+          <Icon name="close" size={14} />
         </button>
       </header>
 
@@ -77,7 +77,7 @@ export const FilterSortPanel: Component<Props> = props => {
           </div>
           <span class="db-toolbar-spacer" />
           <button class="db-text-btn" disabled={draft().conditions.length >= MAX_CONDITIONS} onClick={addCondition}>
-            <Icon name="plus" size={12} />条件
+            <Icon name="plus" size={14} />条件
           </button>
         </div>
 
@@ -122,7 +122,7 @@ export const FilterSortPanel: Component<Props> = props => {
                     />
                   </Show>
                   <button class="db-icon-btn" aria-label="移除条件" title="移除" onClick={() => removeCondition(index())}>
-                    <Icon name="trash" size={12} />
+                    <Icon name="trash" size={14} />
                   </button>
                 </div>
               );
@@ -135,7 +135,7 @@ export const FilterSortPanel: Component<Props> = props => {
           <span class="db-filters-note">最多 4 列，跨页生效</span>
           <span class="db-toolbar-spacer" />
           <button class="db-text-btn" disabled={orders().length >= MAX_ORDERS} onClick={addOrder}>
-            <Icon name="plus" size={12} />排序列
+            <Icon name="plus" size={14} />排序列
           </button>
         </div>
 
@@ -162,7 +162,7 @@ export const FilterSortPanel: Component<Props> = props => {
                 </select>
                 <span class="db-cond-priority">第 {index() + 1} 优先</span>
                 <button class="db-icon-btn" aria-label="移除排序" title="移除" onClick={() => setOrders(current => current.filter((_item, i) => i !== index()))}>
-                  <Icon name="trash" size={12} />
+                  <Icon name="trash" size={14} />
                 </button>
               </div>
             )}</For>

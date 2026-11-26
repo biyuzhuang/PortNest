@@ -71,7 +71,7 @@
 .titlebar-crumb-host {
   color: var(--text-3);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-115);
   white-space: nowrap;
 }
 
@@ -209,7 +209,7 @@
   border: 0;
   border-radius: var(--r-md);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 500;
   line-height: 1.15;
   white-space: nowrap;
@@ -235,7 +235,7 @@
 
 .module-rail-btn small {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-weight: 500;
   line-height: 1.15;
   letter-spacing: 0;
@@ -357,7 +357,7 @@
   background: transparent;
   border: 0;
   border-radius: var(--r-sm) var(--r-sm) 0 0;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   cursor: pointer;
   user-select: none;
   transition: color var(--dur-hover) ease, background var(--dur-hover) ease;
@@ -389,7 +389,7 @@
   flex: 1;
   overflow: hidden;
   color: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -421,7 +421,7 @@
 .session-tab-tunnel {
   flex: 0 0 auto;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-variant-numeric: tabular-nums;
 }
 
@@ -435,7 +435,7 @@
   border-radius: var(--r-full);
   color: var(--text-3);
   background: var(--surface-sunken);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -443,7 +443,7 @@
 .session-tab-pin {
   flex: 0 0 auto;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-11);
   opacity: .9;
 }.session-tab-close { display: grid; flex: 0 0 18px; place-items: center; padding: 0; color: var(--text-3); background: transparent; border: 0; border-radius: var(--r-xs); cursor: pointer; opacity: 0; transition: opacity var(--dur-hover) ease, background var(--dur-hover) ease, color var(--dur-hover) ease; }
 
@@ -473,7 +473,7 @@
 
 .session-actions .session-status-dot {
   margin-right: 4px;
-}.session-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; color: var(--text-2); background: transparent; border: 0; border-radius: var(--r-sm); font: inherit; font-size: 11.5px; white-space: nowrap; cursor: pointer; transition: color var(--dur-hover) ease, background var(--dur-hover) ease; }
+}.session-action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; color: var(--text-2); background: transparent; border: 0; border-radius: var(--r-sm); font: inherit; font-size: var(--fs-115); white-space: nowrap; cursor: pointer; transition: color var(--dur-hover) ease, background var(--dur-hover) ease; }
 
 .session-action-btn:hover:not(:disabled) {
   color: var(--text-1);
@@ -500,7 +500,7 @@
   gap: 4px;
   padding: 0 4px;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 .session-encoding select {
@@ -555,7 +555,7 @@
 
 .app-statusbar-item.mono {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
 }
 
 .app-statusbar-spacer { flex: 1; }

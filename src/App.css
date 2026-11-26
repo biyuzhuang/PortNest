@@ -3,7 +3,8 @@
   --radius-sm: 6px;
   --radius-md: 9px;
   --radius-lg: 12px;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* 字体族以 styles/tokens.css 为唯一来源：这里再写一份会在层叠里盖掉它，
+     导致主窗口与数据库模块落到不同的 Segoe UI 变体上。 */
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --font-numeric: "Cascadia Code", "Segoe UI", monospace;
   --font-size-ui: 14px;
@@ -2104,3 +2105,22 @@ body { font-size: 15px; }
 .connection-item .conn-icon svg { width: 12px; height: 12px; stroke-width: 1.9; }
 .folder-header { min-height: 33px; height: 33px; }
 .connection-list { display: flex; flex-direction: column; gap: 1px; }
+
+/* ---------- 彩色图标（ColorIcon）容器适配 ----------
+   彩色图标自带品牌色底块与描边，容器里残留的淡色底/边框会让它变成
+   「块套块」，这里统一清掉；尺寸交给组件内联样式，不受旧的
+   `svg { width: 12px }` 之类规则影响。 */
+.asset-terminal-icon:has(> svg[data-cicon]),
+.asset-folder-icon:has(> svg[data-cicon]),
+.conn-icon:has(> svg[data-cicon]),
+.session-tab-terminal-icon:has(> svg[data-cicon]),
+.connect-modal-protocol-icon:has(> svg[data-cicon]),
+.connect-protocol-card-icon:has(> svg[data-cicon]),
+.db-tree-icon:has(> svg[data-cicon]),
+.db-nav-conn-icon:has(> svg[data-cicon]),
+.folder-icon:has(> svg[data-cicon]) {
+  color: inherit;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}

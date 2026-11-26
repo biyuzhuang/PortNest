@@ -1,16 +1,18 @@
 import { Component, For, Show as SolidShow, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { readFile } from "@tauri-apps/plugin-fs";
+import { readXlsx, rowsToCsv, writeXlsx, type SheetCell } from "../../utils/xlsx";
 import {
   api,
   isPostgresCompatibleProtocol,
   type ConnectionRecord,
   type DatabaseTableChangeSet,
   type DatabaseTableDefinition,
+  type DatabaseTableInfo,
 } from "../../utils/api";
 import { feedback } from "../../stores/feedbackStore";
 import { aiContextStore } from "../../stores/aiContextStore";
 import { Icon } from "../Icon";
-import "../../styles/database/index.css";
 import {
   databaseReadOnly,
   disposeWorkspaceState,
@@ -23,10 +25,12 @@ import {
   workspaceState,
 } from "../../stores/databaseWorkspaceStore";
 import { ObjectTreePane } from "./nav/ObjectTreePane";
+import { databaseSettings } from "../../stores/databaseSettings";
 import { WorkspaceTabBar } from "./WorkspaceTabBar";
 import { StatusBar } from "./StatusBar";
 import { InfoPane } from "./InfoPane";
 import { ObjectPanel } from "./objects/ObjectPanel";
+import { ObjectInfoPane } from "./objects/ObjectInfoPane";
 import { QueryPanel } from "./query/QueryPanel";
 import { TableWorkspace, type TableActions } from "./table/TableWorkspace";
 import type { CellEdit } from "./table/DataGrid";
@@ -37,12 +41,10 @@ import {
   formatBytes,
   isNullValue,
   parseCellValue,
-  rowToInsertSql,
-  rowToJson,
-  rowToUpdateSql,
   type ContextMenuState,
   type DdlView,
   type FilterSpec,
+  type ObjectScope,
   type QueryTab,
   type SortOrder,
   type TableSection,
@@ -65,8 +67,38 @@ export const DatabaseWorkspace: Component<Props> = props => {
   const [createDialog, setCreateDialog] = createSignal<CreateDialog | null>(null);
   const [importDialog, setImportDialog] = createSignal<ImportDialog | null>(null);
   const [infoOpen, setInfoOpen] = createSignal(false);
+  /** 单选的对象（`库:表`）：树和列表共用，只决定右侧「表信息」页内容，不代表已打开 */
+  const [selectedObject, setSelectedObject] = createSignal("");
+  const [objectInfoOpen, setObjectInfoOpen] = createSignal(false);
 
   const activeTab = createMemo(() => state.tabs().find(item => item.id === state.activeId()) ?? null);
+
+  /**
+   * 单击任何一张表：更新选中。信息栏是否跟着弹出由设置决定——
+   * 关掉「单击表展开信息栏」后只高亮选中，需要看详情时切到「表信息」视图。
+   */
+  const selectObject = (database: string, table: string) => {
+    if (!database || !table) { setSelectedObject(""); return; }
+    setSelectedObject(`${database}:${table}`);
+    if (databaseSettings().openInfoOnClick) setObjectInfoOpen(true);
+  };
+
+  /** 「表信息」整页视图里已经把属性铺开了，右侧信息页不再重复 */
+  const detailViewOpen = createMemo(() => {
+    const tab = activeTab();
+    return tab?.kind === "database" && tab.view === "detail";
+  });
+
+  /** 右侧信息页展示的表：选中项里解析出来的库名 + 元数据 */
+  const selectedTableInfo = createMemo(() => {
+    const key = selectedObject();
+    const separator = key.indexOf(":");
+    if (separator <= 0) return null;
+    const database = key.slice(0, separator);
+    const name = key.slice(separator + 1);
+    const info = (state.tables()[database] || []).find(item => item.name === name) ?? null;
+    return { database, info };
+  });
 
   const run = async <T,>(job: () => Promise<T>): Promise<T> => {
     state.beginRequest();
@@ -84,6 +116,32 @@ export const DatabaseWorkspace: Component<Props> = props => {
     state.setTables(previous => ({ ...previous, [database]: data }));
   };
 
+  /**
+   * 按「表信息缓存」策略决定展开数据库时是否重新拉表列表：
+   * - 连接时拉取：有缓存就直接用，只有首次展开才请求；
+   * - 展开时刷新：每次展开都请求，旧数据保留到新数据返回；
+   * - 不缓存：每次展开都请求，并先清空旧列表，避免展示过期结构。
+   */
+  const pendingTableLoads = new Set<string>();
+  const ensureTables = (database: string) => {
+    const mode = databaseSettings().tableCache;
+    const cached = state.tables()[database];
+    if (cached && mode === "on-connect") return Promise.resolve();
+    if (pendingTableLoads.has(database)) return Promise.resolve();
+    if (mode === "off" && cached) {
+      state.setTables(previous => {
+        const next = { ...previous };
+        delete next[database];
+        return next;
+      });
+    }
+    pendingTableLoads.add(database);
+    return refreshTables(database).catch(() => undefined).finally(() => pendingTableLoads.delete(database));
+  };
+
+  /** 自动展开只在首次拿到库列表时执行一次，后续刷新不打扰用户手动折叠 */
+  let autoExpandApplied = false;
+
   const refreshDatabases = async () => {
     const data = await run(() => api.databaseListDatabases(props.connection.id));
     state.setDatabases(data);
@@ -93,17 +151,30 @@ export const DatabaseWorkspace: Component<Props> = props => {
       if (!next.some(item => item.id === state.activeId())) state.setActiveId(next[0]?.id || "");
       return next;
     });
+    // 首次加载：按「打开连接时自动展开」把数据库展开到「表 / 视图」分组这一层，
+    // 只展开直接子项，不继续向下钻（与对象树的分级展开规则一致）。
+    if (!autoExpandApplied) {
+      autoExpandApplied = true;
+      if (databaseSettings().autoExpandOnConnect) data.forEach(item => state.expandDatabase(item.name));
+    }
     await Promise.all(Object.keys(state.expanded()).filter(name => names.has(name)).map(name => refreshTables(name).catch(() => undefined)));
   };
 
   createEffect(() => { if (props.visible && state.databases().length === 0) void refreshDatabases().catch(() => undefined); });
 
-  const activateDatabase = async (database: string) => {
-    state.openTab(makeDatabaseTab(database));
-    state.expandDatabase(database);
-    state.expandGroup(database, "tables");
-    state.expandGroup(database, "views");
-    if (!state.tables()[database]) await refreshTables(database).catch(() => undefined);
+  const activateDatabase = async (database: string, scope: ObjectScope = "all") => {
+    // 切到别的库时，底部信息卡里的表已经不在视野内，清掉避免张冠李戴
+    setSelectedObject(previous => previous.startsWith(`${database}:`) ? previous : "");
+    // 单击只切换右侧内容区：不展开任何节点，展开状态完全由箭头 / 双击控制
+    const id = `database:${database}`;
+    const existing = state.tabs().find(item => item.id === id) as Extract<WorkspaceTab, { kind: "database" }> | undefined;
+    if (existing) {
+      state.setActiveId(id);
+      if ((existing.objectScope ?? "all") !== scope) state.patchTab(id, { objectScope: scope });
+    } else {
+      state.openTab(makeDatabaseTab(database, scope));
+    }
+    if (!state.tables()[database]) await ensureTables(database);
   };
 
   /** 把列/索引还原成设计器需要的结构；外键在打开设计器时单独拉 */
@@ -151,6 +222,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
   };
 
   const loadTable = async (database: string, table: string, section: TableSection = "data") => {
+    setSelectedObject(`${database}:${table}`);
     const id = `table:${database}:${table}`;
     const existing = state.tabs().find(item => item.id === id) as TableTab | undefined;
     if (existing) {
@@ -159,16 +231,40 @@ export const DatabaseWorkspace: Component<Props> = props => {
       if (section !== existing.section) state.patchTab(id, { section });
       return;
     }
-    const [columns, indexes, rows] = await run(() => Promise.all([
+    const [columns, indexes, rows, foreignKeys] = await run(() => Promise.all([
       api.databaseListColumns(props.connection.id, database, table),
       api.databaseListIndexes(props.connection.id, database, table),
       api.databaseFetchRows(props.connection.id, database, table, 1, 100),
+      // 外键读失败不影响打开表：结构页的那一块会自己隐藏
+      api.databaseListForeignKeys(props.connection.id, database, table).catch(() => []),
     ]));
-    const tab = makeTableTab({ database, table, section, columns, indexes });
+    const tab = makeTableTab({ database, table, section, columns, indexes, foreignKeys });
     state.openTab({ ...tab, rows });
+    void countRows(tab);
     if (section === "design") {
       const opened = state.tabs().find(item => item.id === id) as TableTab | undefined;
       if (opened) void startDesign(opened);
+    }
+  };
+
+  /** 统计总行数：只在没有筛选条件时统计（带 WHERE 的全表 count 需要完整条件拼装，当前不猜） */
+  const countRows = async (tab: TableTab) => {
+    if (!databaseSettings().statTotalRows) return;
+    if (tab.filters.conditions.length > 0) {
+      state.patchTab(tab.id, { totalRows: null, totalLoading: false });
+      return;
+    }
+    const quote = (name: string) => props.connection.protocol === "mysql"
+      ? "`" + name.replace(/`/g, "``") + "`"
+      : '"' + name.replace(/"/g, '""') + '"';
+    state.patchTab(tab.id, { totalLoading: true });
+    try {
+      const result = await api.databaseExecuteSql(props.connection.id, `SELECT COUNT(*) AS total FROM ${quote(tab.database)}.${quote(tab.table)}`, tab.database);
+      const raw = result.rows[0]?.values?.[0];
+      const total = Number(raw);
+      state.patchTab(tab.id, { totalRows: Number.isFinite(total) ? total : null, totalLoading: false });
+    } catch {
+      state.patchTab(tab.id, { totalRows: null, totalLoading: false });
     }
   };
 
@@ -184,6 +280,8 @@ export const DatabaseWorkspace: Component<Props> = props => {
       ));
       if (isLatestSequence("page", props.connection.id, target.id, seq)) {
         state.patchTab(target.id, { rows, page, orders, filters, pageSize });
+        // 首页与刷新时重算；翻页沿用已有总数，避免每页都扫一次全表
+        if (page === 1 || target.totalRows === undefined) void countRows(target);
       }
     } catch { /* run() 已展示错误 */ }
   };
@@ -192,6 +290,40 @@ export const DatabaseWorkspace: Component<Props> = props => {
     const tab = state.tabs().find(item => item.id === id) as TableTab | undefined;
     if (tab) void loadPage(tab, 1);
   };
+
+  /**
+   * 设置页改动后让已经打开的表立刻跟上。
+   * 这几项不会自动响应：分页大小决定取多少行、总行数开关决定要不要统计、
+   * 缓存策略决定表列表从哪来。其余项（对齐、复合表头、冻结主键、字体）
+   * 都是按钮/样式层直接读 signal，不需要在这里处理。
+   */
+  let appliedSettings = { ...databaseSettings() };
+  createEffect(() => {
+    const current = databaseSettings();
+    const previous = appliedSettings;
+    appliedSettings = { ...current };
+    const pageSizeChanged = previous.pageSize !== current.pageSize;
+    const totalChanged = previous.statTotalRows !== current.statTotalRows;
+    const cacheChanged = previous.tableCache !== current.tableCache;
+    if (!pageSizeChanged && !totalChanged && !cacheChanged) return;
+
+    if (pageSizeChanged) {
+      for (const item of state.tabs()) {
+        if (item.kind !== "table") continue;
+        // 分页大小是存在标签上的，先同步再重新取数，否则还是按旧页长请求
+        state.patchTab(item.id, { pageSize: current.pageSize, page: 1 });
+        reloadTab(item.id);
+      }
+    }
+    if (totalChanged) {
+      for (const item of state.tabs()) {
+        if (item.kind !== "table") continue;
+        if (current.statTotalRows) void countRows(item as TableTab);
+        else state.patchTab(item.id, { totalRows: null });
+      }
+    }
+    if (cacheChanged) state.setTables(() => ({}));
+  });
 
   // ---------------------------------------------------------------------------
   // 标签
@@ -314,20 +446,6 @@ export const DatabaseWorkspace: Component<Props> = props => {
     download(`${name}.csv`, "\uFEFF" + content, "text/csv;charset=utf-8");
   };
 
-  const copyAs = async (tab: TableTab, kind: "insert" | "update" | "json") => {
-    if (!tab.rows) return;
-    const rows = selectedRows(tab);
-    const data = rows.length > 0 ? rows : tab.rows.rows.map(row => row.values);
-    if (data.length === 0) { feedback.info("当前没有可复制的记录"); return; }
-    const text = kind === "json"
-      ? data.map(row => rowToJson(tab.rows!.columns, row)).join("\n")
-      : kind === "insert"
-        ? data.map(row => rowToInsertSql(tab.table, tab.rows!.columns, row)).join("\n")
-        : data.map(row => rowToUpdateSql(tab.table, tab.rows!.columns, row, tab.primaryKey)).join("\n");
-    try { await navigator.clipboard.writeText(text); feedback.success(`已复制 ${data.length} 条 ${kind.toUpperCase()}`); }
-    catch (cause) { feedback.error("复制失败：" + String(cause)); }
-  };
-
   const tableActions = (tab: TableTab): TableActions => ({
     onSectionChange: section => {
       if (section === "design" && !tab.designer) { void startDesign(tab); return; }
@@ -388,7 +506,6 @@ export const DatabaseWorkspace: Component<Props> = props => {
       const text = [(tab.rows?.columns || []).join("\t"), ...rows.map(row => row.map(value => isNullValue(value) ? "NULL" : formatCell(value)).join("\t"))].join("\n");
       void navigator.clipboard.writeText(text).then(() => feedback.success("已复制选中记录"));
     },
-    onCopyAs: kind => void copyAs(tab, kind),
     onExportSelected: () => exportCsv(tab, selectedRows(tab), `${tab.table}-selected`),
     onExportPage: () => exportCsv(tab, (tab.rows?.rows || []).map(row => row.values), tab.table),
     onExportCsvFile: () => exportCsv(tab, (tab.rows?.rows || []).map(row => row.values), tab.table),
@@ -473,6 +590,8 @@ export const DatabaseWorkspace: Component<Props> = props => {
       setCreateDialog(null);
       await refreshDatabases();
       await activateDatabase(value.name.trim());
+      // 只展开新建库的直接子项（表 / 视图分组），不继续向下钻
+      state.expandDatabase(value.name.trim());
     } catch (cause) { setCreateDialog({ ...value, error: String(cause) }); }
   };
 
@@ -480,8 +599,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
     const path = await open({ multiple: false, directory: false, title: "选择 SQL 文件", filters: [{ name: "SQL", extensions: ["sql"] }] });
     if (typeof path === "string") setImportDialog({ path, database, continueOnError: false });
     state.setMenu(null);
-  };
-  const importSql = async () => {
+  };  const importSql = async () => {
     const value = importDialog();
     if (!value) return;
     const result = await run(() => api.databaseImportSql(props.connection.id, value.path, value.database || undefined, value.continueOnError));
@@ -499,8 +617,132 @@ export const DatabaseWorkspace: Component<Props> = props => {
     state.setMenu(null);
   };
 
-  const removeDatabase = async (database: string) => {
-    if (await feedback.prompt(`删除数据库将永久删除全部对象。请输入 ${database} 确认：`, "", "删除数据库") !== database) return;
+  /** 单表导出：结构 + 全部数据，后端只会写这一张表 */
+  const exportTableSql = async (database: string, table: string) => {
+    const stamp = new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19);
+    const path = await save({ title: `导出表 ${table}`, defaultPath: `${table}-${stamp}.sql`, filters: [{ name: "SQL", extensions: ["sql"] }] });
+    state.setMenu(null);
+    if (!path) return;
+    const result = await run(() => api.databaseExportSql(props.connection.id, path, database, table));
+    feedback.success(`导出完成：${result.tables} 张表，${result.rows} 行数据`);
+  };
+
+  /** 单表导入 CSV：不需要先打开表标签，直接按库.表写入 */
+  const importTableCsv = async (database: string, table: string) => {
+    state.setMenu(null);
+    const path = await open({ multiple: false, directory: false, title: `导入 CSV 到 ${table}`, filters: [{ name: "CSV", extensions: ["csv"] }] });
+    if (typeof path !== "string") return;
+    let content: string;
+    try {
+      const bytes = await readFile(path);
+      content = new TextDecoder("utf-8").decode(bytes);
+    } catch (cause) {
+      feedback.error(`读取 CSV 失败：${String(cause)}`);
+      return;
+    }
+    if (!await feedback.confirm(`将把 ${path.split(/[\\/]/).pop()} 导入 ${database}.${table}，事务内执行，任一行失败整体回滚。继续吗？`, "导入 CSV")) return;
+    try {
+      const count = await run(() => api.databaseImportCsv(props.connection.id, database, table, content));
+      feedback.success(`已导入 ${count} 行`);
+      await refreshTables(database);
+      const tab = state.tabs().find(item => item.kind === "table" && item.database === database && item.table === table) as TableTab | undefined;
+      if (tab) await loadPage(tab, 1);
+    } catch { /* run() 已展示错误 */ }
+  };
+
+  /** 整表取数：CSV / Excel 导出要的是「整张表」，按页拉取直到取空或触顶 */
+  const fetchAllRows = async (database: string, table: string, limit = 100_000) => {
+    const pageSize = 1000;
+    const values: unknown[][] = [];
+    let columns: string[] = [];
+    for (let page = 1; values.length < limit; page += 1) {
+      const result = await api.databaseFetchRows(props.connection.id, database, table, page, pageSize);
+      if (page === 1) columns = result.columns;
+      if (result.rows.length === 0) break;
+      for (const row of result.rows) values.push(row.values);
+      if (result.rows.length < pageSize) break;
+    }
+    return { columns, values };
+  };
+
+  /** 导出 CSV：整表数据，带 BOM 便于 Excel 直接双击打开 */
+  const exportTableCsv = async (database: string, table: string) => {
+    state.setMenu(null);
+    try {
+      const { columns, values } = await fetchAllRows(database, table);
+      if (values.length === 0) { feedback.info("这张表没有数据"); return; }
+      const content = [columns.map(csvCell).join(","), ...values.map(row => row.map(csvCell).join(","))].join("\r\n");
+      download(`${table}.csv`, "\uFEFF" + content, "text/csv;charset=utf-8");
+      feedback.success(`已导出 ${values.length} 行`);
+    } catch (cause) {
+      feedback.error(`导出 CSV 失败：${String(cause)}`);
+    }
+  };
+
+  /** 导出 Excel：首行列名，其余按值类型写入（数字仍是数字，不变成文本） */
+  const exportTableExcel = async (database: string, table: string) => {
+    state.setMenu(null);
+    try {
+      const { columns, values } = await fetchAllRows(database, table);
+      if (columns.length === 0) { feedback.info("这张表没有可导出的列"); return; }
+      const sheet: SheetCell[][] = [columns, ...values.map(row => row.map(cell => toSheetCell(cell)))];
+      downloadBytes(
+        `${table}.xlsx`,
+        writeXlsx(table, sheet),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      feedback.success(`已导出 ${values.length} 行`);
+    } catch (cause) {
+      feedback.error(`导出 Excel 失败：${String(cause)}`);
+    }
+  };
+
+  /**
+   * 导入 Excel：解析第一张工作表 → 转成 CSV → 复用已有的 CSV 导入事务。
+   * 这样「表头必须是已存在的列」「整表回滚」这些约束和 CSV 导入完全一致。
+   */
+  const importTableExcel = async (database: string, table: string) => {
+    state.setMenu(null);
+    const path = await open({
+      multiple: false,
+      directory: false,
+      title: `导入 Excel 到 ${table}`,
+      filters: [{ name: "Excel", extensions: ["xlsx"] }],
+    });
+    if (typeof path !== "string") return;
+    let rows: string[][];
+    try {
+      rows = await readXlsx(await readFile(path));
+    } catch (cause) {
+      feedback.error(`读取 Excel 失败：${String(cause)}`);
+      return;
+    }
+    if (rows.length < 2) { feedback.info("表格里没有数据行：首行必须是列名，其后是数据"); return; }
+    const fileName = path.split(/[\\/]/).pop() ?? "Excel";
+    if (!await feedback.confirm(`将把 ${fileName} 的第一张工作表（${rows.length - 1} 行）导入 ${database}.${table}，首行按列名匹配，任一行失败整体回滚。继续吗？`, "导入 Excel")) return;
+    try {
+      const count = await run(() => api.databaseImportCsv(props.connection.id, database, table, rowsToCsv(rows)));
+      feedback.success(`已导入 ${count} 行`);
+      await refreshTables(database);
+      const tab = state.tabs().find(item => item.kind === "table" && item.database === database && item.table === table) as TableTab | undefined;
+      if (tab) await loadPage(tab, 1);
+    } catch { /* run() 已展示错误 */ }
+  };
+
+  /** 右键菜单统一入口：kind 决定弹哪种文件对话框 */
+  const importTableFile = (database: string, table: string, kind: "sql" | "csv" | "excel") => {
+    if (kind === "sql") void chooseImport(database);
+    else if (kind === "csv") void importTableCsv(database, table);
+    else void importTableExcel(database, table);
+  };
+
+  const exportTableFile = (database: string, table: string, kind: "sql" | "csv" | "excel") => {
+    if (kind === "sql") void exportTableSql(database, table);
+    else if (kind === "csv") void exportTableCsv(database, table);
+    else void exportTableExcel(database, table);
+  };
+
+  const removeDatabase = async (database: string) => {    if (await feedback.prompt(`删除数据库将永久删除全部对象。请输入 ${database} 确认：`, "", "删除数据库") !== database) return;
     await run(() => api.databaseDropDatabase(props.connection.id, database));
     state.setTabs(items => {
       const next = items.filter(item => item.database !== database);
@@ -549,7 +791,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
     const startedAt = performance.now();
     state.setRunningTabId(tab.id);
     try {
-      const batch = await run(() => api.databaseExecuteSqlBatch(props.connection.id, sql, tab.database));
+      const batch = await run(() => api.databaseExecuteSqlBatch(props.connection.id, sql, tab.database, databaseSettings().stopOnError));
       const outcomes = batch.statements;
       if (isLatestSequence("query", props.connection.id, tab.id, seq)) {
         // 优先展示第一条有结果集的语句；全是 DML 时退回最后一条
@@ -673,12 +915,19 @@ export const DatabaseWorkspace: Component<Props> = props => {
     return tab.kind === "table" ? `${tab.database}:${tab.table}` : `database:${tab.database}`;
   });
 
+  /** 内容区当前对应的展示范围：数据库节点为 all，「表 / 视图」分组对应各自范围 */
+  const activeScope = createMemo<ObjectScope>(() => {
+    const tab = activeTab();
+    return tab?.kind === "database" ? (tab.objectScope ?? "all") : "all";
+  });
+
   const objectText = createMemo(() => {
     const tab = activeTab();
     if (!tab) return "";
     if (tab.kind === "table") return `${tab.table} · ${tab.rows?.rows.length ?? 0} 行`;
     if (tab.kind === "query") return `${tab.title} · ${tab.result?.rows.length ?? 0} 行`;
-    return `${tab.title} · ${(state.tables()[tab.database] || []).filter(item => item.kind === "BASE TABLE").length} 张表`;
+    // 数据库级标签：库名已经在左边单独显示一格，这里只补给对象数量，避免「sakila sakila」重复
+    return `${(state.tables()[tab.database] || []).filter(item => item.kind === "BASE TABLE").length} 张表`;
   });
 
   return (
@@ -688,10 +937,20 @@ export const DatabaseWorkspace: Component<Props> = props => {
     }}>
       <ObjectTreePane
         state={state}
+        connectionTitle={props.connection.name || databaseLabel()}
+        connectionMeta={`${databaseLabel()} · ${props.connection.host}:${props.connection.port}`}
         databaseLabel={databaseLabel()}
         activeObject={activeObject()}
-        onActivateDatabase={database => void activateDatabase(database)}
+        activeScope={activeScope()}
+        selectedObject={selectedObject()}
+        onSelectScope={(database, scope) => void activateDatabase(database, scope)}
+        onSelectObject={key => {
+          const separator = key.indexOf(":");
+          if (separator > 0) selectObject(key.slice(0, separator), key.slice(separator + 1));
+          else setSelectedObject("");
+        }}
         onOpenTable={(database, table) => void loadTable(database, table)}
+        onEnsureTables={database => void ensureTables(database)}
         onCreateDatabase={() => void showCreateDatabase()}
         onRefresh={() => void refreshDatabases()}
         onContextMenu={menu => state.setMenu(menu)}
@@ -704,6 +963,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
       }}>
         <WorkspaceTabBar
           tabs={state.tabs()}
+          connectionName={props.connection.name}
           activeId={state.activeId()}
           onSelect={id => state.setActiveId(id)}
           onClose={id => void closeTab(id)}
@@ -712,9 +972,9 @@ export const DatabaseWorkspace: Component<Props> = props => {
 
         <Show when={state.error()}>
           <div class="db-error">
-            <Icon name="alert" size={13} />
+            <Icon name="alert" size={14} />
             <span>{state.error()}</span>
-            <button class="db-icon-btn" aria-label="关闭错误提示" onClick={() => state.setError("")}><Icon name="close" size={12} /></button>
+            <button class="db-icon-btn" aria-label="关闭错误提示" onClick={() => state.setError("")}><Icon name="close" size={14} /></button>
           </div>
         </Show>
 
@@ -722,10 +982,10 @@ export const DatabaseWorkspace: Component<Props> = props => {
           <div class="db-content">
             <Show when={!activeTab()}>
               <div class="db-empty">
-                <span class="db-empty-icon"><Icon name="database" size={22} /></span>
+                <span class="db-empty-icon"><Icon name="database" size={24} /></span>
                 <h3>选择数据库、表或新建查询</h3>
                 <p>对象会在这里以可关闭的标签打开；双击对象树里的表直接进入数据页。</p>
-                <button class="db-btn is-primary" onClick={() => newQuery()}><Icon name="query" size={13} />新建 SQL 查询</button>
+                <button class="db-btn is-primary" onClick={() => newQuery()}><Icon name="query" size={14} />新建 SQL 查询</button>
               </div>
             </Show>
 
@@ -739,7 +999,12 @@ export const DatabaseWorkspace: Component<Props> = props => {
                   tab={current()}
                   tables={state.tables()[current().database] || []}
                   viewCount={(state.tables()[current().database] || []).filter(item => item.kind === "VIEW").length}
+                  selectedTable={selectedObject().startsWith(`${current().database}:`) ? selectedObject().slice(current().database.length + 1) : null}
+                  onSelectTable={(database, table) => selectObject(database, table)}
                   onOpenTable={(database, table) => void loadTable(database, table)}
+                  onDesignTable={(database, table) => void loadTable(database, table, "design")}
+                  onDropTable={(database, table) => void tableAction("drop", database, table)}
+                  onImportTable={(database, table) => void importTableCsv(database, table)}
                   onNewTable={database => newTable(database)}
                   onNewQuery={database => newQuery(database)}
                   onRefresh={database => void refreshTables(database)}
@@ -785,6 +1050,16 @@ export const DatabaseWorkspace: Component<Props> = props => {
             </Show>
           </div>
 
+          <Show when={objectInfoOpen() && !detailViewOpen() && selectedTableInfo()}>
+            {(selection: () => { database: string; info: DatabaseTableInfo }) => (
+              <ObjectInfoPane
+                database={selection().database}
+                table={selection().info}
+                onClose={() => setObjectInfoOpen(false)}
+              />
+            )}
+          </Show>
+
           <Show when={infoOpen()}>
             <InfoPane
               tab={activeTab()}
@@ -812,7 +1087,7 @@ export const DatabaseWorkspace: Component<Props> = props => {
         <aside class="db-drawer" role="dialog" aria-label="建表语句">
           <header>
             <div><strong>建表语句</strong><small>{ddlView()!.database} / {ddlView()!.table}</small></div>
-            <button class="db-icon-btn" aria-label="关闭" title="关闭" onClick={() => setDdlView(null)}><Icon name="close" size={14} /></button>
+            <button class="db-icon-btn" aria-label="关闭" title="关闭" onClick={() => setDdlView(null)}><Icon name="close" size={16} /></button>
           </header>
           <pre class="db-ddl">{ddlView()!.sql}</pre>
           <footer>
@@ -838,6 +1113,10 @@ export const DatabaseWorkspace: Component<Props> = props => {
             openDatabase: database => void activateDatabase(database),
             openTable: (database, table) => void loadTable(database, table),
             designTable: (database, table) => void loadTable(database, table, "design"),
+            importTableCsv: (database, table) => void importTableCsv(database, table),
+            importTableFile,
+            exportTableFile,
+            exportTableSql: (database, table) => void exportTableSql(database, table),
             copy: text => void navigator.clipboard.writeText(text),
             removeDatabase: database => void removeDatabase(database),
             tableAction: (action, database, table) => void tableAction(action, database, table),
@@ -933,6 +1212,25 @@ const download = (name: string, content: string, type: string) => {
   URL.revokeObjectURL(url);
 };
 
+/** 二进制版本（xlsx），Blob 直接吃 Uint8Array */
+const downloadBytes = (name: string, bytes: Uint8Array, type: string) => {
+  const url = URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+
+/** 数据库值 → 表格单元格：数字保留数字类型，对象转 JSON，NULL 留空 */
+const toSheetCell = (value: unknown): SheetCell => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
+
 type MenuActions = {
   createDatabase: () => void;
   newQuery: (database?: string) => void;
@@ -944,6 +1242,11 @@ type MenuActions = {
   openDatabase: (database: string) => void;
   openTable: (database: string, table: string) => void;
   designTable: (database: string, table: string) => void;
+  importTableCsv: (database: string, table: string) => void;
+  exportTableSql: (database: string, table: string) => void;
+  /** 右键菜单的「导入 / 导出」子菜单统一入口，kind 决定文件类型 */
+  importTableFile: (database: string, table: string, kind: "sql" | "csv" | "excel") => void;
+  exportTableFile: (database: string, table: string, kind: "sql" | "csv" | "excel") => void;
   copy: (text: string) => void;
   removeDatabase: (database: string) => void;
   tableAction: (action: "truncate" | "drop" | "rename" | "clone", database: string, table: string) => void;
@@ -951,40 +1254,122 @@ type MenuActions = {
   closeConnection: () => void;
 };
 
-const ContextMenu: Component<{ menu: ContextMenuState; databaseLabel: string; onClose: () => void; actions: MenuActions }> = props => (
-  <div class="db-context" style={{ left: `${props.menu.x}px`, top: `${props.menu.y}px` }} onClick={event => event.stopPropagation()} role="menu">
-    <Show when={props.menu.kind === "workspace"}>
-      <button onClick={() => props.actions.createDatabase()}>新建数据库</button>
-      <button onClick={() => { props.actions.newQuery(); props.onClose(); }}>新建查询</button>
-      <button onClick={() => props.actions.importSql()}>导入 SQL</button>
-      <button onClick={() => { props.actions.refreshDatabases(); props.onClose(); }}>刷新数据库</button>
-      <hr />
-      <button class="is-danger" onClick={() => { props.onClose(); props.actions.closeConnection(); }}>关闭 {props.databaseLabel} 连接</button>
-    </Show>
-    <Show when={props.menu.kind === "database"}>
-      <button onClick={() => { props.actions.openDatabase(props.menu.database!); props.onClose(); }}>打开数据库</button>
-      <button onClick={() => { props.actions.newTable(props.menu.database!); props.onClose(); }}>新建表</button>
-      <button onClick={() => { props.actions.newQuery(props.menu.database!); props.onClose(); }}>新建查询</button>
-      <button onClick={() => props.actions.importSql(props.menu.database)}>导入 SQL</button>
-      <button onClick={() => props.actions.exportSql(props.menu.database!)}>导出 SQL</button>
-      <button onClick={() => { props.actions.refreshTables(props.menu.database!); props.onClose(); }}>刷新</button>
-      <button onClick={() => props.actions.copy(props.menu.database!)}>复制名称</button>
-      <hr />
-      <button class="is-danger" onClick={() => props.actions.removeDatabase(props.menu.database!)}>删除数据库</button>
-    </Show>
-    <Show when={props.menu.kind === "table"}>
-      <button onClick={() => { props.actions.openTable(props.menu.database!, props.menu.table!); props.onClose(); }}>打开数据</button>
-      <button onClick={() => { props.actions.designTable(props.menu.database!, props.menu.table!); props.onClose(); }}>设计表</button>
-      <button onClick={() => props.actions.tableAction("clone", props.menu.database!, props.menu.table!)}>新建相似表</button>
-      <button onClick={() => props.actions.tableAction("rename", props.menu.database!, props.menu.table!)}>重命名</button>
-      <button onClick={() => props.actions.copyCreate(props.menu.database!, props.menu.table!)}>复制建表 SQL</button>
-      <button onClick={() => props.actions.copy(props.menu.table!)}>复制名称</button>
-      <hr />
-      <button class="is-danger" onClick={() => props.actions.tableAction("truncate", props.menu.database!, props.menu.table!)}>清空表</button>
-      <button class="is-danger" onClick={() => props.actions.tableAction("drop", props.menu.database!, props.menu.table!)}>删除表</button>
-    </Show>
-  </div>
-);
+const ContextMenu: Component<{ menu: ContextMenuState; databaseLabel: string; onClose: () => void; actions: MenuActions }> = props => {
+  const [position, setPosition] = createSignal({ left: props.menu.x, top: props.menu.y });
+  const [flipSubmenu, setFlipSubmenu] = createSignal(false);
+  let element: HTMLDivElement | undefined;
+
+  // 先按光标位置渲染，再按实际尺寸校正一次：
+  // 右边放不下就翻到光标左侧，下面放不下就整体上移，保证整块菜单都在视口内。
+  onMount(() => {
+    const rect = element?.getBoundingClientRect();
+    if (!rect) return;
+    const margin = 8;
+    let left = props.menu.x;
+    let top = props.menu.y;
+    if (left + rect.width > window.innerWidth - margin) left = Math.max(margin, props.menu.x - rect.width);
+    if (top + rect.height > window.innerHeight - margin) top = Math.max(margin, window.innerHeight - rect.height - margin);
+    setPosition({ left, top });
+    // 二级菜单默认向右展开，右侧空间不足时改成向左
+    setFlipSubmenu(left + rect.width + 200 > window.innerWidth);
+  });
+
+  // 左键点在菜单之外（任意区域，包括资产树、工具栏、标签栏之外的空白）都关闭；
+  // 右键按下不处理——那是「换个目标重新开菜单」，交给 contextmenu 事件自己覆盖。
+  onMount(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      if (element?.contains(event.target as Node)) return;
+      props.onClose();
+    };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); props.onClose(); } };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+    });
+  });
+
+  const run = (action: () => void) => {
+    props.onClose();
+    action();
+  };
+
+  return (
+    <div
+      ref={element}
+      class={`db-context ${flipSubmenu() ? "is-flip-submenu" : ""}`}
+      style={{ left: `${position().left}px`, top: `${position().top}px` }}
+      onClick={event => event.stopPropagation()}
+      role="menu"
+    >
+      <Show when={props.menu.kind === "workspace"}>
+        <button onClick={() => run(() => props.actions.createDatabase())}>新建数据库</button>
+        <button onClick={() => run(() => props.actions.newQuery())}>新建查询</button>
+        <button onClick={() => run(() => props.actions.importSql())}>导入 SQL</button>
+        <button onClick={() => run(() => props.actions.refreshDatabases())}>刷新数据库</button>
+        <hr />
+        <button class="is-danger" onClick={() => run(() => props.actions.closeConnection())}>关闭 {props.databaseLabel} 连接</button>
+      </Show>
+
+      <Show when={props.menu.kind === "database"}>
+        <button onClick={() => run(() => props.actions.openDatabase(props.menu.database!))}>打开数据库</button>
+        <button onClick={() => run(() => props.actions.newTable(props.menu.database!))}>新建表</button>
+        <button onClick={() => run(() => props.actions.newQuery(props.menu.database!))}>新建查询</button>
+        <hr />
+        <button onClick={() => run(() => props.actions.importSql(props.menu.database))}>导入 SQL…</button>
+        <button onClick={() => run(() => props.actions.exportSql(props.menu.database!))}>导出整个库（SQL）…</button>
+        <hr />
+        <button onClick={() => run(() => props.actions.refreshTables(props.menu.database!))}>刷新</button>
+        <button onClick={() => run(() => props.actions.copy(props.menu.database!))}>复制名称</button>
+        <hr />
+        <button class="is-danger" onClick={() => run(() => props.actions.removeDatabase(props.menu.database!))}>删除数据库</button>
+      </Show>
+
+      <Show when={props.menu.kind === "table"}>
+        <button onClick={() => run(() => props.actions.openTable(props.menu.database!, props.menu.table!))}>打开数据</button>
+        <button onClick={() => run(() => props.actions.designTable(props.menu.database!, props.menu.table!))}>设计表</button>
+        <hr />
+
+        {/* 导入：三种格式，子菜单里选，避免主菜单一行放三个「导入 …」 */}
+        <div class="db-context-sub">
+          <button class="has-sub" type="button">
+            <span>导入</span>
+            <Icon name="chevronRight" size={12} class="db-sub-caret" />
+          </button>
+          <div class="db-submenu" role="menu">
+            <button onClick={() => run(() => props.actions.importTableFile(props.menu.database!, props.menu.table!, "sql"))}>SQL 文件…</button>
+            <button onClick={() => run(() => props.actions.importTableFile(props.menu.database!, props.menu.table!, "csv"))}>CSV 文件…</button>
+            <button onClick={() => run(() => props.actions.importTableFile(props.menu.database!, props.menu.table!, "excel"))}>Excel 文件…</button>
+          </div>
+        </div>
+
+        {/* 导出：SQL 走服务端；CSV / Excel 走前端整表取数 */}
+        <div class="db-context-sub">
+          <button class="has-sub" type="button">
+            <span>导出</span>
+            <Icon name="chevronRight" size={12} class="db-sub-caret" />
+          </button>
+          <div class="db-submenu" role="menu">
+            <button onClick={() => run(() => props.actions.exportTableFile(props.menu.database!, props.menu.table!, "sql"))}>SQL 脚本…</button>
+            <button onClick={() => run(() => props.actions.exportTableFile(props.menu.database!, props.menu.table!, "csv"))}>CSV 文件…</button>
+            <button onClick={() => run(() => props.actions.exportTableFile(props.menu.database!, props.menu.table!, "excel"))}>Excel 文件…</button>
+          </div>
+        </div>
+
+        <hr />
+        <button onClick={() => run(() => props.actions.tableAction("clone", props.menu.database!, props.menu.table!))}>新建相似表</button>
+        <button onClick={() => run(() => props.actions.tableAction("rename", props.menu.database!, props.menu.table!))}>重命名</button>
+        <button onClick={() => run(() => props.actions.copyCreate(props.menu.database!, props.menu.table!))}>复制建表 SQL</button>
+        <button onClick={() => run(() => props.actions.copy(props.menu.table!))}>复制名称</button>
+        <hr />
+        <button class="is-danger" onClick={() => run(() => props.actions.tableAction("truncate", props.menu.database!, props.menu.table!))}>清空表</button>
+        <button class="is-danger" onClick={() => run(() => props.actions.tableAction("drop", props.menu.database!, props.menu.table!))}>删除表</button>
+      </Show>
+    </div>
+  );
+};
 
 // 兼容旧引用：部分面板仍在用这几个纯函数
 export { cellText, formatBytes };

@@ -20,6 +20,7 @@ import { TextContextMenu } from "./components/TextContextMenu";
 import { AIAssistant, type AssistantMode } from "./components/AIAssistant";
 import { DatabaseWorkspace } from "./components/DatabaseWorkspace";
 import { ProtocolIcon } from "./components/ProtocolIcon";
+import { ColorIcon } from "./components/ColorIcon";
 import { Icon } from "./components/Icon";
 import { BrandMark } from "./components/BrandMark";
 import { openSettingsWindow } from "./utils/settingsWindow";
@@ -264,8 +265,9 @@ const App: Component = () => {
     }
   };
   const isBusyStatus = (status: SessionTab["status"]) => status === "connecting" || status === "reconnecting";
-  const sessionStateIcon = (status: SessionTab["status"]) =>
-    isBusyStatus(status) ? "refresh" : status === "error" ? "alert" : "power";
+  // 状态用彩色图标：连接中琥珀、失败红、其余绿
+  const sessionStateColorIcon = (status: SessionTab["status"]): "loading" | "alert" | "power" =>
+    isBusyStatus(status) ? "loading" : status === "error" ? "alert" : "power";
 
   // 服务器概览开合会改变终端区宽度。ResizeObserver 的防抖偶发漏掉最终一次
   // 布局，导致 xterm 画布与容器不一致（终端显示异常）。这里在布局稳定后
@@ -516,8 +518,34 @@ const App: Component = () => {
     });
   };
 
+  /**
+   * 数据库连接是「一个连接一个工作区」：同一 connection 已有会话时，直接切过去，
+   * 不新建标签、也不重复调用 databaseConnect。仅当会话尚未连上（恢复态/失败态）时才补一次连接。
+   */
+  const reuseDatabaseSession = async (conn: ConnectionRecord) => {
+    const existing = sessions().find(session => session.connection.id === conn.id && !session.transient);
+    if (!existing) return false;
+    setActiveSessionId(existing.id);
+    setAssetListActive(false);
+    if (existing.status === "connected" || existing.status === "connecting") return true;
+    sessionStore.update(existing.id, { status: "connecting", error: undefined, viewMode: "database" });
+    dbStatusStore.markConnecting(conn.id);
+    try {
+      await api.databaseConnect(conn.id);
+      sessionStore.update(existing.id, { status: "connected", error: undefined, viewMode: "database" });
+      void dbStatusStore.refresh(conn.id);
+    } catch (error) {
+      dbStatusStore.markFailed(conn.id, String(error));
+      sessionStore.update(existing.id, { status: "error", error: String(error), viewMode: "database" });
+    }
+    return true;
+  };
+
   const handleConnect = async (conn: ConnectionRecord) => {
     console.log("[handleConnect] Starting connection:", conn.name, conn.id, "builtin:", isBuiltinConnection(conn.id));
+
+    // 数据库连接重复打开：直接激活已有工作区标签，不新建连接
+    if (isDatabaseProtocol(conn.protocol) && await reuseDatabaseSession(conn)) return;
 
     if (conn.protocol === "ssh") {
       const sessionId = createSession(conn);
@@ -831,6 +859,12 @@ const App: Component = () => {
   const handleDuplicateSession = async (sessionId: string) => {
     const session = sessions().find(s => s.id === sessionId);
     if (!session || !session.connection?.id) return;
+    // 数据库工作区不允许同一连接开多个副本：重复操作只切回原标签
+    if (isDatabaseProtocol(session.connection.protocol)) {
+      handleSwitchSession(sessionId);
+      setTabContextMenu(null);
+      return;
+    }
 
     const newSession = sessionStore.create(
       { ...session.connection },
@@ -1054,7 +1088,7 @@ const App: Component = () => {
         <span class="titlebar-divider" />
         <Show when={activeSession()}>
           <span class="titlebar-crumb" data-tauri-drag-region>
-            <ProtocolIcon kind={activeSession()!.connection.protocol} />
+            <ProtocolIcon kind={activeSession()!.connection.protocol} size={16} />
             <b>{activeSession()!.displayName || activeSession()!.connection.name}</b>
             <span class="titlebar-crumb-host">
               {activeSession()!.connection.protocol === "local"
@@ -1195,7 +1229,7 @@ const App: Component = () => {
                       <Show when={session.pinned}>
                         <span class="session-tab-pin" title="已固定"><Icon name="pin" size={13} /></span>
                       </Show>
-                      <span class="session-tab-terminal-icon"><ProtocolIcon kind={session.connection.protocol} /></span>
+                      <span class="session-tab-terminal-icon"><ProtocolIcon kind={session.connection.protocol} size={15} /></span>
                       <span class={`session-tab-status status-${session.status}`} title={session.status} />
                       <span class="session-tab-name">{session.displayName || session.connection.name}</span>
                       <Show when={runningTunnelCount(session.connection.id) > 0}>
@@ -1369,7 +1403,7 @@ const App: Component = () => {
                     <Show when={(isDatabaseProtocol(session.connection.protocol) ? session.status !== "connected" : !session.shellId || session.status !== "connected")}>
                       <div class={`session-state-overlay state-${session.status}`}>
                         <span class={`session-state-icon status-${session.status}`}>
-                          <Icon name={sessionStateIcon(session.status)} size={20} class={isBusyStatus(session.status) ? "status-spin" : undefined} />
+                          <ColorIcon name={sessionStateColorIcon(session.status)} size={22} class={isBusyStatus(session.status) ? "status-spin" : undefined} />
                         </span>
                         <h3>{session.status === "restored" ? "会话已从上次工作区恢复"
                           : session.status === "connecting" ? (session.connection.protocol === "local" ? "正在打开本地终端" : "正在建立 SSH 连接")
@@ -1452,7 +1486,7 @@ const App: Component = () => {
             }}
           >
             <header class="folder-create-header">
-              <span class="folder-create-icon"><Icon name="folder" size={22} /></span>
+              <span class="folder-create-icon"><ColorIcon name="folder" size={26} /></span>
               <div class="folder-create-heading">
                 <span>{newFolderParentId() ? "子文件夹" : "资产组织"}</span>
                 <h3 id="folder-create-title">{newFolderParentId() ? "新建子文件夹" : "新建文件夹"}</h3>
@@ -1465,7 +1499,7 @@ const App: Component = () => {
 
             <div class="folder-create-body">
               <div class="folder-location-card">
-                <span class="folder-location-icon"><Icon name="folderOpen" size={16} /></span>
+                <span class="folder-location-icon"><ColorIcon name="folderOpen" size={17} /></span>
                 <div>
                   <small>创建位置</small>
                   <select
@@ -1487,7 +1521,7 @@ const App: Component = () => {
               <label class={`folder-name-field ${newFolderTouched() && folderNameError() ? "invalid" : ""}`}>
                 <span>文件夹名称</span>
                 <div class="folder-name-input">
-                  <Icon name="folder" size={16} />
+                  <ColorIcon name="folder" size={16} />
                   <input
                     class="field-flush"
                     autofocus

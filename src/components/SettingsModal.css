@@ -27,7 +27,7 @@
   border: 1px solid transparent;
   border-radius: 4px;
   outline: 0;
-  font: 12px "Cascadia Code", Consolas, monospace;
+  font-size: var(--fs-12);
 }
 .settings-inline-button { border: 1px solid var(--line); cursor: pointer; }
 .settings-inline-button:disabled { color: var(--text-3); cursor: wait; }
@@ -53,7 +53,7 @@
 
 /* Standalone settings window */
 
-.settings-workspace { color: var(--text-primary); background: var(--bg-primary); font-size: 13px; }
+.settings-workspace { color: var(--text-primary); background: var(--bg-primary); font-size: var(--fs-13); }
 .settings-topbar { border-color: var(--border); cursor: default; }
 .settings-topbar strong { color: var(--text-primary); letter-spacing: -.01em; }
 .settings-topbar > span { color: var(--text-secondary); }
@@ -242,9 +242,9 @@
 .version-summary span {
   display: block;
 }
-.version-summary strong { color: var(--text-primary); font-size: 18px; font-weight: 700; }
-.version-summary span { margin-top: 2px; color: var(--accent); font-family: var(--font-numeric); font-size: 12px; }
-.version-summary p { margin: 6px 0 0; color: var(--text-muted); font-size: 12px; }
+.version-summary strong { color: var(--text-primary); font-size: var(--fs-18); font-weight: 700; }
+.version-summary span { margin-top: 2px; color: var(--accent); font-family: var(--font-numeric); font-size: var(--fs-12); }
+.version-summary p { margin: 6px 0 0; color: var(--text-muted); font-size: var(--fs-12); }
 .version-update-button {
   display: flex;
   min-width: 138px;
@@ -272,7 +272,7 @@
   background: var(--bg-secondary);
 }
 .version-details span { color: var(--text-muted); }
-.version-details strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }
+.version-details strong { color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
 
 @media (max-width:700px) {
   .version-card { grid-template-columns: 48px 1fr; }
@@ -292,7 +292,7 @@
   border: 1px solid var(--line-control);
   border-radius: 4px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .templates-search:focus { outline: 2px solid var(--focus-ring); border-color: var(--accent); }
 .templates-list { display: flex; flex-direction: column; }
@@ -310,7 +310,7 @@
 }
 .templates-editor { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .templates-editor label { display: flex; flex-direction: column; gap: 4px; }
-.templates-editor input { border: 1px solid var(--line-control); border-radius: 4px; font: inherit; font-size: 13px; }
+.templates-editor input { border: 1px solid var(--line-control); border-radius: 4px; font: inherit; font-size: var(--fs-13); }
 .templates-editor textarea { font: 13px/1.5 "Cascadia Code", Consolas, monospace; resize: vertical; }
 .templates-editor input:focus,
 .templates-editor textarea:focus {
@@ -409,7 +409,7 @@
   --settings-muted: var(--text-muted);
   color: var(--text-primary);
   background: var(--settings-shell);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .settings-topbar {
   display: grid;
@@ -427,10 +427,10 @@
   align-items: center;
   gap: 7px;
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   font-weight: 750;
 }
-.settings-topbar > strong { color: var(--text-primary); font-size: 12.5px; font-weight: 600; }
+.settings-topbar > strong { color: var(--text-primary); font-size: var(--fs-125); font-weight: 600; }
 .settings-window-actions {
   display: flex;
   justify-self: end;
@@ -469,6 +469,20 @@
 .settings-page-heading p { margin: 0; color: var(--settings-muted); }
 .settings-page h3 { margin: 18px 0 7px; font-weight: 600; letter-spacing: .01em; }
 .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+/* 分组标题：页内层级靠「小标题 + 上分隔线」表达，避免一堆卡片堆在一起分不清 */
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--settings-line);
+  color: var(--text-primary);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.settings-section-title:first-of-type { margin-top: 12px; padding-top: 0; border-top: 0; }
 .settings-grid-single { grid-template-columns: 1fr; }
 .settings-card { overflow: hidden; }
 .settings-card-title { padding: 9px 10px 8px; }
@@ -544,7 +558,7 @@
   border-radius: 7px;
   color: var(--settings-muted);
   background: var(--settings-panel);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .settings-unavailable-note > span { flex: 1; }
 .settings-unavailable-badge {
@@ -555,7 +569,7 @@
   border-radius: 999px;
   color: var(--settings-muted);
   background: color-mix(in srgb, var(--text-muted) 6%, transparent);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -605,7 +619,7 @@
   gap: 5px;
   padding: 0 7px;
   color: var(--settings-muted);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   white-space: nowrap;
 }
 .settings-disabled-select > span { overflow: hidden; text-overflow: ellipsis; }
@@ -629,7 +643,7 @@
   background: color-mix(in srgb, var(--settings-surface) 72%, var(--text-muted));
 }
 .settings-sidebar button:disabled { opacity: .45; cursor: default; color: var(--settings-muted); }
-.settings-sidebar button small { display: block; color: var(--settings-muted); font-size: 9px; font-weight: 400; }
+.settings-sidebar button small { display: block; color: var(--settings-muted); font-size: var(--fs-9); font-weight: 400; }
 
 /* Terminal settings replica */
 
@@ -678,7 +692,7 @@
   border-radius: 5px;
   color: var(--text-secondary);
   background: var(--settings-surface);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .settings-file-summary {
   display: flex;
@@ -689,7 +703,7 @@
   border-top: 1px solid var(--settings-line);
   border-bottom: 1px solid var(--settings-line);
   color: var(--settings-muted);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .settings-file-preview-head {
   display: grid;
@@ -700,7 +714,7 @@
   border-bottom: 1px solid var(--settings-line);
   color: var(--settings-muted);
   background: var(--settings-subtle, color-mix(in srgb, var(--settings-panel) 75%, var(--settings-surface)));
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .settings-file-preview-head span:last-child { text-align: right; }
 .settings-file-preview-row {
@@ -710,7 +724,7 @@
   align-items: center;
   padding: 0 10px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .settings-file-preview-row:nth-child(odd) { background: color-mix(in srgb, var(--settings-panel) 56%, transparent); }
 .settings-file-preview-row.active {
@@ -759,14 +773,14 @@
 .ai-provider-panel-head > div > strong {
   display: block;
   color: var(--text-primary);
-  font-size: 11.5px;
+  font-size: var(--fs-115);
   font-weight: 600;
 }
 .ai-provider-panel-head > div > span {
   display: block;
   margin-top: 2px;
   color: var(--settings-muted);
-  font-size: 9.5px;
+  font-size: var(--fs-95);
 }
 .ai-provider-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 1px; }
 .ai-provider-copy strong {
@@ -798,29 +812,29 @@
 
 .settings-brand,
 .settings-topbar > strong {
-  font-size: 14px;
+  font-size: var(--fs-14);
 }
 .settings-page-heading p { line-height: 1.5; }
-.settings-page { font-size: 13px; }
+.settings-page { font-size: var(--fs-13); }
 .settings-card label > span > small { line-height: 1.4; }
 .settings-card input,
 .settings-card select,
 .settings-card textarea {
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .settings-note { line-height: 1.5; }
-.settings-footer span { font-size: 12.5px; }
-.ai-provider-panel-head strong { font-size: 13.5px; }
-.ai-provider-panel-head span { font-size: 11.5px; }
-.ai-provider-copy strong { font-size: 13px; }
-.ai-provider-copy small { font-size: 11px; }
-.ai-config-actions button { font-size: 13px; }
-.ai-test-result { font-size: 12.5px; }
+.settings-footer span { font-size: var(--fs-125); }
+.ai-provider-panel-head strong { font-size: var(--fs-135); }
+.ai-provider-panel-head span { font-size: var(--fs-115); }
+.ai-provider-copy strong { font-size: var(--fs-13); }
+.ai-provider-copy small { font-size: var(--fs-11); }
+.ai-config-actions button { font-size: var(--fs-13); }
+.ai-test-result { font-size: var(--fs-125); }
 .settings-card label > span > small,
 .settings-file-preview-row,
 .settings-file-summary,
 .settings-file-preview-head {
-  font-size: 11.5px;
+  font-size: var(--fs-115);
 }
 
 /* Terminal display options: subtle row stripes and stronger command/path colors. */
@@ -855,14 +869,14 @@
 .ai-provider-panel-head > div strong {
   display: block;
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   font-weight: 600;
 }
 .ai-provider-panel-head > div span {
   display: block;
   margin-top: 2px;
   color: var(--settings-muted);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   line-height: 1.4;
 }
 .ai-provider-add-button {
@@ -873,7 +887,7 @@
   border-radius: 6px;
   color: var(--text-primary);
   background: var(--settings-surface);
-  font-size: 11px;
+  font-size: var(--fs-11);
   cursor: pointer;
 }
 .ai-provider-add-button:hover { border-color: var(--accent); background: var(--bg-hover); }
@@ -893,7 +907,7 @@
   background: var(--bg-primary);
   box-shadow: var(--shadow-md);
 }
-.ai-provider-picker > strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }.ai-provider-picker-search { display: flex; height: 31px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); }
+.ai-provider-picker > strong { color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }.ai-provider-picker-search { display: flex; height: 31px; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); }
 .ai-provider-picker-search input {
   width: 100%;
   min-width: 0;
@@ -906,9 +920,9 @@
 }
 .ai-provider-picker-list { display: flex; min-height: 0; flex-direction: column; gap: 2px; overflow-y: auto; }.ai-provider-picker-list button { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border: 0; color: var(--text-secondary); background: transparent; text-align: left; cursor: pointer; }.ai-provider-picker-list button:hover { color: var(--text-primary); }
 .ai-provider-picker-list button > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
-.ai-provider-picker-list button b { color: inherit; font-size: 11.5px; font-weight: 550; }
-.ai-provider-picker-list button small { color: var(--settings-muted); font-size: 9.5px; }
-.ai-provider-picker-empty { padding: 20px 8px; color: var(--settings-muted); text-align: center; font-size: 10.5px; }
+.ai-provider-picker-list button b { color: inherit; font-size: var(--fs-115); font-weight: 550; }
+.ai-provider-picker-list button small { color: var(--settings-muted); font-size: var(--fs-95); }
+.ai-provider-picker-empty { padding: 20px 8px; color: var(--settings-muted); text-align: center; font-size: var(--fs-105); }
 .ai-provider-empty {
   display: flex;
   min-height: 150px;
@@ -922,8 +936,8 @@
   color: var(--settings-muted);
   text-align: center;
 }
-.ai-provider-empty strong { color: var(--text-primary); font-size: 12px; }
-.ai-provider-empty span { max-width: 180px; font-size: 10.5px; line-height: 1.55; }
+.ai-provider-empty strong { color: var(--text-primary); font-size: var(--fs-12); }
+.ai-provider-empty span { max-width: 180px; font-size: var(--fs-105); line-height: 1.55; }
 .ai-provider-list { display: flex; flex-direction: column; gap: 7px; }
 .ai-provider-card {
   display: grid;
@@ -944,8 +958,8 @@
 .ai-provider-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--focus-ring); }
 .ai-provider-card .ai-provider-copy { gap: 3px; }
 .ai-provider-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.ai-provider-title strong { overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
-.ai-provider-card .ai-provider-copy > small { color: var(--settings-muted); font-size: 9.5px; }
+.ai-provider-title strong { overflow: hidden; font-size: var(--fs-115); text-overflow: ellipsis; white-space: nowrap; }
+.ai-provider-card .ai-provider-copy > small { color: var(--settings-muted); font-size: var(--fs-95); }
 .ai-provider-card .ai-provider-copy > code {
   overflow: hidden;
   color: var(--text-secondary);
@@ -953,7 +967,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ai-provider-model-count { color: var(--settings-muted); font-size: 9px; }
+.ai-provider-model-count { color: var(--settings-muted); font-size: var(--fs-9); }
 .ai-provider-delete {
   width: 24px;
   height: 24px;
@@ -973,8 +987,8 @@
   padding: 1px 2px 2px;
 }
 .ai-config-panel-heading > div { min-width: 0; }
-.ai-config-panel-heading strong { display: block; color: var(--text-primary); font-size: 13px; font-weight: 600; }
-.ai-config-panel-heading span { display: block; margin-top: 2px; color: var(--settings-muted); font-size: 10.5px; }
+.ai-config-panel-heading strong { display: block; color: var(--text-primary); font-size: var(--fs-13); font-weight: 600; }
+.ai-config-panel-heading span { display: block; margin-top: 2px; color: var(--settings-muted); font-size: var(--fs-105); }
 .ai-config-empty {
   display: flex;
   min-height: 430px;
@@ -999,8 +1013,8 @@
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-.ai-config-empty h3 { margin: 0; color: var(--text-secondary); font-size: 13px; font-weight: 500; }
-.ai-config-empty p { margin: 0; font-size: 10.5px; }
+.ai-config-empty h3 { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); font-weight: 500; }
+.ai-config-empty p { margin: 0; font-size: var(--fs-105); }
 .ai-secret-input-row { display: flex; width: 72%; max-width: 72%; align-items: center; gap: 6px; }
 .ai-secret-input-row input { width: auto; min-width: 0; flex: 1 1 auto; max-width: none; }
 .ai-secret-input-row .settings-inline-button { flex: 0 0 auto; min-height: 28px; padding: 0 9px; }
@@ -1100,8 +1114,8 @@
   margin-bottom: 8px;
 }
 .ai-header-editor-head > div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.ai-header-editor-head strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }
-.ai-header-editor-head small { color: var(--settings-muted); font-size: 10px; line-height: 1.45; }
+.ai-header-editor-head strong { color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
+.ai-header-editor-head small { color: var(--settings-muted); font-size: var(--fs-10); line-height: 1.45; }
 .ai-header-editor-head .settings-inline-button { flex: 0 0 auto; }
 .ai-header-row {
   display: grid;
@@ -1152,15 +1166,15 @@
   border-bottom: 1px solid var(--border-light);
 }
 .ai-model-panel-head > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
-.ai-model-panel-head strong { color: var(--text-primary); font-size: 12px; font-weight: 600; }
-.ai-model-panel-head span { color: var(--settings-muted); font-size: 10px; }
+.ai-model-panel-head strong { color: var(--text-primary); font-size: var(--fs-12); font-weight: 600; }
+.ai-model-panel-head span { color: var(--settings-muted); font-size: var(--fs-10); }
 .ai-model-panel-actions { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
 .ai-model-panel-head .ai-model-count-badge {
   padding: 3px 7px;
   border-radius: 999px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  font-size: 9.5px;
+  font-size: var(--fs-95);
   white-space: nowrap;
 }
 .ai-model-available-list {
@@ -1204,7 +1218,7 @@
   padding: 18px 10px;
   color: var(--settings-muted);
   text-align: center;
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   line-height: 1.5;
 }
 .ai-model-manual-row {
@@ -1232,7 +1246,7 @@
   padding: 5px 9px;
   border-bottom: 1px solid var(--border-light);
   color: var(--settings-muted);
-  font-size: 9.5px;
+  font-size: var(--fs-95);
   background: color-mix(in srgb, var(--bg-tertiary) 45%, transparent);
 }
 .ai-model-available-head button {
@@ -1241,7 +1255,7 @@
   border-radius: 4px;
   color: var(--accent);
   background: transparent;
-  font-size: 9.5px;
+  font-size: var(--fs-95);
   cursor: pointer;
 }
 .ai-model-available-head button:hover { background: var(--bg-hover); }
@@ -1254,7 +1268,7 @@
 .ai-settings-page .ai-config-layout { height: clamp(480px, calc(100vh - 160px), 1000px); }
 .ai-settings-page .ai-config-panel { gap: 5px; }
 .ai-settings-page .ai-config-card label { padding: 3px 12px; gap: 8px; }
-.ai-settings-page .ai-config-card label > span > small { font-size: 9px; line-height: 1.2; }
+.ai-settings-page .ai-config-card label > span > small { font-size: var(--fs-9); line-height: 1.2; }
 .ai-settings-page .ai-config-card label input,
 .ai-settings-page .ai-config-card label select {
   height: 28px;
@@ -1300,7 +1314,7 @@
   align-items: center;
   gap: 5px;
   color: var(--text-secondary);
-  font-size: 9.5px;
+  font-size: var(--fs-95);
   white-space: nowrap;
 }
 .ai-settings-page .ai-model-available-list { margin-top: 8px; }
@@ -1491,33 +1505,33 @@
 .settings-footer button:hover:not(:disabled) {
   border-color: transparent;
 }
-.settings-workspace { background: var(--settings-shell, var(--ui-subtle)); color: var(--ui-text); font-size: 13px; }
+.settings-workspace { background: var(--settings-shell, var(--ui-subtle)); color: var(--ui-text); font-size: var(--fs-13); }
 .settings-topbar,
 .settings-footer {
   background: var(--settings-shell, var(--ui-subtle));
   border-color: var(--ui-line);
 }
 .settings-sidebar { padding: 12px 9px; background: transparent; border-right: 0; }
-.settings-sidebar h4 { color: var(--ui-muted); font-size: 10.5px; letter-spacing: .09em; }
-.settings-sidebar button { height: 34px; border-radius: 7px; font-size: 12.5px; }
+.settings-sidebar h4 { color: var(--ui-muted); font-size: var(--fs-105); letter-spacing: .09em; }
+.settings-sidebar button { height: 34px; border-radius: 7px; font-size: var(--fs-125); }
 .settings-sidebar button.active { font-weight: 600; }
 .settings-main { background: var(--settings-surface, var(--ui-surface)); }
 .settings-main::before { display: none; }
-.settings-page-heading h2 { font-size: 18px; }
-.settings-page-heading p { font-size: 12px; }
-.settings-page h3 { font-size: 12px; color: var(--ui-muted); }
+.settings-page-heading h2 { font-size: var(--fs-18); }
+.settings-page-heading p { font-size: var(--fs-12); }
+.settings-page h3 { font-size: var(--fs-12); color: var(--ui-muted); }
 .settings-card { border: 1px solid var(--ui-line); border-top: 1px solid var(--ui-line); }
 .settings-card-title { border-bottom: 1px solid var(--ui-line); }
-.settings-card-title strong { font-size: 12.5px; }
-.settings-card-title span { font-size: 11px; }
+.settings-card-title strong { font-size: var(--fs-125); }
+.settings-card-title span { font-size: var(--fs-11); }
 .settings-card label { min-height: 44px; padding: 7px 12px; border-color: var(--ui-line); }
 .settings-card label:hover { background: var(--ui-hover); }
-.settings-card label > span { font-size: 12.5px; }
-.settings-card label > span > small { font-size: 11px; }
+.settings-card label > span { font-size: var(--fs-125); }
+.settings-card label > span > small { font-size: var(--fs-11); }
 .settings-card select,
 .settings-card input:not([type="range"]):not([type="color"]):not([type="checkbox"]) {
   height: 30px;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   border-radius: 6px;
 }
 .settings-card select { background-color: var(--ui-input); border-color: var(--ui-line-strong); }
@@ -1529,8 +1543,8 @@
 .settings-switch { width: 34px; height: 18px; background: color-mix(in srgb, var(--ui-text) 24%, transparent); }
 .settings-switch.on { background: var(--ui-primary); }
 .settings-switch span { width: 14px; height: 14px; }
-.settings-footer { height: 54px; font-size: 11.5px; }
-.settings-footer button { border-radius: 7px; font-size: 12px; }
+.settings-footer { height: 54px; font-size: var(--fs-115); }
+.settings-footer button { border-radius: 7px; font-size: var(--fs-12); }
 .settings-footer-secondary { color: var(--ui-text); background: var(--ui-surface); }
 .settings-note,
 .settings-terminal-preview-shell {
@@ -1539,14 +1553,14 @@
   border-left-width: 1px;
   border-radius: 8px;
 }
-.settings-note { color: var(--ui-muted); font-size: 12px; }
+.settings-note { color: var(--ui-muted); font-size: var(--fs-12); }
 .settings-page-heading::after { display: none; }
-.settings-inline-button { border-radius: 6px; font-size: 12px; }
+.settings-inline-button { border-radius: 6px; font-size: var(--fs-12); }
 .templates-list { border-radius: 9px; }
 .templates-row { border-bottom-color: var(--ui-line); }
-.templates-row-main strong { color: var(--ui-text); font-size: 12.5px; }
-.templates-row-main code { color: var(--ui-muted); font-size: 11px; }
-.templates-empty { color: var(--ui-muted); font-size: 12px; }
+.templates-row-main strong { color: var(--ui-text); font-size: var(--fs-125); }
+.templates-row-main code { color: var(--ui-muted); font-size: var(--fs-11); }
+.templates-empty { color: var(--ui-muted); font-size: var(--fs-12); }
 .settings-card input.templates-search:not([type="range"]):not([type="color"]):not([type="checkbox"]),
 .settings-card .templates-editor input:not([type="range"]):not([type="color"]):not([type="checkbox"]) {
   width: 100%;
@@ -1559,7 +1573,7 @@
   border: 1px solid var(--ui-line-strong);
   border-radius: 6px;
   box-shadow: none;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   text-align: left;
 }
 .settings-card input.templates-search { flex: 1; }
@@ -1572,7 +1586,7 @@
   background: var(--ui-input);
   border: 1px solid var(--ui-line-strong);
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
 }
 .settings-card input.templates-search:not([type="range"]):not([type="color"]):not([type="checkbox"]):hover,
 .settings-card .templates-editor input:not([type="range"]):not([type="color"]):not([type="checkbox"]):hover,
@@ -1588,7 +1602,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-blue) 15%, transparent);
   background: var(--ui-input);
 }
-.templates-editor label { color: var(--ui-muted); font-size: 11.5px; }
+.templates-editor label { color: var(--ui-muted); font-size: var(--fs-115); }
 .settings-footer-primary,
 .settings-footer button {
   color: var(--on-accent);
@@ -1674,4 +1688,47 @@
 
 .settings-card label > span {
   min-width: 0;
+}
+
+/* 字体与字号预览：用所选的字体栈直接渲染一行示例，避免「改了看不出差别」 */
+.settings-font-sample {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 92px;
+  padding: 14px 16px;
+}
+.settings-font-sample-title {
+  color: var(--text-primary, var(--ui-text));
+  font-size: var(--fs-13);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-font-sample small { color: var(--settings-muted); }
+
+/* 外观页首屏：主题与整体缩放并排，缩放不再占一行 */
+.settings-appearance-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 16px;
+}
+.settings-appearance-block { min-width: 0; }
+.settings-appearance-block > h3 { margin: 0 0 7px; }
+.settings-appearance-block .settings-card { display: flex; flex-direction: column; }
+.settings-appearance-note {
+  margin: 0;
+  padding: 8px 12px 9px;
+  border-top: 1px solid var(--settings-line);
+  color: var(--settings-muted);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+}
+@media (max-width: 900px) {
+  .settings-appearance-top { grid-template-columns: 1fr; }
 }

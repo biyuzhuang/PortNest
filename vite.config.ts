@@ -28,7 +28,18 @@ export default defineConfig(async () => ({
       // 3. tell Vite to ignore watching `src-tauri`
       //    `design/` only holds design assets and verification tooling; watching
       //    it made the dev server crash on the tool's short-lived temp files.
-      ignored: ["**/src-tauri/**", "**/design/**", "**/dist/**", "**/.dsh-acl-recovery/**", "**/.*-recovery/**"],
+      ignored: [
+        "**/src-tauri/**",
+        "**/design/**",
+        "**/dist/**",
+        "**/.dsh-acl-recovery/**",
+        "**/.*-recovery/**",
+        // 截图 / 自动化验证留下的临时浏览器 profile 和截图产物：
+        // 里面有成百上千个扩展 HTML，被监听会反复触发整页重载。
+        "**/.edgeprof/**",
+        "**/.tmpshot/**",
+        "**/.*.png",
+      ],
     },
   },
   // 3. @xterm/xterm@6.0.0 的预压缩 ESM 被 esbuild 二次压缩后，会破坏 requestMode

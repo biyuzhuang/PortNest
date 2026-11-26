@@ -18,18 +18,18 @@
 .command-composer-main{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;overflow:auto}
 .composer-section{display:flex;flex:1 1 auto;flex-direction:column;gap:8px;min-height:0;padding:8px 10px}
 /* 命令内容区：标题行固定，textarea 撑满剩余高度 */
-.composer-field{display:flex;flex:1 1 auto;flex-direction:column;gap:4px;color:var(--text-secondary);font-size:12px;min-height:0}
+.composer-field{display:flex;flex:1 1 auto;flex-direction:column;gap:4px;color:var(--text-secondary);font-size: var(--fs-12);min-height:0}
 .composer-field-header{display:flex;align-items:center;gap:8px;flex:0 0 auto}
-.composer-mode-label{display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);font-size:11px;white-space:nowrap}
+.composer-mode-label{display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);font-size: var(--fs-11);white-space:nowrap}
 .mode-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
-.composer-field-header .composer-send{margin-left:auto;min-width:64px;height:24px;padding:0 12px;border-radius:var(--radius-sm);color:var(--on-accent);background:var(--accent);border:1px solid var(--accent);font-size:12px;cursor:pointer;transition:background .15s ease,border-color .15s ease}
+.composer-field-header .composer-send{margin-left:auto;min-width:64px;height:24px;padding:0 12px;border-radius:var(--radius-sm);color:var(--on-accent);background:var(--accent);border:1px solid var(--accent);font-size: var(--fs-12);cursor:pointer;transition:background .15s ease,border-color .15s ease}
 .composer-field-header .composer-send:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
 .composer-field-header .composer-send:active:not(:disabled){background:var(--accent-primary);border-color:var(--accent-primary)}
 .composer-field-header .composer-send:disabled{opacity:.5;cursor:not-allowed}
 .composer-field textarea{flex:1 1 auto;min-height:86px;resize:none;padding:8px;color:var(--text-primary);background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);font:13px/1.5 var(--font-mono)}
 .composer-field textarea:focus,.template-editor textarea:focus,.template-list input:focus,.template-toolbar input:focus{outline:2px solid var(--focus-ring);outline-offset:1px;border-color:var(--accent)}
 .composer-actions{display:flex;justify-content:flex-end;gap:8px}
-.composer-actions button{min-height:26px;padding:0 11px;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit;font-size:12px;cursor:pointer}
+.composer-actions button{min-height:26px;padding:0 11px;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit;font-size: var(--fs-12);cursor:pointer}
 .composer-actions .primary{color:var(--on-accent);background:var(--accent);border-color:var(--accent)}
 .composer-actions .primary:hover{background:var(--accent-hover)}
 .composer-actions button:disabled{opacity:.5;cursor:not-allowed}
@@ -38,13 +38,13 @@
 .template-list{display:flex;flex:0 0 190px;width:190px;flex-direction:column;overflow:auto;padding-right:8px;border-right:1px solid var(--border)}
 .template-list input,.template-toolbar input{box-sizing:border-box;width:100%;height:var(--control-height);padding:0 9px;color:var(--text-primary);background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit}
 .template-list input{flex:0 0 auto;margin-bottom:6px}
-.template-new{flex:0 0 auto;display:block;width:100%;padding:5px;text-align:center;color:var(--accent);background:transparent;border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent);border-radius:var(--radius-sm);font:inherit;font-size:12px;cursor:pointer;margin-bottom:6px}
+.template-new{flex:0 0 auto;display:block;width:100%;padding:5px;text-align:center;color:var(--accent);background:transparent;border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent);border-radius:var(--radius-sm);font:inherit;font-size: var(--fs-12);cursor:pointer;margin-bottom:6px}
 .template-new:hover{background:var(--bg-active)}
 .template-items{display:flex;flex-direction:column;gap:2px}
 .template-items button{display:block;width:100%;padding:6px 8px;text-align:left;color:var(--text-primary);background:transparent;border:0;border-radius:var(--radius-sm);cursor:pointer}
 .template-items button:hover,.template-items button.active{background:var(--bg-active)}
 .template-items button strong{display:block;font-weight:var(--font-weight-medium);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.template-items button small{display:block;color:var(--text-muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.template-items button small{display:block;color:var(--text-muted);font-size: var(--fs-11);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .template-editor{display:flex;flex:1 1 auto;flex-direction:column;gap:8px;min-width:0;min-height:0;padding-left:12px}
 .template-toolbar{display:flex;flex:0 0 auto}
 .template-editor textarea{flex:1 1 auto;min-height:80px;resize:none;padding:8px;color:var(--text-primary);background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-md);font:13px/1.5 var(--font-mono)}

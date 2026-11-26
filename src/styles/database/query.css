@@ -10,9 +10,8 @@
   min-height: var(--h-control);
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  /* 由内部的 .db-toolbar-scroll 负责滚动，右侧数据库选择区固定可见 */
+  overflow: hidden;
 }
 .db-query-toolbar::-webkit-scrollbar { height: 0; }
 .db-query-db { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; color: var(--text-3); font-size: var(--fs-11); }
@@ -84,6 +83,30 @@
   -webkit-text-fill-color: transparent;
 }
 .db-code-input::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); -webkit-text-fill-color: transparent; }
+
+/*
+ * 全局表单样式（App.css 的 `textarea:hover/:focus`）会给输入框刷不透明底色，
+ * 盖住下面那层高亮 pre，整段 SQL 就「消失」了。这里必须逐个伪类压回去：
+ * 选中态也要保持透明，否则鼠标悬停或聚焦时编辑器是空白的。
+ * 焦点提示改由容器负责（见下面的 :focus-within），不影响可访问性。
+ * 用 .db-editor 前缀再加一层，是因为 App.css 在本文件之后加载，同权重要输。
+ */
+.db-editor .db-code-input,
+.db-editor .db-code-input:hover,
+.db-editor .db-code-input:focus,
+.db-editor .db-code-input:focus-visible,
+.db-editor .db-code-input:active {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: 0;
+}
+.db-editor:focus-within {
+  /* 焦点提示交给容器：outline 画在子元素之上，不会被高亮层盖住 */
+  outline: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  outline-offset: -1px;
+}
 
 .db-autocomplete {
   position: absolute;
@@ -178,7 +201,23 @@
 }
 .db-result-tabs > button[role="tab"]:hover { color: var(--text-1); }
 .db-result-tabs > button[role="tab"].is-active { color: var(--text-1); border-bottom-color: var(--accent); }
-.db-result-tabs em { color: var(--text-3); font-size: var(--fs-11); font-style: normal; font-variant-numeric: tabular-nums; }
+/* 结果页签上的行数：做成浅色小胶囊，和页签标题拉开层次，
+   否则「结果 1 10」这种连在一起像标题的一部分 */
+.db-result-tabs em {
+  display: inline-flex;
+  align-items: center;
+  height: var(--space-5);
+  margin-left: var(--space-1);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-full);
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.db-result-tabs > button[role="tab"].is-active em { color: var(--text-2); }
 /* 执行失败的语句只留一个标记在「消息」页签上，不靠颜色单独承载信息 */
 .db-result-tabs > button[role="tab"].is-error { color: var(--danger); }
 .db-result-tabs em.is-error { display: inline-flex; align-items: center; justify-content: center; width: var(--space-4); height: var(--space-4); border-radius: var(--r-full); background: var(--danger); color: #fff; font-size: var(--fs-11); }
@@ -238,3 +277,21 @@
 /* 代码高亮在暗色下的补偿：字符串与数字用更亮的同色相 */
 [data-theme="dark"] .db-code .is-string { color: #6fcf97; }
 [data-theme="dark"] .db-code .is-number { color: #82aaff; }
+
+/* 全库字段补全的加载提示：贴着工具栏下方一条，不占编辑器空间 */
+.db-query-hint {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+}
+
+/* 结果集没有勾选列，行号列就是最左列。
+   base.css 里 `.db-col-index.is-frozen { left: var(--h-row) }` 是给数据网格
+   （前面有勾选列）用的，这里不覆盖会把行号右移 28px 并盖住第一列开头。 */
+.db-result .db-grid .db-col-index.is-frozen { left: 0; }

@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 
 export type ThemeMode = "light" | "dark" | "system";
-export type ThemeSkin = "aurora" | "mist" | "ember" | "midnight";
+export type ThemeSkin = "aurora" | "mist" | "ember" | "midnight" | "frost";
 
 export interface ThemeSkinOption {
   id: ThemeSkin;
@@ -14,6 +14,7 @@ export const themeSkins: ThemeSkinOption[] = [
   { id: "mist", name: "晨雾蓝", description: "冷灰蓝表面，青色强调，克制平面" },
   { id: "ember", name: "暖砂", description: "暖米色表面，珊瑚与琥珀强调" },
   { id: "midnight", name: "午夜青", description: "深青玻璃质感，冷光强调" },
+  { id: "frost", name: "霜白", description: "纯白表面与石墨灰强调，最中性的白灰配色" },
 ];
 
 const STORAGE_KEY = "portnest-theme";
@@ -39,7 +40,7 @@ function getStoredTheme(): ThemeMode {
 function getStoredSkin(): ThemeSkin {
   if (typeof localStorage !== "undefined") {
     const stored = localStorage.getItem(SKIN_STORAGE_KEY);
-    if (stored === "aurora" || stored === "mist" || stored === "ember" || stored === "midnight") {
+    if (stored === "aurora" || stored === "mist" || stored === "ember" || stored === "midnight" || stored === "frost") {
       return stored;
     }
   }
@@ -75,7 +76,7 @@ export function toggleTheme() {
   setThemeMode(newTheme);
 }
 
-const SKINS: ThemeSkin[] = ["aurora", "mist", "ember", "midnight"];
+const SKINS: ThemeSkin[] = ["aurora", "mist", "ember", "midnight", "frost"];
 
 function applyTheme(theme: "light" | "dark", skin: ThemeSkin = getStoredSkin()) {
   const root = document.documentElement;

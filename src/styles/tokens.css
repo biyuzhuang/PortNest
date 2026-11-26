@@ -46,10 +46,18 @@
   --space-8: 24px;
   --space-9: 32px;
 
-  /* type scale — seven steps */
+  /* type scale — seven steps；整体缩放由页面级 zoom 完成，这里保持固定像素 */
+  --fs-85: 8.5px;
+  --fs-9: 9px;
+  --fs-95: 9.5px;
+  --fs-10: 10px;
+  --fs-105: 10.5px;
   --fs-11: 11px;
+  --fs-115: 11.5px;
   --fs-12: 12px;
+  --fs-125: 12.5px;
   --fs-13: 13px;
+  --fs-135: 13.5px;
   --fs-14: 14px;
   --fs-16: 16px;
   --fs-18: 18px;
@@ -353,6 +361,69 @@
   --info: #7ec8de;
 
   --brand-gradient: linear-gradient(135deg, #2dd4bf, #14a89a);
+}
+
+/* ---------- 1. primitives: frost -----------------------------------------
+   白灰主题：表面只有白与灰的明度差，强调色用石墨灰，几乎没有色相。
+   所有语义色（成功/警告/危险/信息）也压低饱和度，避免在灰底上跳出来。
+   ------------------------------------------------------------------------- */
+
+:root[data-skin="frost"][data-theme="light"] {
+  --surface-shell: #f2f3f5;
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f7f8f9;
+  --surface-selected: #e9ebee;
+  --surface-hover: #f1f2f4;
+
+  --text-1: #17181a;
+  --text-2: #55585d;
+  --text-3: #63676d;
+  --on-accent: #ffffff;
+
+  --accent: #43484f;
+  --accent-soft: #eceef1;
+  --accent-line: #d8dbe0;
+
+  --line: #e1e4e8;
+  --line-strong: #ccd0d6;
+  --line-control: #8b9199;
+
+  --success: #2f7d55;
+  --warning: #8a5a13;
+  --danger: #b8383f;
+  --info: #3c6b9e;
+
+  --brand-gradient: linear-gradient(135deg, #6b7078, #3f434a);
+}
+
+:root[data-skin="frost"][data-theme="dark"] {
+  --surface-shell: #121315;
+  --surface-base: #1a1b1e;
+  --surface-raised: #202124;
+  --surface-sunken: #0d0e0f;
+  --surface-selected: #2a2c30;
+  --surface-hover: #222327;
+
+  --text-1: #ededee;
+  --text-2: #b4b7bc;
+  --text-3: #979ba1;
+  --on-accent: #131416;
+
+  --accent: #c8ccd2;
+  --accent-soft: #26282c;
+  --accent-line: #36393e;
+
+  --line: #2e3034;
+  --line-strong: #3b3e43;
+  --line-control: #6e7278;
+
+  --success: #4fbf8b;
+  --warning: #e0b25e;
+  --danger: #ff8a8a;
+  --info: #86b4e6;
+
+  --brand-gradient: linear-gradient(135deg, #8c9198, #c8ccd2);
 }
 
 /* ---------- 2. legacy map -------------------------------------------------

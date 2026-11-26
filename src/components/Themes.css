@@ -155,7 +155,7 @@ input[type="radio"] {
 
 .session-transfer-modal .session-transfer-heading p {
   color: var(--ui-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
 }
 
 .session-transfer-modal .session-transfer-header > button {
@@ -235,8 +235,8 @@ input[type="radio"] {
   box-shadow: var(--skin-glow-2);
 }
 
-.session-transfer-tab b { font-size: 13px; font-weight: 600; }
-.session-transfer-tab small { color: var(--ui-muted); font-size: 10.5px; }
+.session-transfer-tab b { font-size: var(--fs-13); font-weight: 600; }
+.session-transfer-tab small { color: var(--ui-muted); font-size: var(--fs-105); }
 
 .session-export-hero {
   padding: 22px;
@@ -254,7 +254,7 @@ input[type="radio"] {
   background: color-mix(in srgb, var(--ui-surface) 56%, transparent);
   border: 1px solid var(--skin-accent-line);
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   font-weight: 650;
 }
 
@@ -266,7 +266,7 @@ input[type="radio"] {
 
 .session-export-hero p {
   color: var(--ui-muted);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
 }
 
 .session-export-art {
@@ -314,8 +314,8 @@ input[type="radio"] {
   border-radius: 10px;
 }
 
-.session-transfer-check-copy b { font-size: 12.5px; }
-.session-transfer-check-copy small { color: var(--ui-muted); font-size: 10.5px; }
+.session-transfer-check-copy b { font-size: var(--fs-125); }
+.session-transfer-check-copy small { color: var(--ui-muted); font-size: var(--fs-105); }
 
 .session-transfer-switch {
   background: color-mix(in srgb, var(--ui-text) 18%, transparent);
@@ -332,18 +332,18 @@ input[type="radio"] {
   border-color: var(--pn-blue);
 }
 
-.session-transfer-export-footer p { color: var(--ui-muted); font-size: 11px; }
+.session-transfer-export-footer p { color: var(--ui-muted); font-size: var(--fs-11); }
 .session-transfer-export-footer p svg { color: var(--pn-amber); }
 
 .session-transfer-primary {
   min-height: 40px;
   padding: 0 20px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 600;
 }
 
-.session-import-panel-heading h3 { font-size: 18px; }
-.session-import-panel-heading p { color: var(--ui-muted); font-size: 11.5px; }
+.session-import-panel-heading h3 { font-size: var(--fs-18); }
+.session-import-panel-heading p { color: var(--ui-muted); font-size: var(--fs-115); }
 
 .session-import-source-count {
   color: var(--pn-blue);
@@ -401,7 +401,7 @@ input[type="radio"] {
   background: var(--skin-teal-soft);
 }
 
-.session-import-card p { color: var(--ui-muted); font-size: 11.5px; }
+.session-import-card p { color: var(--ui-muted); font-size: var(--fs-115); }
 
 .session-import-points span {
   color: var(--ui-muted);
@@ -427,7 +427,7 @@ input[type="radio"] {
 
 .session-import-note {
   color: var(--ui-muted);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
 }
 
 .session-import-action {
@@ -440,7 +440,7 @@ input[type="radio"] {
   color: var(--on-brand);
   border: 0;
   border-radius: var(--skin-control-radius);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   font-weight: 600;
   cursor: pointer;
   transition: filter .16s ease, box-shadow .16s ease, transform .16s ease;

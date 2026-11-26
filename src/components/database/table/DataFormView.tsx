@@ -112,7 +112,7 @@ export const DataFormView: Component<Props> = props => {
           <h4>跳转记录</h4>
           <div class="db-record-jump">
             <button class="db-icon-btn" aria-label="上一条" title="上一条" disabled={props.index <= 0} onClick={() => props.onIndexChange(props.index - 1)}>
-              <Icon name="chevronRight" size={13} class="db-flip" />
+              <Icon name="chevronRight" size={14} class="db-flip" />
             </button>
             <input
               class="db-input"
@@ -126,7 +126,7 @@ export const DataFormView: Component<Props> = props => {
             />
             <span class="db-record-total">/ {props.result.rows.length}</span>
             <button class="db-icon-btn" aria-label="下一条" title="下一条" disabled={props.index >= props.result.rows.length - 1} onClick={() => props.onIndexChange(props.index + 1)}>
-              <Icon name="chevronRight" size={13} />
+              <Icon name="chevronRight" size={14} />
             </button>
           </div>
         </div>

@@ -9,6 +9,7 @@ import {
 import { matchesAssetFilter, uiStore, type AssetFilter } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
+import { ColorIcon } from "./ColorIcon";
 import { Icon } from "./Icon";
 import { AssetContextMenu, type AssetMenuAction, type AssetMenuHeaderAction } from "./AssetContextMenu";
 import { api } from "../utils/api";
@@ -587,7 +588,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               uiStore.toggleAssetTree();
             }}
           >
-            <span><Icon name="assets" /></span><small>资产树</small>
+            <span><ColorIcon name="assets" /></span><small>资产树</small>
           </button>
 
           <div class="module-rail-divider" role="separator" aria-orientation="horizontal" />
@@ -599,7 +600,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               aria-pressed={uiStore.assetFilter() === "all"}
               onClick={() => { props.onCloseAI?.(); selectAssetFilter("all"); }}
             >
-              <span><Icon name="list" /></span><small>全部</small>
+              <span><ColorIcon name="list" /></span><small>全部</small>
             </button>
             <button
               class={`module-rail-btn ${uiStore.assetFilter() === "terminal" ? "active" : ""}`}
@@ -607,7 +608,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               aria-pressed={uiStore.assetFilter() === "terminal"}
               onClick={() => { props.onCloseAI?.(); selectAssetFilter("terminal"); }}
             >
-              <span><Icon name="terminal" /></span><small>终端</small>
+              <span><ColorIcon name="terminal" /></span><small>终端</small>
             </button>
             <button
               class={`module-rail-btn ${uiStore.assetFilter() === "database" ? "active" : ""}`}
@@ -615,16 +616,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
               aria-pressed={uiStore.assetFilter() === "database"}
               onClick={() => { props.onCloseAI?.(); selectAssetFilter("database"); }}
             >
-              <span><Icon name="database" /></span><small>数据库</small>
+              <span><ColorIcon name="database" /></span><small>数据库</small>
             </button>
           </div>
         </div>
         <div class="module-rail-bottom">
           <button class={`module-rail-btn ${props.aiOpen ? "active" : ""}`} title="PortNest AI（Ctrl+Shift+A）" aria-pressed={!!props.aiOpen} onClick={() => props.onOpenAI?.()}>
-            <span><Icon name="sparkles" /></span><small>AI</small>
+            <span><ColorIcon name="ai" /></span><small>AI</small>
           </button>
           <button class="module-rail-btn" title="设置" onClick={() => { props.onCloseAI?.(); props.onOpenSettings?.(); }}>
-            <span><Icon name="settings" /></span><small>设置</small>
+            <span><ColorIcon name="settings" /></span><small>设置</small>
           </button>
         </div>
       </nav>
@@ -687,7 +688,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                     style={{ "margin-left": `${node.depth * 13}px` }}
                   >
                     <span class="folder-icon">
-                      <Icon name={expandedFolders().has(folder.id) ? "folderOpen" : "folder"} size={15} />
+                      <ColorIcon name={expandedFolders().has(folder.id) ? "folderOpen" : "folder"} size={15} />
                     </span>
                     <span class="folder-name">{folder.name}</span>
                     <span class="folder-count">
@@ -838,7 +839,7 @@ const ConnectionItem: Component<ConnectionItemProps> = (props) => {
       onContextMenu={(e) => props.onContextMenu(e, props.conn)}
     >
       <span class={`conn-icon protocol-${props.conn.protocol}`}>
-        <ProtocolIcon kind={props.conn.protocol} />
+        <ProtocolIcon kind={props.conn.protocol} size={16} />
       </span>
       <span class="conn-name" title={`${props.conn.name}\n${connectionSummary}`}>{props.conn.name}</span>
     </div>

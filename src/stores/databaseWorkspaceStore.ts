@@ -1,11 +1,13 @@
 import { createSignal } from "solid-js";
-import type { DatabaseCharsetInfo, DatabaseColumnInfo, DatabaseIndexInfo, DatabaseTableInfo } from "../utils/api";
+import { databaseSettings } from "./databaseSettings";
+import type { DatabaseCharsetInfo, DatabaseColumnInfo, DatabaseForeignKeyDefinition, DatabaseIndexInfo, DatabaseTableInfo } from "../utils/api";
 import {
   emptyFilterSpec,
   emptyPending,
   primaryKeyColumns,
   type ContextMenuState,
   type DatabaseTab,
+  type ObjectScope,
   type QueryTab,
   type SortOrder,
   type TableSection,
@@ -30,7 +32,7 @@ export type WorkspaceState = {
   toggleExpanded: (database: string) => boolean;
   expandDatabase: (database: string) => void;
   expandedGroups: () => Record<string, true>;
-  toggleGroup: (database: string, group: "tables" | "views") => void;
+  toggleGroup: (database: string, group: "tables" | "views") => boolean;
   expandGroup: (database: string, group: "tables" | "views") => void;
   tabs: () => WorkspaceTab[];
   setTabs: (updater: (previous: WorkspaceTab[]) => WorkspaceTab[]) => void;
@@ -121,11 +123,13 @@ export function workspaceState(connectionId: string): WorkspaceState {
     },
     toggleGroup: (database, group) => {
       const key = `${database}:${group}`;
+      const opened = !!expandedGroups()[key];
       setExpandedGroups(current => {
         const next = { ...current };
         if (next[key]) delete next[key]; else next[key] = true;
         return next;
       });
+      return !opened;
     },
     tabs,
     setTabs: updater => setTabsRaw(updater),
@@ -209,12 +213,13 @@ export function clearSequences(connectionId: string, tabId: string) {
 
 // 便捷构造器：新标签统一在这里建，避免各处字段漏填
 
-export const makeDatabaseTab = (database: string): DatabaseTab => ({
+export const makeDatabaseTab = (database: string, objectScope: ObjectScope = "all"): DatabaseTab => ({
   id: `database:${database}`,
   kind: "database",
   title: database,
   database,
   view: "list",
+  objectScope,
 });
 
 export const makeQueryTab = (id: string, number: number, database: string): QueryTab => ({
@@ -233,6 +238,7 @@ export const makeTableTab = (input: {
   section?: TableSection;
   columns?: DatabaseColumnInfo[];
   indexes?: DatabaseIndexInfo[];
+  foreignKeys?: DatabaseForeignKeyDefinition[];
 }): TableTab => ({
   id: `table:${input.database}:${input.table}`,
   kind: "table",
@@ -242,11 +248,12 @@ export const makeTableTab = (input: {
   section: input.section ?? "data",
   dataView: "grid",
   page: 1,
-  pageSize: 100,
+  pageSize: databaseSettings().pageSize,
   orders: [],
   filters: emptyFilterSpec(),
   columns: input.columns ?? [],
   indexes: input.indexes ?? [],
+  foreignKeys: input.foreignKeys ?? [],
   rows: null,
   designer: null,
   preview: [],

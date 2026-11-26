@@ -14,7 +14,7 @@ export const InfoPane: Component<Props> = props => (
       <strong>信息</strong>
       <span class="db-toolbar-spacer" />
       <button class="db-icon-btn" aria-label="关闭信息窗格" title="关闭（F6）" onClick={() => props.onClose()}>
-        <Icon name="close" size={12} />
+        <Icon name="close" size={14} />
       </button>
     </header>
 

@@ -7,6 +7,11 @@ import {
   TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX, isTerminalFontSizeValid,
   type TerminalSettings,
 } from "../stores/themeStore";
+import { zoom, setUiZoom, resetUiZoom, zoomLevels, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP } from "../stores/zoomStore";
+import {
+  databaseSettings, setDatabaseSettings, databaseTableFonts, databaseSettingsDefaults,
+  type TabLabelMode, type TableCacheMode, type TextAlignMode, type ScrollMode,
+} from "../stores/databaseSettings";
 import { uiStore, type WindowCloseAction } from "../stores/uiStore";
 import { REFRESH_OPTIONS, getOverviewSettings, setOverviewSettings } from "../stores/dashboardStore";
 import { clearTerminalBackgroundImage, loadTerminalBackgroundImage, saveTerminalBackgroundImage, terminalBackgroundImageUrl } from "../stores/terminalBackgroundStore";
@@ -635,6 +640,9 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
     const nextBackground: TerminalBackgroundConfig = { style: "theme", solidColor: "#101827", imageFit: "cover", imageOpacity: 0.72, imageOverlay: 0.35, imageBlur: 0 };
     setBackground(nextBackground);
     setTerminalBackgroundConfig(nextBackground);
+    // 整体缩放与数据库偏好一并回到默认，避免「恢复了但还有一项没回来」
+    resetUiZoom();
+    setDatabaseSettings(databaseSettingsDefaults);
   };
 
   const updateBackground = (patch: Partial<TerminalBackgroundConfig>) => {
@@ -787,25 +795,42 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
           <Show when={page() === "appearance"}>
             <div class="settings-page">
               <div class="settings-page-heading"><h2>外观</h2><p>控制应用主题与终端配色方案。</p></div>
-              <h3>主题</h3>
-              <div class="settings-grid">
-                <div class="settings-card">
-                  <label><span><b>主题风格</b><small>切换整套界面配色与表面质感</small></span>
-                    <select value={themeSkin()} onChange={event => setThemeSkin(event.currentTarget.value as ThemeSkin)}>
-                      <For each={themeSkins}>{skin => <option value={skin.id}>{skin.name}</option>}</For>
-                    </select>
-                  </label>
-                  <label><span><b>主题模式</b><small>控制应用窗口、菜单和面板的明暗外观</small></span>
-                    <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
-                      <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
-                    </select>
-                  </label>
-                  <label><span><b>终端配色</b><small>选择当前终端的主题配色</small></span>
-                    <select value={currentTerminalTheme()} onChange={event => chooseTerminalTheme(event.currentTarget.value)}>
-                      <For each={Object.entries(terminalThemes)}>{([key, value]) => <option value={key}>{value.name}</option>}</For>
-                    </select>
-                  </label>
-                </div>
+              <div class="settings-appearance-top">
+                <section class="settings-appearance-block">
+                  <h3>主题</h3>
+                  <div class="settings-card">
+                    <label><span><b>主题风格</b><small>切换整套界面配色与表面质感</small></span>
+                      <select value={themeSkin()} onChange={event => setThemeSkin(event.currentTarget.value as ThemeSkin)}>
+                        <For each={themeSkins}>{skin => <option value={skin.id}>{skin.name}</option>}</For>
+                      </select>
+                    </label>
+                    <label><span><b>主题模式</b><small>控制应用窗口、菜单和面板的明暗外观</small></span>
+                      <select value={themeMode()} onChange={event => { setThemeMode(event.currentTarget.value as ThemeMode); setCurrentTerminalTheme(getTerminalTheme()); }}>
+                        <option value="system">跟随系统</option><option value="light">明亮</option><option value="dark">暗黑</option>
+                      </select>
+                    </label>
+                    <label><span><b>终端配色</b><small>选择当前终端的主题配色</small></span>
+                      <select value={currentTerminalTheme()} onChange={event => chooseTerminalTheme(event.currentTarget.value)}>
+                        <For each={Object.entries(terminalThemes)}>{([key, value]) => <option value={key}>{value.name}</option>}</For>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+
+                <section class="settings-appearance-block">
+                  <h3>整体缩放</h3>
+                  <div class="settings-card">
+                    <label><span><b>整体缩放</b><small>文字、图标、终端和数据库一起缩放，范围 {ZOOM_MIN}%–{ZOOM_MAX}%</small></span>
+                      <select value={zoom()} onChange={event => setUiZoom(Number(event.currentTarget.value))}>
+                        <For each={zoomLevels}>{level => <option value={level}>{level}%</option>}</For>
+                      </select>
+                    </label>
+                    <label><span><b>缩放快捷键</b><small>按住 Ctrl 滚动鼠标滚轮，每档 {ZOOM_STEP}%</small></span>
+                      <button class="settings-inline-button" onClick={() => resetUiZoom()}>恢复 {100}%</button>
+                    </label>
+                    <p class="settings-appearance-note">当前 {zoom()}%，界面、终端与数据库同步缩放。</p>
+                  </div>
+                </section>
               </div>
               <h3>终端配色方案</h3>
               <div class="terminal-theme-grid">
@@ -995,35 +1020,107 @@ export const SettingsModal: Component<SettingsModalProps> = (props) => {
             </div>
           </Show>
           <Show when={page() === "database"}>
-            <PlaceholderSettingsPage title="数据库" description="数据库表格、SQL 查询和 Redis 浏览相关设置。" sections={[
-              { title: "数据库", groups: [
-                [
-                  { label: "表格字体", value: "JetBrainsMono, NotoSansSC" },
-                  { label: "打开连接时自动展开", toggle: true },
-                  { label: "数据库标签显示信息", value: "显示数据库 + 连接名称" },
-                  { label: "表缓存", value: "连接时拉取一次表列表" },
-                  { label: "固定主键列", toggle: true },
-                  { label: "表数据自动计数", toggle: true },
-                ],
-                [
-                  { label: "文本对齐", value: "自动" },
-                  { label: "每页行数", value: "500" },
-                  { label: "SQL 查询数量限制", value: "无限制" },
-                  { label: "SQL 查询每页数量", value: "1,000" },
-                  { label: "显示表注释", toggle: true },
-                  { label: "危险 SQL 确认", toggle: true },
-                ],
-              ] },
-              { title: "Redis", groups: [
-                [
-                  { label: "键列表上限", value: "10000" },
-                  { label: "显示键值", toggle: true },
-                ],
-                [
-                  { label: "分组分隔符", value: ":" },
-                ],
-              ] },
-            ]} />
+            <div class="settings-page">
+              <div class="settings-page-heading"><h2>数据库</h2><p>数据库工作区的连接、对象树、数据表与查询行为。改动后已打开的表会立即刷新。</p></div>
+
+              {/* ① 整个数据库模块通用：连接行为、标签、缓存 */}
+              <h3 class="settings-section-title">通用</h3>
+              <div class="settings-grid settings-grid-single">
+                <div class="settings-card">
+                  <label><span><b>表格字体</b><small>数据网格与查询结果共用</small></span>
+                    <select value={databaseSettings().tableFont} onChange={event => setDatabaseSettings({ tableFont: event.currentTarget.value })}>
+                      <For each={databaseTableFonts}>{font => <option value={font.value}>{font.label}</option>}</For>
+                    </select>
+                  </label>
+                  <label><span><b>打开连接时自动展开</b><small>关闭后连接建好仍保持所有库折叠</small></span>
+                    <Toggle checked={databaseSettings().autoExpandOnConnect} onChange={value => setDatabaseSettings({ autoExpandOnConnect: value })} />
+                  </label>
+                  <label><span><b>数据库标签显示信息</b></span>
+                    <select value={databaseSettings().tabLabelMode} onChange={event => setDatabaseSettings({ tabLabelMode: event.currentTarget.value as TabLabelMode })}>
+                      <option value="database-connection">显示数据库 + 连接名称</option>
+                      <option value="database">仅显示数据库</option>
+                      <option value="table">仅显示表名</option>
+                    </select>
+                  </label>
+                  <label><span><b>表缓存</b><small>表列表多久重新读一次</small></span>
+                    <select value={databaseSettings().tableCache} onChange={event => setDatabaseSettings({ tableCache: event.currentTarget.value as TableCacheMode })}>
+                      <option value="on-connect">连接时拉取一次（临时缓存）</option>
+                      <option value="on-expand">展开时刷新表列表</option>
+                      <option value="off">不缓存，始终实时读取</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              {/* ② 左侧对象树：显示密度与单击行为 */}
+              <h3 class="settings-section-title">对象树与列表</h3>
+              <div class="settings-grid settings-grid-single">
+                <div class="settings-card">
+                  <label><span><b>显示表注释</b><small>在树里的表节点后显示注释</small></span>
+                    <Toggle checked={databaseSettings().showTableComment} onChange={value => setDatabaseSettings({ showTableComment: value })} />
+                  </label>
+                  <label><span><b>数据库后显示编码</b><small>在库名右侧显示字符集，空间紧张时可关闭</small></span>
+                    <Toggle checked={databaseSettings().showDatabaseCharset} onChange={value => setDatabaseSettings({ showDatabaseCharset: value })} />
+                  </label>
+                  <label><span><b>单击表展开信息栏</b><small>关闭后单击只选中，不弹出右侧信息栏</small></span>
+                    <Toggle checked={databaseSettings().openInfoOnClick} onChange={value => setDatabaseSettings({ openInfoOnClick: value })} />
+                  </label>
+                </div>
+              </div>
+
+              {/* ③ 数据表页：表格本身的呈现与翻页 */}
+              <h3 class="settings-section-title">数据表</h3>
+              <div class="settings-grid settings-grid-single">
+                <div class="settings-card">
+                  <label><span><b>每页行数</b><small>打开表时一次取多少行</small></span>
+                    <input type="number" min="10" max="10000" step="10" value={databaseSettings().pageSize}
+                      onChange={event => setDatabaseSettings({ pageSize: Number(event.currentTarget.value) })} />
+                  </label>
+                  <label><span><b>文本对齐</b></span>
+                    <select value={databaseSettings().textAlign} onChange={event => setDatabaseSettings({ textAlign: event.currentTarget.value as TextAlignMode })}>
+                      <option value="center">居中</option>
+                      <option value="left">左对齐</option>
+                      <option value="right">右对齐</option>
+                    </select>
+                  </label>
+                  <label><span><b>复合数据表头</b><small>在列名下方显示类型与注释</small></span>
+                    <Toggle checked={databaseSettings().compositeHeader} onChange={value => setDatabaseSettings({ compositeHeader: value })} />
+                  </label>
+                  <label><span><b>固定主键列</b><small>横向滚动时主键列保持可见</small></span>
+                    <Toggle checked={databaseSettings().fixedPrimaryKey} onChange={value => setDatabaseSettings({ fixedPrimaryKey: value })} />
+                  </label>
+                  <label><span><b>统计总行数</b><small>自动获取总行数 / 总页数</small></span>
+                    <Toggle checked={databaseSettings().statTotalRows} onChange={value => setDatabaseSettings({ statTotalRows: value })} />
+                  </label>
+                  <label><span><b>滚动方式</b></span>
+                    <select value={databaseSettings().scrollMode} onChange={event => setDatabaseSettings({ scrollMode: event.currentTarget.value as ScrollMode })}>
+                      <option value="natural">自然滚动</option>
+                      <option value="smooth">平滑滚动</option>
+                    </select>
+                  </label>
+                  <label><span><b>游标滚动速度</b><small>1 最慢，10 最快</small></span>
+                    <input type="number" min="1" max="10" step="1" value={databaseSettings().wheelSpeed}
+                      onChange={event => setDatabaseSettings({ wheelSpeed: Number(event.currentTarget.value) })} />
+                  </label>
+                </div>
+              </div>
+
+              {/* ④ SQL 查询窗口：执行策略与提示 */}
+              <h3 class="settings-section-title">SQL 查询</h3>
+              <div class="settings-grid settings-grid-single">
+                <div class="settings-card">
+                  <label><span><b>加载全库字段</b><small>编辑器可跨库提示字段名</small></span>
+                    <Toggle checked={databaseSettings().loadAllColumns} onChange={value => setDatabaseSettings({ loadAllColumns: value })} />
+                  </label>
+                  <label><span><b>危险 SQL 确认</b><small>执行 DELETE / DROP 等操作前先确认</small></span>
+                    <Toggle checked={databaseSettings().confirmDangerousSql} onChange={value => setDatabaseSettings({ confirmDangerousSql: value })} />
+                  </label>
+                  <label><span><b>失败即停</b><small>批量执行出错时立即停止后续语句</small></span>
+                    <Toggle checked={databaseSettings().stopOnError} onChange={value => setDatabaseSettings({ stopOnError: value })} />
+                  </label>
+                </div>
+              </div>
+            </div>
           </Show>
           <Show when={page() === "cli"}>
             <PlaceholderSettingsPage title="CLI" description="命令行工具和外部程序集成设置。" sections={[

@@ -5,6 +5,7 @@
  * 用法：npm run dev 后打开 /db-preview.html#table
  */
 import "../styles/tokens.css";
+import "../styles/database/index.css";
 import { render } from "solid-js/web";
 import { DatabaseWorkspace } from "../components/database/DatabaseWorkspace";
 import type { ConnectionRecord } from "../utils/api";
@@ -63,16 +64,16 @@ const ROWS = TITLES.map((item, index) => ({
 }));
 
 const TABLES = [
-  { name: "film", kind: "BASE TABLE", engine: "InnoDB", rows: 1000, comment: "影片目录", data_length: 196608, index_length: 65536, auto_increment: 1001, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-03 18:40" },
-  { name: "actor", kind: "BASE TABLE", engine: "InnoDB", rows: 200, comment: "演员", data_length: 16384, index_length: 16384, auto_increment: 201, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-28 11:02" },
-  { name: "customer", kind: "BASE TABLE", engine: "InnoDB", rows: 599, comment: "客户", data_length: 98304, index_length: 49152, auto_increment: 600, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-02 20:15" },
-  { name: "rental", kind: "BASE TABLE", engine: "InnoDB", rows: 16044, comment: "租赁记录", data_length: 1179648, index_length: 557056, auto_increment: 16050, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-04 08:01" },
-  { name: "payment", kind: "BASE TABLE", engine: "InnoDB", rows: 16049, comment: "付款", data_length: 1441792, index_length: 393216, auto_increment: 16050, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-04 08:01" },
-  { name: "category", kind: "BASE TABLE", engine: "InnoDB", rows: 16, comment: "分类", data_length: 16384, index_length: 0, auto_increment: 17, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12" },
-  { name: "inventory", kind: "BASE TABLE", engine: "InnoDB", rows: 4581, comment: "库存", data_length: 262144, index_length: 163840, auto_increment: 4582, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-01 16:33" },
-  { name: "film_actor", kind: "BASE TABLE", engine: "InnoDB", rows: 5462, comment: "", data_length: 245760, index_length: 196608, auto_increment: undefined, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12" },
-  { name: "store", kind: "BASE TABLE", engine: "InnoDB", rows: 2, comment: "门店", data_length: 16384, index_length: 16384, auto_increment: 3, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12" },
-  { name: "staff", kind: "BASE TABLE", engine: "InnoDB", rows: 2, comment: "员工", data_length: 16384, index_length: 32768, auto_increment: 3, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12" },
+  { name: "film", kind: "BASE TABLE", engine: "InnoDB", rows: 1000, comment: "影片目录", data_length: 196608, index_length: 65536, auto_increment: 1001, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-03 18:40", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "actor", kind: "BASE TABLE", engine: "InnoDB", rows: 200, comment: "演员", data_length: 16384, index_length: 16384, auto_increment: 201, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-28 11:02", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "customer", kind: "BASE TABLE", engine: "InnoDB", rows: 599, comment: "客户", data_length: 98304, index_length: 49152, auto_increment: 600, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-02 20:15", row_format: "Dynamic", checked_at: undefined, data_free: 4096, max_data_length: 0, create_options: "" },
+  { name: "rental", kind: "BASE TABLE", engine: "InnoDB", rows: 16044, comment: "租赁记录", data_length: 1179648, index_length: 557056, auto_increment: 16050, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-04 08:01", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "payment", kind: "BASE TABLE", engine: "InnoDB", rows: 16049, comment: "付款", data_length: 1441792, index_length: 393216, auto_increment: 16050, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-04 08:01", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "category", kind: "BASE TABLE", engine: "InnoDB", rows: 16, comment: "分类", data_length: 16384, index_length: 0, auto_increment: 17, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "inventory", kind: "BASE TABLE", engine: "InnoDB", rows: 4581, comment: "库存", data_length: 262144, index_length: 163840, auto_increment: 4582, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-11-01 16:33", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "film_actor", kind: "BASE TABLE", engine: "InnoDB", rows: 5462, comment: "", data_length: 245760, index_length: 196608, auto_increment: undefined, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "store", kind: "BASE TABLE", engine: "InnoDB", rows: 2, comment: "门店", data_length: 16384, index_length: 16384, auto_increment: 3, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
+  { name: "staff", kind: "BASE TABLE", engine: "InnoDB", rows: 2, comment: "员工", data_length: 16384, index_length: 32768, auto_increment: 3, collation: "utf8mb4_0900_ai_ci", created_at: "2026-10-01 09:12", updated_at: "2026-10-01 09:12", row_format: "Dynamic", checked_at: undefined, data_free: 0, max_data_length: 0, create_options: "" },
   { name: "film_list", kind: "VIEW", engine: undefined, rows: 997, comment: "影片清单视图", data_length: undefined, index_length: undefined, auto_increment: undefined, collation: undefined, created_at: undefined, updated_at: undefined },
   { name: "customer_list", kind: "VIEW", engine: undefined, rows: 599, comment: "客户清单视图", data_length: undefined, index_length: undefined, auto_increment: undefined, collation: undefined, created_at: undefined, updated_at: undefined },
 ];
@@ -234,10 +235,23 @@ const waitFor = async (selector: string, timeout = 3000) => {
   return null;
 };
 
+/** 连接后对象树默认是折叠的（设置项 autoExpandOnConnect 默认关闭），
+ *  预览脚本需要先手动展开「数据库 → 表」两层才能点到具体表。 */
+const expandTree = async () => {
+  document.querySelector<HTMLElement>(".db-tree-row.is-database .db-tree-twisty")?.click();
+  await wait(300);
+  const group = [...document.querySelectorAll<HTMLElement>(".db-group-row")]
+    .find(item => item.textContent?.trim().startsWith("表"));
+  group?.querySelector<HTMLElement>(".db-tree-twisty")?.click();
+  await wait(400);
+};
+
 const openFilm = async () => {
   await openDatabase();
+  await expandTree();
   const row = [...document.querySelectorAll<HTMLElement>(".db-tree-row.is-object")]
     .find(item => item.textContent?.trim().startsWith("film") && !item.textContent?.includes("film_"));
+  // 对象树：单击只选信息，双击才打开
   row?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   await wait(500);
 };
@@ -245,39 +259,63 @@ const openFilm = async () => {
 const runAction = async (action: string) => {
   if (action === "objects") {
     await openDatabase();
+    // 需要看对象「表格 / 图标」视图时，点一下工具栏的分段控件
+    if (initial.includes("info")) {
+      document.querySelector<HTMLElement>(".db-obj-row")?.click();
+      await wait(400);
+    }
+    if (initial.includes("table") || initial.includes("icons")) {
+      const label = initial.includes("icons") ? "图标视图" : "数据表格";
+      const segs = [...document.querySelectorAll<HTMLElement>(".db-objectbar .db-seg button")];
+      segs.find(item => item.getAttribute("aria-label") === label)?.click();
+      await wait(300);
+    }
     return;
   }
   if (action === "detail") {
     await openDatabase();
     await wait(200);
-    click('.db-seg button[aria-label="详情视图"]');
+    click('.db-seg button[aria-label="表信息"]');
     return;
   }
   if (action === "table" || action === "form" || action === "designer") {
     await openFilm();
-    if (action === "form") {
+    if (action === "form" || initial.includes("form")) {
       const segs = document.querySelectorAll(".db-toolbar .db-seg button");
       const target = [...segs].find(item => item.getAttribute("aria-label") === "表单视图") as HTMLElement | undefined;
       target?.click();
       await wait(400);
     }
+    if (initial.includes("structure")) {
+      const target = document.querySelector<HTMLElement>(".db-section-nav nav button:nth-child(2)");
+      target?.click();
+      await wait(300);
+    }
     if (action === "designer") {
       const target = await waitFor(".db-section-nav nav button:nth-child(3)");
       target?.click();
       await wait(300);
-      if (initial.includes("foreign")) {
+      const wanted = initial.find(item => ["foreign", "indexes", "sql", "triggers", "options", "comments"].includes(item));
+      if (wanted) {
+        const label = { foreign: "外键", indexes: "索引", sql: "SQL 预览", triggers: "触发器", options: "选项", comments: "注释" }[wanted]!;
         const tabs = [...document.querySelectorAll<HTMLElement>(".db-designer-tabs button[role=\"tab\"]")];
-        tabs.find(item => item.textContent?.trim().startsWith("外键"))?.click();
+        tabs.find(item => item.textContent?.trim().startsWith(label))?.click();
+        await wait(300);
+        if (wanted === "sql") {
+          const preview = [...document.querySelectorAll<HTMLElement>(".db-designer-toolbar button")].find(btn => btn.textContent?.includes("生成预览"));
+          preview?.click();
+          await wait(500);
+        }
       }
     }
     return;
   }
   if (action === "query") {
-    click(".db-tab-new");
+    click(".db-new-query");
     return;
   }
   if (action === "results") {
-    click(".db-tab-new");
+    click(".db-new-query");
     await waitFor(".db-query-toolbar");
     await wait(200);
     if (initial.includes("fail")) {
@@ -295,7 +333,7 @@ const runAction = async (action: string) => {
     return;
   }
   if (action === "plan") {
-    click(".db-tab-new");
+    click(".db-new-query");
     await wait(200);
     const explain = [...document.querySelectorAll<HTMLElement>(".db-query-toolbar button")]
       .find(item => item.textContent?.includes("执行计划"));

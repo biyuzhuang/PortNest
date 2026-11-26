@@ -3,8 +3,56 @@
    只允许 token 尺寸；1px 发丝线除外。禁止 calc(100% - Npx)。
    ============================================================================= */
 
+/* -----------------------------------------------------------------------------
+   密度归一
+   `styles/forms.css` 用 `input:not(.field-flush):not(...)`（(0,6,1)）给全站输入框
+   统一了 32px 高 + 自带边框/底色。数据库模块是 28px（--h-row）的自有体系，被它压
+   过来后：搜索框在包裹层里再画一圈边框、撑出容器并盖住下面第一行；单元格编辑框
+   冒出花边框；过滤器字段比同行按钮高一截。
+   这里用「同等形状 + .db-workspace 前缀」把控制权收回来（(0,7,1) 起），
+   具体外观仍由 .db-input / .db-search / .db-cell-input 负责。
+   -------------------------------------------------------------------------- */
+.db-workspace .db-search input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+.db-workspace .db-search input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):hover,
+.db-workspace .db-search input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):focus {
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: 0;
+}
+/* 独立字段：只收回高度，边框与底色沿用 .db-input */
+.db-workspace .db-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  min-height: var(--h-row);
+  padding: 0 var(--space-3);
+}
+/* 设计器单元格内的 .db-input：平时无框，悬停才显示发丝线 */
+.db-workspace .db-input.is-cell:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.db-workspace .db-input.is-cell:hover:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  border-color: var(--line);
+  background: var(--surface-base);
+}
+/* 单元格内联编辑：单元格自己就是容器，输入框不画任何框 */
+.db-workspace .db-cell-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  min-height: 0;
+}
+/* 对话框里的字段沿用宽松尺寸（28px 的行高在模态里偏挤） */
+.db-workspace .db-dialog .db-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  min-height: var(--h-control);
+  padding: 0 var(--space-4);
+}
+
 .db-workspace {
   position: relative;
+  /* 工作区级容器查询基准：标签栏这类横跨整个工作区的元素按它收窄 */
+  container: dbworkspace / inline-size;
   display: flex;
   /* 同时兼容「父级是 flex 容器」与「父级是定高块」两种挂载方式 */
   flex: 1 1 auto;
@@ -14,7 +62,20 @@
   background: var(--surface-base);
   color: var(--text-1);
   font-family: var(--font-ui);
+  /* 字号整体抬一档，与主窗口对齐。
+     数据库模块原先按 13px 正文 / 12px 树行设计，和侧边栏 13.5px 的名称、
+     设置页 13px 的标签摆在一起像另一套字体；这里在模块内部把 --fs-*
+     的小字号台阶统一 +1px，行高与固定尺寸仍走 --h-row，不会被撑开。 */
+  --fs-11: 12px;
+  --fs-115: 12.5px;
+  --fs-12: 13px;
+  --fs-125: 13.5px;
+  --fs-13: 14px;
   font-size: var(--fs-13);
+  /* 图标尺寸与主窗口一套规范（tokens.css 的 --icon-sm/md/lg）：
+     导航/标题 18 · 树与对象行 16 · 标签页 15 · 工具栏与状态栏 14 ·
+     表头排序箭头、标签关闭等微型标记 12。新增图标请就近取这几个值，
+     不要再用 9–13 的中间值，否则又会比主窗口小半号。 */
 }
 
 .db-main {
@@ -26,6 +87,7 @@
 }
 
 .db-main-body {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
@@ -155,13 +217,54 @@
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--line);
   background: var(--surface-base);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   scrollbar-width: none;
 }
 .db-toolbar::-webkit-scrollbar { height: 0; }
 
 .db-toolbar-group { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+/* 工具条左右分区：左侧内容多了就滚动，右侧（视图切换、数据库选择等）
+   永远留在可视区，窄窗口不会再「吞掉」按钮 */
+.db-toolbar-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.db-toolbar-scroll::-webkit-scrollbar { height: 0; }
+.db-toolbar-side { display: flex; flex: none; align-items: center; gap: var(--space-2); }
+.db-btn-label { white-space: nowrap; }
+
+/* 容器查询基准：面板变窄时按钮只留图标，靠 title 提示 */
+.db-data { container: dbdata / inline-size; }
+.db-query { container: dbquery / inline-size; }
+
+/* 只收起「带图标」按钮的文案——纯文字按钮没有图形可认，收起来会变成
+   一个点不到内容的空胶囊，所以它们在更窄时整颗隐藏。 */
+@container dbdata (max-width: 680px) {
+  .db-toolbar .db-btn:has(svg) .db-btn-label,
+  .db-toolbar .db-text-btn:has(svg) .db-btn-label { display: none; }
+  .db-toolbar .db-btn:has(svg),
+  .db-toolbar .db-text-btn:has(svg) { padding: 0 var(--space-3); }
+}
+@container dbdata (max-width: 520px) {
+  .db-toolbar [data-label-only] { display: none; }
+}
+@container dbquery (max-width: 820px) {
+  .db-query-toolbar .db-btn:has(svg) .db-btn-label,
+  .db-query-toolbar .db-text-btn:has(svg) .db-btn-label { display: none; }
+  .db-query-toolbar .db-btn:has(svg),
+  .db-query-toolbar .db-text-btn:has(svg) { padding: 0 var(--space-3); }
+  .db-query-db .db-select { min-width: 6.5rem; }
+}
+@container dbquery (max-width: 620px) {
+  .db-query-toolbar [data-label-only] { display: none; }
+  .db-query-db > span { display: none; }
+}
 .db-toolbar-divider { width: 1px; height: var(--space-6); background: var(--line); flex: none; }
 .db-toolbar-spacer { flex: 1; min-width: var(--space-4); }
 
@@ -270,12 +373,20 @@
 .db-th { cursor: pointer; }
 .db-th:hover { color: var(--text-1); }
 .db-th.is-sorted { color: var(--accent); }
-.db-th-name { display: block; line-height: 1.35; }
-.db-th-type { display: block; color: var(--text-3); font-size: var(--fs-11); font-weight: 400; font-family: var(--font-mono); }
-.db-th.is-numeric .db-th-name,
-.db-th.is-numeric .db-th-type { text-align: right; }
 
-.db-sort { display: inline-flex; flex-direction: column; margin-left: var(--space-1); vertical-align: middle; opacity: 0.35; }
+/* 表头结构：左「名称 / 类型」两行，右「排序箭头 + 冻结」一组。
+   flex 必须加在内层容器上——直接给 th 设 display: flex 会让它不再是 table-cell，
+   整行表头会竖着堆起来（对象列表也吃这个坑）。 */
+.db-th-inner { display: flex; align-items: center; gap: var(--space-2); }
+.db-th-main { flex: 1 1 auto; min-width: 0; }
+.db-th-main { flex: 1 1 auto; min-width: 0; }
+.db-th-name,
+.db-th-type { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-th-name { line-height: 1.35; }
+.db-th-type { color: var(--text-3); font-size: var(--fs-11); font-weight: 400; font-family: var(--font-mono); }
+.db-th-tools { display: inline-flex; flex: none; align-items: center; gap: var(--space-1); }
+
+.db-sort { display: inline-flex; flex-direction: column; opacity: 0.45; }
 .db-sort svg { display: block; }
 .db-sort svg.is-on { opacity: 1; color: var(--accent); }
 
@@ -300,11 +411,23 @@
 
 .db-cell.is-numeric { text-align: right; font-variant-numeric: tabular-nums; }
 .db-cell.is-mono { font-family: var(--font-mono); }
-.db-cell.is-object-name { display: flex; align-items: center; gap: var(--space-2); }
+/* 名称单元格不用 flex：td 一旦变成 flex 容器，列宽就不再按内容计算，
+   宽屏时无法收缩到名字宽度（会在名称与注释之间留下空白带） */
+.db-cell.is-object-name { white-space: nowrap; }
+.db-cell.is-object-name .db-object-icon { display: inline-flex; vertical-align: -3px; margin-right: var(--space-2); }
 .db-cell.is-null { color: var(--text-3); }
 .db-cell-dim { color: var(--text-3); }
 .db-cell-null { color: var(--text-3); font-style: italic; font-size: var(--fs-11); }
-.db-cell-text { display: block; overflow: hidden; text-overflow: ellipsis; }
+.db-cell-text {
+  display: block;
+  /* td 上的 max-width / overflow 对 table-cell 无效（规范如此），
+     省略号只能靠单元格里的块级元素自己裁；20rem 与 td 的 max-width 对齐 */
+  width: 100%;
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .db-cell-input {
   width: 100%;
   height: var(--h-row);
@@ -329,16 +452,16 @@
 
 .db-th-pin {
   display: inline-flex;
-  margin-left: var(--space-1);
   border: 0;
   background: transparent;
   color: var(--text-3);
+  /* 用 visibility 而不是 opacity 隐藏：保住这点宽度，悬停时列宽不会跳 */
+  visibility: hidden;
   opacity: 0;
   cursor: pointer;
-  vertical-align: middle;
 }
-.db-grid thead th:hover .db-th-pin { opacity: 0.6; }
-.db-th-pin.is-on { opacity: 1; color: var(--accent); }
+.db-grid thead th.db-th:hover .db-th-pin { visibility: visible; opacity: 0.6; }
+.db-th-pin.is-on { visibility: visible; opacity: 1; color: var(--accent); }
 .db-th-pin:hover { opacity: 1 !important; }
 
 .db-col-resize {
@@ -458,6 +581,18 @@
 }
 .db-ddl.is-inline { flex: none; border: 1px solid var(--line); border-radius: var(--r-sm); }
 
+/* DDL 着色：只着色关键字 / 字符串 / 引号标识符 / 数字 / 注释 */
+.db-ddl { --sql-kw: #2f56c8; }
+.db-ddl .sql-kw { color: var(--sql-kw); font-weight: 600; }
+.db-ddl .sql-str { color: #16794a; }
+.db-ddl .sql-ident { color: #7a4bb5; }
+.db-ddl .sql-num { color: #a4620a; }
+.db-ddl .sql-cmt { color: var(--text-3); font-style: italic; }
+:root[data-theme="dark"] .db-ddl { --sql-kw: #8ba4ff; }
+:root[data-theme="dark"] .db-ddl .sql-str { color: #63c68f; }
+:root[data-theme="dark"] .db-ddl .sql-ident { color: #b393e8; }
+:root[data-theme="dark"] .db-ddl .sql-num { color: #e2a765; }
+
 .db-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -512,7 +647,38 @@
 }
 .db-context button:hover { background: var(--surface-hover); color: var(--text-1); }
 .db-context button.is-danger { color: #c0392b; }
+:root[data-theme="dark"] .db-context button.is-danger { color: #f08c7d; }
 .db-context hr { width: 100%; margin: var(--space-2) 0; border: 0; border-top: 1px solid var(--line); }
+
+/* 二级菜单（导入 / 导出的 SQL · CSV · Excel）：
+   鼠标悬停或用键盘聚焦到父项时展开，默认向右；主菜单被翻到光标左侧时，
+   右侧通常没空间，`.is-flip-submenu` 让它改成向左展开。 */
+.db-context-sub { position: relative; }
+.db-context .has-sub {
+  justify-content: space-between;
+  gap: var(--space-4);
+  width: 100%;
+}
+.db-context .db-sub-caret { color: var(--text-3); flex: none; }
+.db-submenu {
+  position: absolute;
+  top: calc(-1 * var(--space-2) - 1px);
+  /* 主菜单有 8px 内边距，100% 落在内容边缘，会把子菜单压在主菜单边框上 */
+  left: calc(100% + var(--space-2));
+  z-index: 1;
+  display: none;
+  flex-direction: column;
+  min-width: 168px;
+  padding: var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 22%, transparent);
+}
+.db-context.is-flip-submenu .db-submenu { left: auto; right: calc(100% + var(--space-2)); }
+.db-context-sub:hover > .db-submenu,
+.db-context-sub:focus-within > .db-submenu { display: flex; }
+.db-submenu button { width: 100%; }
 
 /* ---------- 属性列表 / 分隔条 -------------------------------------------- */
 
@@ -568,3 +734,34 @@
 }
 
 .db-hidden-input { display: none; }
+
+/* 表格字体：数据网格、结果集与对象列表统一跟随「设置 · 通用 · 数据库」的选择；
+   默认值是可命中的等宽栈，缺字会逐级回退，不影响列对齐。 */
+.db-workspace .db-grid td,
+.db-workspace .db-grid th,
+.db-workspace .db-cell,
+.db-workspace .db-obj-cell {
+  font-family: var(--db-table-font, var(--font-mono));
+}
+
+/* 文本对齐（设置 · 通用 · 数据库）：整张数据表跟随设置，数值列也一并对齐 */
+.db-grid.is-data[data-align="center"] td.db-cell,
+.db-grid.is-data[data-align="center"] th.db-th { text-align: center; }
+.db-grid.is-data[data-align="right"] td.db-cell,
+.db-grid.is-data[data-align="right"] th.db-th { text-align: right; }
+.db-grid.is-data[data-align="center"] .db-th-inner { justify-content: center; }
+.db-grid.is-data[data-align="right"] .db-th-inner { justify-content: flex-end; }
+.db-grid.is-data[data-align="center"] .db-cell-text { margin: 0 auto; }
+
+/* 深色主题：琥珀 / 红色提示文字按浅色值给会糊在深底上，统一提亮。
+   这些颜色没有对应的 token（数据网格、设计器、查询消息都在用），
+   集中在这里覆盖，避免每个模块各写一遍。 */
+:root[data-theme="dark"] .db-tx-badge.is-dirty,
+:root[data-theme="dark"] .db-formview-dirty,
+:root[data-theme="dark"] .db-record-warn,
+:root[data-theme="dark"] .db-designer-dirty,
+:root[data-theme="dark"] .db-badge.is-key,
+:root[data-theme="dark"] .db-messages li.is-warn,
+:root[data-theme="dark"] .db-plan-flag { color: #e7b45c; }
+:root[data-theme="dark"] .db-dialog-error,
+:root[data-theme="dark"] .db-context button.is-danger { color: #f08c7d; }

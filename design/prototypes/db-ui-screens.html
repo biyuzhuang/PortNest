@@ -1,0 +1,2256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>数据库模块 · 界面设计稿</title>
+<style>
+  :root{
+    --ink:#17181a; --ink2:#55585d; --ink3:#63676d; --ink4:#8b9199;
+    --line:#e1e4e8; --line2:#eef0f3; --shell:#f2f3f5; --sunken:#f7f8f9;
+    --sel:#e9ebee; --hover:#f1f2f4; --accent:#43484f;
+    --doc-bg:#f6f7f9; --card:#fff;
+    --blue:#1a63b4; --green:#0f7b6c; --amber:#a4620a; --rose:#b3352f; --violet:#6b4bb5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:38px 28px 80px;background:var(--doc-bg);color:var(--ink);
+       font:14px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .page{max-width:1100px;margin:0 auto}
+  header.top .eyebrow{color:var(--ink4);font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+  header.top h1{margin:6px 0 8px;font-size:28px;line-height:1.32;letter-spacing:-.01em}
+  header.top .sub{color:var(--ink2)}
+  .meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;color:var(--ink4);font-size:12px}
+  .meta b{color:var(--ink2);font-weight:600}
+
+  section.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+               padding:24px 26px 26px;margin:18px 0}
+  h2{margin:0 0 4px;font-size:20px;letter-spacing:-.01em}
+  h2 .num{display:inline-grid;place-items:center;width:44px;height:24px;margin-right:9px;
+          border-radius:6px;background:var(--accent);color:#fff;font-size:11.5px;font-weight:600;
+          letter-spacing:.02em;vertical-align:3px;font-family:"Cascadia Code",Consolas,monospace}
+  h3{margin:22px 0 8px;font-size:15px}
+  p{margin:8px 0;color:var(--ink2)}
+  .lead{font-size:14px}
+  code,.mono{font-family:"Cascadia Code",Consolas,monospace;font-size:12.5px;background:#f2f4f8;
+             padding:1px 5px;border-radius:4px;color:#33404f}
+  ul,ol{margin:8px 0 8px 20px;padding:0;color:var(--ink2)}
+  li{margin:4px 0}
+  li b{color:var(--ink)}
+  table.spec{width:100%;border-collapse:collapse;margin:10px 0;font-size:13px}
+  .spec th,.spec td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+  .spec th{color:var(--ink4);font-size:11.5px;font-weight:600;background:#fafbfc}
+  .spec tr:last-child td{border-bottom:none}
+  .sw-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
+  .sw{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .sw i{display:block;height:44px}
+  .sw span{display:block;padding:5px 8px 6px;font-size:11px;color:var(--ink3);line-height:1.45}
+  .sw span b{display:block;color:var(--ink);font-size:11.5px;font-weight:600}
+
+  /* ---------- 设计稿外框 ---------- */
+  .frame{margin:18px 0 6px;border:1px solid var(--line);border-radius:12px;background:#eceef1;
+         padding:16px;overflow:hidden}
+  .scale{width:1180px;transform-origin:top left;transform:scale(.855);height:633px}
+  .frame.plain{background:#f4f5f7}
+  .cap{color:var(--ink3);font-size:12px;margin:10px 2px 0;display:flex;gap:10px;align-items:center}
+  .cap b{color:var(--ink)}
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .note-box{border:1px solid var(--line2);background:#fbfcfd;border-radius:10px;padding:12px 14px}
+  .note-box h4{margin:0 0 5px;font-size:12.5px;color:var(--ink)}
+  .note-box ul{margin:4px 0 0 17px;font-size:12.5px}
+  .note-box li{margin:3px 0}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;
+       background:#eff1f5;color:var(--ink2)}
+  .tag.new{background:#eaf6f3;color:var(--green)}
+  .tag.chg{background:#eef4fd;color:var(--blue)}
+  footer{color:var(--ink4);font-size:12px;text-align:center;margin-top:26px;line-height:1.9}
+
+  /* ============ 应用界面（设计稿内部） ============ */
+  .app{width:1180px;height:740px;background:#fff;display:flex;flex-direction:column;
+       font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;
+       color:#17181a;overflow:hidden;border-radius:8px;box-shadow:0 1px 3px rgba(20,25,35,.08)}
+  .app *{box-sizing:border-box}
+  .titlebar{height:36px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;
+            background:#f7f8f9;border-bottom:1px solid #e1e4e8;font-size:12px;color:#63676d}
+  .titlebar .brand{display:flex;align-items:center;gap:7px;font-weight:600;color:#17181a;font-size:12.5px}
+  .titlebar .brand i{width:16px;height:16px;border-radius:5px;background:#43484f;color:#fff;
+                     display:grid;place-items:center;font-size:9px;font-style:normal;font-weight:700}
+  .titlebar .path{color:#8b9199}
+  .titlebar .right{margin-left:auto;display:flex;align-items:center;gap:2px}
+  .winbtn{width:28px;height:24px;display:grid;place-items:center;border-radius:5px;color:#8b9199;font-size:11px}
+
+  .workarea{flex:1;display:flex;min-height:0}
+  .rail{width:54px;flex:none;background:#f2f3f5;border-right:1px solid #e1e4e8;
+        display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:1px}
+  .rail .rb{width:46px;height:44px;display:flex;flex-direction:column;align-items:center;
+            justify-content:center;gap:3px;border-radius:8px;color:#63676d;font-size:9px}
+  .rail .rb.on{background:#e6e8eb;color:#17181a;font-weight:600}
+  .rail .sp{flex:1}
+
+  .tree{width:264px;flex:none;border-right:1px solid #e1e4e8;display:flex;flex-direction:column;background:#fff;min-height:0}
+  .tree-hd{height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 8px 0 10px;
+           border-bottom:1px solid #eef0f3;font-size:11.5px;color:#63676d;font-weight:600;letter-spacing:.02em}
+  .tree-hd .acts{margin-left:auto;display:flex;gap:2px}
+  .iconbtn{width:22px;height:22px;display:grid;place-items:center;border-radius:5px;color:#8b9199}
+  .tree-search{margin:6px 8px 4px;height:26px;border:1px solid #e1e4e8;border-radius:6px;
+               display:flex;align-items:center;gap:6px;padding:0 7px;color:#8b9199;font-size:12px}
+  .tree-body{flex:1;overflow:hidden;padding:2px 0 6px}
+  .row{height:26px;display:flex;align-items:center;gap:6px;padding:0 8px 0 6px;font-size:12.5px;
+       color:#2b2f36;white-space:nowrap;border-radius:5px;margin:0 4px}
+  .row .nm{overflow:hidden;text-overflow:ellipsis}
+  .row .cnt{margin-left:auto;color:#9aa1ab;font-size:11px;font-variant-numeric:tabular-nums}
+  .row.on{background:#e9ebee;font-weight:600;color:#17181a}
+  .row.hov{background:#f5f6f8}
+  .row .ind{width:10px;display:grid;place-items:center;color:#a8aeb8;flex:none}
+  .row.lvl1{padding-left:14px}
+  .row.lvl2{padding-left:32px}
+  .row.lvl3{padding-left:48px}
+  .row .grp{font-size:12px;color:#55585d}
+  .divider{height:1px;background:#eef0f3;margin:6px 10px}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;background:#fff}
+  .tabbar{height:32px;flex:none;display:flex;align-items:stretch;background:#f7f8f9;
+          border-bottom:1px solid #e1e4e8;overflow:hidden}
+  .tab{display:flex;align-items:center;gap:6px;padding:0 11px;font-size:12.5px;color:#55585d;
+       border-right:1px solid #e1e4e8;white-space:nowrap;position:relative}
+  .tab.on{background:#fff;color:#17181a;font-weight:600}
+  .tab.on::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:#43484f}
+  .tab .x{color:#a8aeb8;font-size:11px}
+  .tab.add{color:#8b9199;border-right:none;padding:0 9px}
+
+  .toolbar{height:32px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px;
+           border-bottom:1px solid #e1e4e8;font-size:12px;color:#2b2f36;overflow:hidden}
+  .tb{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 7px;border-radius:5px;
+      color:#2b2f36;white-space:nowrap}
+  .tb.on{background:#eceef1}
+  .tb.dim{color:#a8aeb8}
+  .tb.pri{background:#43484f;color:#fff;font-weight:600}
+  .sep{width:1px;height:16px;background:#e1e4e8;margin:0 3px;flex:none}
+  .grow{flex:1}
+  .chip{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;
+        background:#f1f2f4;color:#55585d;font-size:11.5px;font-weight:600}
+  .search{display:flex;align-items:center;gap:6px;height:24px;border:1px solid #e1e4e8;
+          border-radius:6px;padding:0 7px;color:#8b9199;font-size:12px;width:172px;background:#fff}
+  .seg{display:flex;border:1px solid #e1e4e8;border-radius:6px;overflow:hidden;height:24px}
+  .seg > span{width:28px;display:grid;place-items:center;color:#8b9199;border-right:1px solid #e1e4e8}
+  .seg > span:last-child{border-right:none}
+  .seg > span.on{background:#eceef1;color:#17181a}
+
+  .body{flex:1;display:flex;min-height:0}
+  .content{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .pane{width:352px;flex:none;border-left:1px solid #e1e4e8;display:flex;flex-direction:column;
+        background:#fff;min-height:0}
+  .pane-hd{height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;
+           border-bottom:1px solid #eef0f3;font-size:12px;font-weight:600;color:#2b2f36}
+  .pane-hd .x{margin-left:auto;color:#a8aeb8}
+  .pane-body{flex:1;overflow:hidden;padding:2px 0 8px}
+
+  .statusbar{height:26px;flex:none;display:flex;align-items:center;gap:14px;padding:0 10px;
+             border-top:1px solid #e1e4e8;background:#fafbfc;font-size:11.5px;color:#63676d}
+  .statusbar .dot{width:6px;height:6px;border-radius:50%;background:#2f9e6b;display:inline-block;margin-right:5px}
+  .statusbar .r{margin-left:auto;display:flex;align-items:center;gap:12px}
+
+  /* 表格 */
+  .gridwrap{flex:1;min-height:0;overflow:hidden;position:relative}
+  table.grid{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}
+  table.grid th{height:30px;background:#fafbfc;border-bottom:1px solid #e1e4e8;border-right:1px solid #eef0f3;
+                text-align:left;padding:0 8px;font-weight:600;color:#55585d;font-size:11.5px;white-space:nowrap}
+  table.grid th .srt{color:#a8aeb8;font-size:9px;margin-left:4px}
+  table.grid td{height:28px;border-bottom:1px solid #eef0f3;border-right:1px solid #eef0f3;
+                padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#17181a}
+  table.grid tr:nth-child(even) td{background:#fcfcfd}
+  table.grid td.num{text-align:right;font-variant-numeric:tabular-nums;color:#55585d}
+  table.grid td.mut{color:#8b9199}
+  table.grid td.code{color:#63676d;font-size:11px}
+  table.grid td.tagcell span{display:inline-block;padding:0 6px;height:18px;line-height:18px;border-radius:4px;
+                             background:#eef4fd;color:#1a63b4;font-size:11px}
+  table.grid tr.on td{background:#f0f3f7}
+  table.grid tr.on td:first-child{box-shadow:inset 2px 0 0 #43484f}
+  .rownum{width:44px;text-align:right;color:#a8aeb8;font-size:11.5px;padding-right:8px!important}
+
+  .empty-note{display:grid;place-items:center;height:100%;color:#8b9199;font-size:12.5px}
+
+  /* 属性列表（右侧信息栏） */
+  .kv{padding:10px 12px 4px}
+  .kv .h{font-size:11px;color:#8b9199;font-weight:600;letter-spacing:.04em;margin:2px 0 6px}
+  .kv dl{margin:0;display:grid;grid-template-columns:96px 1fr;gap:4px 8px;font-size:12px}
+  .kv dt{color:#8b9199}
+  .kv dd{margin:0;color:#17181a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mini{font-size:11px;color:#8b9199;padding:0 12px}
+
+  /* 通用小件 */
+  .btn{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:6px;
+       border:1px solid #e1e4e8;background:#fff;font-size:12px;color:#2b2f36}
+  .btn.pri{background:#43484f;border-color:#43484f;color:#fff;font-weight:600}
+  .btn.ghost{border-color:transparent;background:transparent}
+  .field{height:26px;border:1px solid #e1e4e8;border-radius:6px;display:flex;align-items:center;
+         padding:0 8px;font-size:12px;color:#17181a;background:#fff}
+  .field.ph{color:#a8aeb8}
+  .lbl{font-size:11.5px;color:#63676d}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-ai" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B5CF6"/><stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+    <symbol id="i-mysql" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#0E7A93"/>
+      <ellipse cx="12" cy="7.3" rx="5.3" ry="2.2" fill="#fff"/>
+      <path d="M6.7 7.3v9.4c0 1.2 2.4 2.2 5.3 2.2s5.3-1 5.3-2.2V7.3" fill="none" stroke="#fff" stroke-width="1.7"/>
+      <path d="M6.7 11.6c0 1.2 2.4 2.2 5.3 2.2s5.3-1 5.3-2.2" fill="none" stroke="#fff" stroke-width="1.4" opacity=".85"/>
+    </symbol>
+    <symbol id="i-postgresql" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#336791"/>
+      <path d="M7.4 9.2c0-3 2-4.9 4.7-4.9s4.7 1.9 4.7 4.9v2.6c0 2.6-1.9 4.4-4.6 4.4-1 0-1.9-.2-2.6-.7" fill="#B9CCDF"/>
+      <path d="M9.1 10.2c0-1.7 1.3-2.9 3.1-2.9s3.1 1.2 3.1 2.9v2.3c0 1.5-1.3 2.6-3 2.6-1 0-1.9-.3-2.5-.9" fill="#fff"/>
+      <circle cx="10.8" cy="10.6" r=".85" fill="#336791"/><circle cx="13.6" cy="10.6" r=".85" fill="#336791"/>
+      <path d="M11 13.2c0 1.9.5 3.3 1.4 4.2.4.5 1 .6 1.4.2.3-.3.3-.8 0-1.1-.4-.4-.6-1-.6-1.7" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-highgo" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#14776E"/>
+      <text x="12" y="15.6" text-anchor="middle" font-family="Segoe UI,sans-serif" font-size="9.4" font-weight="700" fill="#fff">HG</text>
+    </symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#3A4553"/>
+      <path d="m7.2 9 3.2 3-3.2 3" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M12.6 15.4h4.4" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-local" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#1E9E68"/>
+      <rect x="5.6" y="6.4" width="12.8" height="8.6" rx="1.5" fill="none" stroke="#fff" stroke-width="1.6"/>
+      <path d="M9.4 18.4h5.2M12 15.2v3.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-docker" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#1D8FE1"/>
+      <g fill="#fff">
+        <rect x="7" y="11" width="2.1" height="2.1"/><rect x="9.5" y="11" width="2.1" height="2.1"/>
+        <rect x="12" y="11" width="2.1" height="2.1"/><rect x="9.5" y="8.6" width="2.1" height="2.1"/>
+        <rect x="12" y="8.6" width="2.1" height="2.1"/>
+      </g>
+      <path d="M5.6 13.4h12.1c.6-1.3.3-2.3.2-2.6-1.2.2-2-.4-2-.4-.7 1.4-2 1.3-2 1.3.5-1.6-.4-2.7-.4-2.7-1.4.9-1.6 2.2-1.6 2.2" fill="#fff" opacity=".92"/>
+      <path d="M5.8 14.6c.4 2.8 2.4 4.2 5.6 4.2 3.6 0 5.4-2 6.1-4.2" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24">
+      <path d="M2.4 7.6c0-1.1.9-2 2-2h4.3l1.9 2.1h7.1c1.1 0 2 .9 2 2v7.7c0 1.1-.9 2-2 2H4.4c-1.1 0-2-.9-2-2z" fill="#FFE9B4"/>
+      <path d="M2.4 9.7h19.2v7.7c0 1.1-.9 2-2 2H4.4c-1.1 0-2-.9-2-2z" fill="#FFCA28"/>
+      <path d="M2.4 7.6c0-1.1.9-2 2-2h4.3l1.9 2.1H4.4c-1.1 0-2 .9-2 2v.0z" fill="#FFB02C"/>
+    </symbol>
+    <symbol id="i-database" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#1E9E68"/>
+      <ellipse cx="12" cy="7.2" rx="5.4" ry="2.3" fill="#fff"/>
+      <path d="M6.6 7.2v9.6c0 1.3 2.4 2.3 5.4 2.3s5.4-1 5.4-2.3V7.2" fill="none" stroke="#fff" stroke-width="1.7"/>
+      <path d="M6.6 12c0 1.3 2.4 2.3 5.4 2.3s5.4-1 5.4-2.3" fill="none" stroke="#fff" stroke-width="1.4" opacity=".85"/>
+    </symbol>
+    <symbol id="i-table" viewBox="0 0 24 24">
+      <rect x="2.6" y="4.4" width="18.8" height="15.2" rx="3" fill="#0F8A8A"/>
+      <rect x="2.6" y="4.4" width="18.8" height="4.8" rx="3" fill="#0B6F6F"/>
+      <g stroke="#fff" stroke-width="1.1" opacity=".75">
+        <path d="M9.1 9.2v10.4M15 9.2v10.4M2.6 14.3h18.8"/>
+      </g>
+    </symbol>
+    <symbol id="i-view" viewBox="0 0 24 24">
+      <rect x="2.6" y="5" width="17" height="14" rx="2.6" fill="#5B7BB5"/>
+      <g stroke="#fff" stroke-width="1.1" opacity=".8"><path d="M2.6 9.2h17M8.6 9.2V19M14 9.2V19M2.6 14.2h17"/></g>
+      <circle cx="19" cy="18.2" r="3.6" fill="#fff" stroke="#3C5E9C" stroke-width="1.2"/>
+      <path d="m17.7 18.2 1 1 1.7-1.8" fill="none" stroke="#3C5E9C" stroke-width="1.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-query" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#2F6FD0"/>
+      <path d="M6.6 6.4h6.2l2.4 2.4v2.6" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+      <text x="8.6" y="17.4" font-family="Segoe UI,sans-serif" font-size="5.4" font-weight="700" fill="#fff">SQL</text>
+      <circle cx="16.6" cy="16.4" r="3.1" fill="none" stroke="#fff" stroke-width="1.5"/>
+      <path d="m18.9 18.7 2 2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-er" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#4361B8"/>
+      <g stroke="#fff" stroke-width="1.4" fill="none">
+        <rect x="4.4" y="4.6" width="5.6" height="4" rx="1.2"/>
+        <rect x="13.8" y="9.4" width="5.8" height="4" rx="1.2"/>
+        <rect x="5.6" y="15.2" width="5.6" height="4" rx="1.2"/>
+        <path d="M10 6.6h2.2a1.5 1.5 0 0 1 1.5 1.5v1.3M8.4 15.2v-2.1a1.5 1.5 0 0 1 1.5-1.5h3.9"/>
+      </g>
+    </symbol>
+    <symbol id="i-fx" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#D79A20"/>
+      <text x="12" y="16" text-anchor="middle" font-family="Georgia,serif" font-style="italic" font-size="10" font-weight="700" fill="#fff">fx</text>
+    </symbol>
+    <symbol id="i-assets" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#2F6FD0"/>
+      <g stroke="#fff" stroke-width="1.5" fill="none">
+        <rect x="5" y="5" width="5.6" height="5.6" rx="1.2"/><rect x="13.4" y="5" width="5.6" height="5.6" rx="1.2"/>
+        <rect x="5" y="13.4" width="5.6" height="5.6" rx="1.2"/><rect x="13.4" y="13.4" width="5.6" height="5.6" rx="1.2"/>
+      </g>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#6B7280"/>
+      <g stroke="#fff" stroke-width="1.5" stroke-linecap="round">
+        <path d="M8 8.2h10M8 12h10M8 15.8h6"/>
+        <circle cx="5.6" cy="8.2" r=".9" fill="#fff" stroke="none"/><circle cx="5.6" cy="12" r=".9" fill="#fff" stroke="none"/><circle cx="5.6" cy="15.8" r=".9" fill="#fff" stroke="none"/>
+      </g>
+    </symbol>
+    <symbol id="i-ai" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#8B5CF6"/>
+      <path d="m12 4.6 1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L5 11.6l5.1-1.9z" fill="#fff"/>
+    </symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#6B7280"/>
+      <path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2zm8.2 3.6c0-.5-.05-1-.14-1.5l1.7-1.2-1.7-3-2 .8a7.6 7.6 0 0 0-2.6-1.5L15.1 3H8.9l-.35 2.6a7.6 7.6 0 0 0-2.6 1.5l-2-.8-1.7 3 1.7 1.2a8.4 8.4 0 0 0 0 3l-1.7 1.2 1.7 3 2-.8a7.6 7.6 0 0 0 2.6 1.5l.35 2.6h6.2l.35-2.6a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.7-3-1.7-1.2c.09-.5.14-1 .14-1.5z" fill="#fff" fill-rule="evenodd"/>
+    </symbol>
+    <symbol id="i-power" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#1E9E68"/>
+      <path d="M12 5.6v6.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      <path d="M7.4 8.6a6 6 0 1 0 9.2 0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#C4453C"/>
+      <path d="M12 6.4v7.2" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+      <circle cx="12" cy="17.4" r="1.3" fill="#fff"/>
+    </symbol>
+    <symbol id="i-loading" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.6" fill="#D79A20"/>
+      <path d="M12 5.6a6.4 6.4 0 0 1 6.4 6.4" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>
+      <circle cx="12" cy="12" r="1.4" fill="#fff"/>
+    </symbol>
+
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="#9AA6B4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" fill="none" stroke="#9AA6B4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="#8b95a4" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="#8b95a4" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.6"/><path d="m19.6 19.6-4-4"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.2 9A7 7 0 0 0 6.4 6.4L4 9m16 6-2.4 2.6A7 7 0 0 1 5.8 15"/></g></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></g></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></g></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M5 16l3 3 3-3M16 19V5M13 8l3-3 3 3"/></g></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6.2 7.4V19l-3.6-2v-4.6z" fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.6 4.6 19.4 8.4 8.8 19H5v-3.8z"/><path d="m13.6 6.6 3.8 3.8"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.4 5.2 19 12 7.4 18.8z" fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="#8b95a4" stroke-width="1.8"/></symbol>
+    <symbol id="i-import" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10M8 10.4 12 14.4l4-4M5 17.6v1.4a1.6 1.6 0 0 0 1.6 1.6h10.8a1.6 1.6 0 0 0 1.6-1.6v-1.4"/></g></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14.4V4.4M8 8.4 12 4.4l4 4M5 17.6v1.4a1.6 1.6 0 0 0 1.6 1.6h10.8a1.6 1.6 0 0 0 1.6-1.6v-1.4"/></g></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><g fill="#8b95a4"><circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.4 4.4 4.4L19 7" fill="none" stroke="#8b95a4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8"><rect x="5.4" y="10.4" width="13.2" height="9.2" rx="2"/><path d="M8.4 10.4V8a3.6 3.6 0 0 1 7.2 0v2.4"/></g></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6 19 6v6c0 4-3 6.9-7 8.4-4-1.5-7-4.4-7-8.4V6z"/><path d="m9.4 12 1.9 1.9 3.5-3.6"/></g></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round"><circle cx="8" cy="12" r="3.6"/><path d="M11.6 12H20M17 12v3M20 12v2.4"/></g></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8"><rect x="4.4" y="4.4" width="6.4" height="6.4" rx="1.4"/><rect x="13.2" y="4.4" width="6.4" height="6.4" rx="1.4"/><rect x="4.4" y="13.2" width="6.4" height="6.4" rx="1.4"/><rect x="13.2" y="13.2" width="6.4" height="6.4" rx="1.4"/></g></symbol>
+    <symbol id="i-tableview" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8"><rect x="3.6" y="4.8" width="16.8" height="14.4" rx="2"/><path d="M3.6 9.6h16.8M9.6 9.6v9.6M15 9.6v9.6"/></g></symbol>
+    <symbol id="i-form" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round"><rect x="4.4" y="3.8" width="15.2" height="16.4" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></g></symbol>
+    <symbol id="i-columns" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8"><rect x="3.6" y="5" width="16.8" height="14" rx="2"/><path d="M9.2 5v14M14.8 5v14"/></g></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4M15 8l4 4-4 4"/></g></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l2.6-2.6A4 4 0 0 0 12.6 5.7L11 7.3"/><path d="M14 10a4 4 0 0 0-5.7 0L5.7 12.6A4 4 0 0 0 11.4 18.3L13 16.7"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="7.6"/><path d="M12 7.6V12l3 1.8"/></g></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.4 6 8.4 12l6 6"/></g></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><g fill="none" stroke="#8b95a4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9.6 6 6 6-6 6"/></g></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+
+<header class="top">
+  <div class="eyebrow">PortNest · Database Workspace</div>
+  <h1>数据库模块 · 界面设计稿</h1>
+  <div class="sub">13 个页面的完整界面设计：对象浏览、数据编辑、结构设计、SQL 查询、导入导出与各类浮层。对象列表默认停在「列表」、信息栏默认收起，表设计器改为 Navicat 式工具条 + 选项卡 + 字段网格。尺寸与配色对齐现有 <code>tokens.css</code>，页面均按 1180 × 740 设计，等比缩放展示。</div>
+  <div class="meta">
+    <span><b>主题</b> 霜白（白灰中性）+ 彩色对象图标</span>
+    <span><b>基准</b> 行高 28 / 工具栏 32 / 树宽 264 / 信息栏 352</span>
+    <span><b>日期</b> 2026-11-26</span>
+  </div>
+</header>
+
+<section class="card">
+  <h2><span class="num">00</span>设计基调</h2>
+  <p class="lead">界面只保留两套视觉语言：<b>中性灰</b>承载结构与文字，<b>彩色</b>只用来标识"这是什么对象"。工具类图标一律单色，避免工具栏变花。</p>
+
+  <div class="sw-row">
+    <div class="sw"><i style="background:#fff;border-bottom:1px solid #e1e4e8"></i><span><b>表面 #FFFFFF</b>内容区 / 表格 / 卡片</span></div>
+    <div class="sw"><i style="background:#f7f8f9;border-bottom:1px solid #e1e4e8"></i><span><b>浅底 #F7F8F9</b>标题栏 / 页签 / 表头</span></div>
+    <div class="sw"><i style="background:#f2f3f5;border-bottom:1px solid #e1e4e8"></i><span><b>壳层 #F2F3F5</b>左侧导航 / 分组头</span></div>
+    <div class="sw"><i style="background:#e9ebee;border-bottom:1px solid #e1e4e8"></i><span><b>选中 #E9EBEE</b>树行 / 当前页签</span></div>
+    <div class="sw"><i style="background:#43484f"></i><span><b>强调 #43484F</b>主按钮 / 焦点线 / 选中标记</span></div>
+    <div class="sw"><i style="background:#0E7A93"></i><span><b>MySQL #0E7A93</b>品牌块</span></div>
+    <div class="sw"><i style="background:#0F8A8A"></i><span><b>表 #0F8A8A</b>对象类型</span></div>
+    <div class="sw"><i style="background:#2F6FD0"></i><span><b>查询 #2F6FD0</b>对象类型</span></div>
+  </div>
+
+  <h3>尺寸与字号</h3>
+  <table class="spec">
+    <tr><th style="width:22%">项目</th><th style="width:18%">取值</th><th>说明</th></tr>
+    <tr><td>标题栏 / 页签 / 工具栏</td><td>36 / 32 / 32 px</td><td>三段固定高，窗口缩放时只改变内容宽度</td></tr>
+    <tr><td>树行 / 表格行</td><td>28 px</td><td>图标 16，行内上下留白 6，双击/单击热区整行</td></tr>
+    <tr><td>状态栏</td><td>26 px</td><td>字号 11.5，右侧放只读开关与信息栏开关</td></tr>
+    <tr><td>对象树 / 信息栏</td><td>264 / 352 px</td><td>树可拖拽 180–420；信息栏可关闭</td></tr>
+    <tr><td>正文 / 表格 / 表头 / 状态</td><td>13 / 12.5 / 11.5 / 11.5 px</td><td>数字列统一 tabular-nums 右对齐</td></tr>
+    <tr><td>圆角</td><td>4 / 6 / 8 / 12</td><td>控件 6，卡片 8，浮层 12</td></tr>
+  </table>
+
+  <h3>布局骨架</h3>
+  <div class="frame plain" style="background:#fafbfc">
+    <svg viewBox="0 0 1090 350" style="width:100%;height:auto;display:block">
+      <defs>
+        <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 .5 7 4 0 7.5z" fill="#9aa4b2"/></marker>
+      </defs>
+      <rect x="10" y="10" width="1070" height="34" rx="6" fill="#eef0f3" stroke="#dde1e7"/>
+      <text x="22" y="32" font-size="11.5" fill="#55585d">标题栏 36 · 应用名 / 连接 / 窗口按钮</text>
+
+      <rect x="10" y="52" width="46" height="252" rx="6" fill="#e9ebee" stroke="#dde1e7"/>
+      <text x="14" y="70" font-size="10" fill="#55585d">导航</text><text x="14" y="84" font-size="10" fill="#8b9199">54</text>
+
+      <rect x="64" y="52" width="248" height="252" rx="6" fill="#f7f8f9" stroke="#dde1e7"/>
+      <text x="76" y="70" font-size="11.5" fill="#55585d">对象树 264</text>
+      <text x="76" y="86" font-size="10.5" fill="#8b9199">搜索 / 库 / 表组 / 视图组</text>
+
+      <rect x="320" y="52" width="760" height="30" rx="6" fill="#f7f8f9" stroke="#dde1e7"/>
+      <text x="332" y="71" font-size="11" fill="#55585d">页签栏 32 · 可关闭 / 新建查询</text>
+
+      <rect x="320" y="90" width="760" height="30" rx="6" fill="#fff" stroke="#dde1e7"/>
+      <text x="332" y="109" font-size="11" fill="#55585d">工具栏 32 · 左：范围与操作（可滚动）　右：搜索 / 刷新 / 视图切换（固定）</text>
+
+      <rect x="320" y="128" width="560" height="146" rx="6" fill="#fff" stroke="#dde1e7"/>
+      <text x="332" y="147" font-size="11" fill="#55585d">内容区</text>
+      <text x="332" y="163" font-size="10.5" fill="#8b9199">表格 / 卡片 / 编辑器 + 结果</text>
+
+      <rect x="888" y="128" width="192" height="146" rx="6" fill="#fafbfc" stroke="#dde1e7"/>
+      <text x="900" y="147" font-size="11" fill="#55585d">信息栏 352</text>
+      <text x="900" y="163" font-size="10.5" fill="#8b9199">表信息 / 属性</text>
+
+      <rect x="320" y="282" width="760" height="22" rx="6" fill="#f7f8f9" stroke="#dde1e7"/>
+      <text x="332" y="297" font-size="10.5" fill="#55585d">状态栏 26 · 连接 / 库 / 对象数 / 只读 / 信息栏</text>
+
+      <path d="M112 178 L312 178" stroke="#9aa4b2" stroke-width="1.1" stroke-dasharray="3 3" marker-end="url(#ar)"/>
+      <text x="150" y="172" font-size="10" fill="#8b9199">单击库 → 右侧展示该库对象</text>
+      <path d="M600 122 L600 124" stroke="#9aa4b2"/>
+    </svg>
+  </div>
+  <div class="cap">区划固定，内容随页签类型切换；工具栏左右分区保证窄窗口下右侧控件不被挤出。</div>
+</section>
+
+<style>
+  /* ---- 对象列表 / 卡片 / 详情（供 01–04 复用） ---- */
+  .objhd{height:26px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #eef0f3;
+         font-size:11px;color:#8b9199;font-weight:600;background:#fcfcfd}
+  .objlist{flex:1;overflow:hidden;padding:2px 0}
+  .objrow{height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12.5px;color:#17181a;border-radius:4px;margin:0 4px}
+  .objrow .cm{color:#8b9199;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .objrow .meta{margin-left:auto;display:flex;gap:12px;color:#9aa1ab;font-size:11.5px;font-variant-numeric:tabular-nums;flex:none}
+  .c-rows{width:52px;text-align:right;flex:none}
+  .c-size{width:68px;text-align:right;flex:none}
+  .objrow.on{background:#f0f3f7;box-shadow:inset 2px 0 0 #43484f;font-weight:600}
+  .objrow .nm{font-weight:600;flex:none;width:140px;overflow:hidden;text-overflow:ellipsis}
+  .cards{flex:1;overflow:hidden;padding:10px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-content:start}
+  .card1{border:1px solid #e9ecf0;border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;background:#fff}
+  .card1.on{border-color:#c9ced6;background:#f7f8fa;box-shadow:0 0 0 2px rgba(67,72,79,.06)}
+  .card1 .t{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600}
+  .card1 .c{color:#8b9199;font-size:11.5px;line-height:1.4;height:32px;overflow:hidden}
+  .card1 .m{color:#a8aeb8;font-size:11px;display:flex;gap:8px}
+  .detail{padding:14px 18px;overflow:hidden}
+  .detail h1{margin:0;font-size:18px;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+  .detail .sub{color:#8b9199;font-size:12px;margin-top:3px}
+  .sect{margin-top:16px}
+  .sect .hh{font-size:11px;color:#8b9199;font-weight:600;letter-spacing:.04em;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .fieldrow{display:flex;gap:10px;border-bottom:1px solid #f0f2f5;padding:6px 2px;font-size:12.5px}
+  .fieldrow .fk{width:22px;color:#a8aeb8;font-size:11px}
+  .fieldrow .fn{width:150px;font-weight:600}
+  .fieldrow .ft{width:170px;color:#55585d;font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px}
+  .fieldrow .fa{width:56px;color:#8b9199;font-size:11.5px}
+  .fieldrow .fc{color:#8b9199;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+
+<section class="card">
+  <h2><span class="num">01</span>数据库 · 对象列表（默认视图）</h2>
+  <p class="lead">单击对象树里的库或「表 / 视图」组，右侧进入该范围的对象列表。列表默认停在<b>「列表」视图</b>、<b>信息栏默认收起</b>：先给名单最大宽度，需要看表结构时再单击某行滑出信息栏。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila</span>
+          <div class="right">
+            <div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div>
+          </div>
+        </div>
+
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts">
+                <span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span>
+                <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+              </div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span>
+                <svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span>
+                <svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">analytics</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span>
+                <svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span>
+                <svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">city</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">customer</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span>
+                <svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-er"/></svg><span class="grp">ER 图</span></div>
+              <div class="divider"></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span>
+                <svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">scratch</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-query"/></svg>查询 1<span class="x">✕</span></div>
+              <div class="tab add">＋</div>
+              <div class="grow"></div>
+            </div>
+
+            <div class="toolbar">
+              <span class="chip">表 / 视图</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-tableview"/></svg>打开表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-edit"/></svg>设计表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新建表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-trash"/></svg>删除表</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-import"/></svg>导入</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-export"/></svg>导出 SQL</span>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>名称 / 注释</div>
+              <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+              <div class="seg">
+                <span class="on"><svg width="14" height="14"><use href="#i-list"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-tableview"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-form"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-grid"/></svg></span>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="objhd"><span style="width:18px"></span><span style="width:140px">名称</span><span style="flex:1">注释</span><span class="c-rows">行数</span><span class="c-size">大小</span></div>
+                <div class="objlist">
+                  <div class="objrow on"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span><span class="cm">影片目录，含标题、简介、租赁费率</span><span class="meta"><span class="c-rows">1,000</span><span class="c-size">180 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span><span class="cm">演员信息</span><span class="meta"><span class="c-rows">200</span><span class="c-size">32 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span><span class="cm">地址（关联 city）</span><span class="meta"><span class="c-rows">603</span><span class="c-size">96 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span><span class="cm">影片分类</span><span class="meta"><span class="c-rows">16</span><span class="c-size">16 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">city</span><span class="cm">城市（关联 country）</span><span class="meta"><span class="c-rows">600</span><span class="c-size">48 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">customer</span><span class="cm">客户主数据</span><span class="meta"><span class="c-rows">599</span><span class="c-size">112 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">inventory</span><span class="cm">库存（按门店）</span><span class="meta"><span class="c-rows">4,581</span><span class="c-size">256 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">payment</span><span class="cm">支付流水</span><span class="meta"><span class="c-rows">16,044</span><span class="c-size">1.6 MB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">rental</span><span class="cm">租赁记录</span><span class="meta"><span class="c-rows">16,044</span><span class="c-size">1.3 MB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-view"/></svg><span class="nm">film_list</span><span class="cm">影片 + 分类 + 演员聚合视图</span><span class="meta"><span class="c-rows">—</span><span class="c-size">—</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-view"/></svg><span class="nm">customer_list</span><span class="cm">客户 + 地址 + 城市</span><span class="meta"><span class="c-rows">—</span><span class="c-size">—</span></span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span>
+              <span>sakila</span>
+              <span>表 23 · 视图 7</span>
+              <div class="r">
+                <span>11 个对象</span>
+                <span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span>
+                <span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-columns"/></svg> 信息栏 · 收起</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 默认视图：列表四态停在「列表」，信息栏不占位。<b>单击</b>行 → 右侧滑出 352px 信息栏（Esc 或再点状态栏收起），<b>双击</b>打开数据页。</div>
+
+  <div class="notes">
+    <div class="note-box">
+      <h4>分区与层级</h4>
+      <ul>
+        <li>左侧对象树：库 → 表/视图组 → 对象，三级缩进 18px</li>
+        <li>工具栏左侧为"范围 + 操作"，右侧固定"搜索 / 刷新 / 视图切换"</li>
+        <li>列表列宽按内容分配：名称固定 150，注释吃剩余，数字列右对齐</li>
+      </ul>
+    </div>
+    <div class="note-box">
+      <h4>状态与交互</h4>
+      <ul>
+        <li>选中行：浅灰底 + 左侧 2px 强调条，不改变文字颜色</li>
+        <li>视图切换四态：列表 / 表格 / 详情 / 图标，默认「列表」，仅本次会话记忆</li>
+        <li>信息栏默认收起，宽度 352，滑出不改变列表列宽（覆盖式，不挤压内容）</li>
+        <li>无对象时隐藏表头，改为空状态插画 + "新建表"主按钮</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hscroll{height:10px;flex:none;border-top:1px solid #eef0f3;background:#fafbfc;position:relative}
+  .hscroll i{position:absolute;left:8px;top:3px;height:4px;width:62%;background:#d6dae0;border-radius:2px}
+  .iconcards{flex:1;overflow:hidden;padding:12px;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-content:start}
+  .icard{border:1px solid #e9ecf0;border-radius:8px;padding:11px 11px 10px;display:flex;flex-direction:column;gap:7px;background:#fff}
+  .icard.on{border-color:#c3c9d2;background:#f8f9fb;box-shadow:0 0 0 2px rgba(67,72,79,.07)}
+  .icard .t{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .icard .c{color:#8b9199;font-size:11.5px;line-height:1.45;height:33px;overflow:hidden}
+  .icard .m{display:flex;justify-content:space-between;color:#a8aeb8;font-size:11px;font-variant-numeric:tabular-nums}
+  .dhead{display:flex;align-items:center;gap:11px;padding:14px 18px 12px;border-bottom:1px solid #eef0f3}
+  .dhead .tt{font-size:17px;font-weight:650;letter-spacing:-.01em}
+  .dhead .meta{color:#8b9199;font-size:12px;margin-top:2px}
+  .dhead .acts{margin-left:auto;display:flex;gap:6px}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:600}
+  .badge.g{background:#eaf6f3;color:#0f7b6c}
+  .badge.b{background:#eef4fd;color:#1a63b4}
+  .badge.a{background:#fdf4e6;color:#a4620a}
+  .dbody{flex:1;display:flex;min-height:0}
+  .dmain{flex:1;min-width:0;padding:12px 16px;overflow:hidden}
+  .dside{width:322px;flex:none;border-left:1px solid #eef0f3;padding:12px 14px;overflow:hidden}
+  .cols{display:flex;gap:10px;font-size:11px;color:#8b9199;font-weight:600;padding:0 6px 5px;border-bottom:1px solid #eef0f3}
+  .cols span:nth-child(2){width:210px}
+  .cols span:nth-child(3){width:64px}
+  .drow{display:flex;gap:10px;align-items:center;font-size:12.5px;height:28px;border-bottom:1px solid #f3f5f7;padding:0 6px}
+  .drow span:nth-child(2){width:210px;font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;color:#55585d}
+  .drow span:nth-child(3){width:64px;color:#8b9199;font-size:11.5px}
+  .drow .c{color:#8b9199;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv2{font-size:12px;display:grid;grid-template-columns:88px 1fr;gap:5px 8px;margin:0}
+  .kv2 dt{color:#8b9199}
+  .kv2 dd{margin:0;color:#17181a}
+</style>
+
+<section class="card">
+  <h2><span class="num">02</span>数据库 · 对象表格（多列对比）</h2>
+  <p class="lead">需要横向比较"行数 / 大小 / 引擎 / 编码"时切到表格视图。信息栏收起，把宽度让给列；列宽可拖拽并记住。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">analytics</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">city</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-er"/></svg><span class="grp">ER 图</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <span class="chip">表</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-tableview"/></svg>打开表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-edit"/></svg>设计表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新建表</span>
+              <span class="tb dim"><svg width="14" height="14"><use href="#i-trash"/></svg>删除表</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-import"/></svg>导入</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-export"/></svg>导出 SQL</span>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>名称 / 注释</div>
+              <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+              <div class="seg">
+                <span><svg width="14" height="14"><use href="#i-list"/></svg></span>
+                <span class="on"><svg width="14" height="14"><use href="#i-tableview"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-form"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-grid"/></svg></span>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <table class="grid">
+                  <colgroup>
+                    <col style="width:38px"><col style="width:130px"><col><col style="width:58px">
+                    <col style="width:74px"><col style="width:74px"><col style="width:60px">
+                    <col style="width:64px"><col style="width:116px"><col style="width:84px">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="rownum">#</th>
+                      <th>名称<span class="srt">▲</span></th>
+                      <th>注释</th>
+                      <th style="text-align:right">行数<span class="srt">▼</span></th>
+                      <th style="text-align:right">数据长度</th>
+                      <th style="text-align:right">索引长度</th>
+                      <th style="text-align:right">自增</th>
+                      <th>引擎</th>
+                      <th>编码</th>
+                      <th>更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="rownum">1</td><td style="font-weight:600">payment</td><td class="mut">支付流水</td><td class="num">16,044</td><td class="num">1.6 MB</td><td class="num">256 KB</td><td class="num">16,050</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-20 09:02</td></tr>
+                    <tr><td class="rownum">2</td><td style="font-weight:600">rental</td><td class="mut">租赁记录</td><td class="num">16,044</td><td class="num">1.3 MB</td><td class="num">320 KB</td><td class="num">16,050</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-20 09:02</td></tr>
+                    <tr><td class="rownum">3</td><td style="font-weight:600">film_actor</td><td class="mut">影片与演员关联</td><td class="num">5,462</td><td class="num">176 KB</td><td class="num">128 KB</td><td class="num">—</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">4</td><td style="font-weight:600">inventory</td><td class="mut">库存（按门店）</td><td class="num">4,581</td><td class="num">256 KB</td><td class="num">64 KB</td><td class="num">4,582</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-20 07:45</td></tr>
+                    <tr><td class="rownum">5</td><td style="font-weight:600">film</td><td class="mut">影片目录，含标题、简介、租赁费率</td><td class="num">1,000</td><td class="num">180 KB</td><td class="num">64 KB</td><td class="num">1,001</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-20 09:14</td></tr>
+                    <tr><td class="rownum">6</td><td style="font-weight:600">film_category</td><td class="mut">影片与分类关联</td><td class="num">1,000</td><td class="num">48 KB</td><td class="num">48 KB</td><td class="num">—</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">7</td><td style="font-weight:600">address</td><td class="mut">地址（关联 city）</td><td class="num">603</td><td class="num">96 KB</td><td class="num">48 KB</td><td class="num">606</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">8</td><td style="font-weight:600">city</td><td class="mut">城市（关联 country）</td><td class="num">600</td><td class="num">48 KB</td><td class="num">32 KB</td><td class="num">601</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr class="on"><td class="rownum">9</td><td style="font-weight:600">customer</td><td class="mut">客户主数据</td><td class="num">599</td><td class="num">112 KB</td><td class="num">64 KB</td><td class="num">600</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-19 08:31</td></tr>
+                    <tr><td class="rownum">10</td><td style="font-weight:600">actor</td><td class="mut">演员信息</td><td class="num">200</td><td class="num">32 KB</td><td class="num">16 KB</td><td class="num">201</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">11</td><td style="font-weight:600">country</td><td class="mut">国家字典</td><td class="num">109</td><td class="num">16 KB</td><td class="num">16 KB</td><td class="num">110</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">12</td><td style="font-weight:600">category</td><td class="mut">影片分类</td><td class="num">16</td><td class="num">16 KB</td><td class="num">16 KB</td><td class="num">—</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">13</td><td style="font-weight:600">staff</td><td class="mut">门店员工</td><td class="num">2</td><td class="num">16 KB</td><td class="num">32 KB</td><td class="num">3</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                    <tr><td class="rownum">14</td><td style="font-weight:600">store</td><td class="mut">门店</td><td class="num">2</td><td class="num">16 KB</td><td class="num">32 KB</td><td class="num">3</td><td>InnoDB</td><td class="code">utf8mb4_0900_ai_ci</td><td class="mut">11-18 14:02</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span>
+              <span>sakila</span>
+              <span>共 23 张表 · 已选 1 行</span>
+              <div class="r"><span>排序：行数 ↓</span><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 表格视图收起信息栏；点击表头切换排序（升 / 降 / 取消），列宽拖拽后按"连接 + 库"记住。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">03</span>数据库 · 图标视图</h2>
+  <p class="lead">表多但注释短时的扫视视图：一屏 20 个卡片，靠彩色对象图标 + 名称快速定位，卡片底部只留两个关键数字。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <span class="chip">表 / 视图</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-tableview"/></svg>打开表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-edit"/></svg>设计表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新建表</span>
+              <span class="tb dim"><svg width="14" height="14"><use href="#i-trash"/></svg>删除表</span>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>名称 / 注释</div>
+              <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+              <div class="seg">
+                <span><svg width="14" height="14"><use href="#i-list"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-tableview"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-form"/></svg></span>
+                <span class="on"><svg width="14" height="14"><use href="#i-grid"/></svg></span>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="iconcards">
+                  <div class="icard on"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>film</div><div class="c">影片目录，含标题、简介、租赁费率</div><div class="m"><span>1,000 行</span><span>180 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>actor</div><div class="c">演员信息</div><div class="m"><span>200 行</span><span>32 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>address</div><div class="c">地址，关联 city</div><div class="m"><span>603 行</span><span>96 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>category</div><div class="c">影片分类</div><div class="m"><span>16 行</span><span>16 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>city</div><div class="c">城市，关联 country</div><div class="m"><span>600 行</span><span>48 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>country</div><div class="c">国家字典</div><div class="m"><span>109 行</span><span>16 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>customer</div><div class="c">客户主数据</div><div class="m"><span>599 行</span><span>112 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>film_actor</div><div class="c">影片与演员关联</div><div class="m"><span>5,462 行</span><span>176 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>film_category</div><div class="c">影片与分类关联</div><div class="m"><span>1,000 行</span><span>48 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>inventory</div><div class="c">库存，按门店</div><div class="m"><span>4,581 行</span><span>256 KB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>payment</div><div class="c">支付流水</div><div class="m"><span>16,044 行</span><span>1.6 MB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-table"/></svg>rental</div><div class="c">租赁记录</div><div class="m"><span>16,044 行</span><span>1.3 MB</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-view"/></svg>film_list</div><div class="c">影片 + 分类 + 演员聚合</div><div class="m"><span>视图</span><span>—</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-view"/></svg>customer_list</div><div class="c">客户 + 地址 + 城市</div><div class="m"><span>视图</span><span>—</span></div></div>
+                  <div class="icard"><div class="t"><svg width="15" height="15"><use href="#i-view"/></svg>staff_list</div><div class="c">员工 + 门店 + 地址</div><div class="m"><span>视图</span><span>—</span></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila</span><span>表 23 · 视图 7</span>
+              <div class="r"><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 卡片 5 列自适应，最小宽度 168；悬停浮起 1px 阴影，双击直接打开数据页。</div>
+</section>
+
+<style>
+  .icard.on{border-color:#b6bcc5;box-shadow:0 0 0 2px rgba(67,72,79,.14)}
+  /* 表页四段切换（数据/结构/设计/传输） */
+  .sections{display:flex;align-items:center;gap:2px;height:24px;border:1px solid #e1e4e8;border-radius:6px;overflow:hidden}
+  .sections span{height:22px;display:flex;align-items:center;gap:5px;padding:0 9px;font-size:12px;color:#55585d;
+                 border-right:1px solid #e1e4e8}
+  .sections span:last-child{border-right:none}
+  .sections span.on{background:#eceef1;color:#17181a;font-weight:600}
+  .filterbar{height:34px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid #eef0f3;background:#fcfcfd}
+  .fchip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border-radius:5px;background:#fff;
+         border:1px solid #e1e4e8;font-size:11.5px;color:#2b2f36}
+  .fchip b{font-weight:600}
+  .fchip i{font-style:normal;color:#a8aeb8}
+  .editbar{height:34px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;border-top:1px solid #e1e4e8;background:#fafbfc}
+  .editbar .hint{color:#a4620a;font-size:11.5px;display:flex;align-items:center;gap:5px}
+  .dstatus{height:26px;flex:none;display:flex;align-items:center;gap:14px;padding:0 10px;border-top:1px solid #eef0f3;
+           font-size:11.5px;color:#63676d;background:#fff}
+  .pg{display:flex;align-items:center;gap:4px;margin-left:auto}
+  .pg .b{width:22px;height:20px;display:grid;place-items:center;border:1px solid #e1e4e8;border-radius:4px;color:#8b9199}
+  .cellnull{color:#b8bec7;font-style:italic}
+  .cbx{display:inline-block;width:12px;height:12px;border:1px solid #c8ced7;border-radius:3px;background:#fff;vertical-align:-2px}
+  .cbx.on{background:#43484f;border-color:#43484f;position:relative}
+  .cbx.on::after{content:"";position:absolute;left:3px;top:1px;width:4px;height:7px;border:solid #fff;border-width:0 1.6px 1.6px 0;transform:rotate(42deg)}
+  .cellbadge{display:inline-block;padding:0 6px;height:18px;line-height:18px;border-radius:4px;background:#eaf6f3;color:#0f7b6c;font-size:11px;font-weight:600}
+  .formcard{margin:14px 16px;border:1px solid #e9ecf0;border-radius:8px;overflow:hidden}
+  .formcard .fh{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px;color:#55585d}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .fcell{padding:9px 12px;border-bottom:1px solid #f1f3f6;display:flex;flex-direction:column;gap:4px}
+  .fcell .l{font-size:11px;color:#8b9199;display:flex;align-items:center;gap:5px}
+  .fcell .v{height:26px;border:1px solid #e9ecf0;border-radius:5px;display:flex;align-items:center;padding:0 8px;
+            font-size:12.5px;background:#fff;color:#17181a}
+  .fcell .v.dis{background:#fafbfc;color:#8b9199}
+  .fcell .v.edit{border-color:#8fb3dd;box-shadow:0 0 0 2px rgba(26,99,180,.1)}
+  .pk{color:#a4620a;font-weight:700;font-size:10px;background:#fdf4e6;border-radius:3px;padding:0 4px;height:14px;line-height:14px}
+  .req{color:#b3352f}
+</style>
+
+<section class="card">
+  <h2><span class="num">04</span>数据库 · 对象详情</h2>
+  <p class="lead">不打开表也能看完一张表的全貌：字段、索引、外键、属性集中在一页。适合评审表结构、交接时快速阅读。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <span class="chip">详情</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-tableview"/></svg>打开表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-edit"/></svg>设计表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-code"/></svg>查看 DDL</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-export"/></svg>导出</span>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>名称 / 注释</div>
+              <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+              <div class="seg">
+                <span><svg width="14" height="14"><use href="#i-list"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-tableview"/></svg></span>
+                <span class="on"><svg width="14" height="14"><use href="#i-form"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-grid"/></svg></span>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="dhead">
+                  <svg width="26" height="26"><use href="#i-table"/></svg>
+                  <div>
+                    <div class="tt">film</div>
+                    <div class="meta">sakila · InnoDB · 1,000 行 · 180 KB · utf8mb4_0900_ai_ci</div>
+                  </div>
+                  <div class="acts">
+                    <span class="badge g"><svg width="11" height="11"><use href="#i-key"/></svg> film_id 主键</span>
+                    <span class="badge b">13 字段</span>
+                    <span class="badge a">3 索引</span>
+                  </div>
+                </div>
+                <div class="dbody">
+                  <div class="dmain">
+                    <div class="sect" style="margin-top:2px">
+                      <div class="hh">字段（13）</div>
+                      <div class="cols"><span style="width:22px">#</span><span style="width:170px">名称 / 类型</span><span style="width:64px">允许空</span><span>默认值 · 注释</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">1</span><span>film_id <b style="color:#a4620a;font-family:inherit">PK</b></span><span>否</span><span class="c">自增主键</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">2</span><span>title varchar(128)</span><span>否</span><span class="c">影片标题，参与全文检索</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">3</span><span>description text</span><span>是</span><span class="c">剧情简介</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">4</span><span>release_year year</span><span>是</span><span class="c">上映年份</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">5</span><span>language_id tinyint</span><span>否</span><span class="c">FK → language</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">6</span><span>rental_rate decimal(4,2)</span><span>是</span><span class="c">4.99</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">7</span><span>length smallint</span><span>是</span><span class="c">片长（分钟）</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">8</span><span>replacement_cost decimal(5,2)</span><span>是</span><span class="c">19.99</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">9</span><span>rating enum</span><span>是</span><span class="c">G / PG / PG-13 / R / NC-17</span></div>
+                      <div class="drow"><span style="width:22px;color:#a8aeb8">10</span><span>last_update timestamp</span><span>否</span><span class="c">CURRENT_TIMESTAMP</span></div>
+                      <div class="drow" style="border-bottom:none;color:#1a63b4;font-size:12px"><span style="width:22px"></span><span style="width:210px;font-family:inherit;color:#1a63b4">显示全部 13 个字段 →</span><span></span><span></span></div>
+                    </div>
+                  </div>
+                  <div class="dside">
+                    <div class="sect" style="margin-top:2px">
+                      <div class="hh">索引</div>
+                      <div class="drow" style="height:26px"><span style="width:112px"><b>PRIMARY</b></span><span class="c" style="width:auto">film_id · 唯一</span></div>
+                      <div class="drow" style="height:26px"><span style="width:112px">idx_title</span><span class="c" style="width:auto">title</span></div>
+                      <div class="drow" style="height:26px"><span style="width:112px">idx_fk_language</span><span class="c" style="width:auto">language_id</span></div>
+                    </div>
+                    <div class="sect">
+                      <div class="hh">外键</div>
+                      <div class="drow" style="height:26px"><span style="width:112px">fk_language</span><span class="c" style="width:auto">→ language.id</span></div>
+                    </div>
+                    <div class="sect">
+                      <div class="hh">属性</div>
+                      <dl class="kv2">
+                        <dt>引擎</dt><dd>InnoDB</dd>
+                        <dt>排序规则</dt><dd>utf8mb4_0900_ai_ci</dd>
+                        <dt>数据长度</dt><dd>180.00 KB</dd>
+                        <dt>索引长度</dt><dd>64.00 KB</dd>
+                        <dt>创建时间</dt><dd>2026-08-05 10:43:12</dd>
+                        <dt>更新时间</dt><dd>2026-11-20 09:14:22</dd>
+                      </dl>
+                    </div>
+                    <div class="sect">
+                      <div class="hh">相关</div>
+                      <div class="drow" style="height:26px"><svg width="13" height="13"><use href="#i-view"/></svg><span class="c" style="width:auto">film_list（视图）</span></div>
+                      <div class="drow" style="height:26px"><svg width="13" height="13"><use href="#i-table"/></svg><span class="c" style="width:auto">film_actor（关联表）</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila / film</span><span>13 字段 · 3 索引 · 1 外键</span>
+              <div class="r"><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 详情页用"左侧字段 + 右侧关系"两栏，避免信息栏与详情页重复展示同一批属性。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">05</span>表 · 数据页（网格）</h2>
+  <p class="lead">最常用的工作界面：条件行常驻、数据区最大化、编辑结果在底部一条里统一"应用 / 撤销"。待提交的单元格用左上角小三角 + 浅色底标识，不改变表格结构。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-query"/></svg>查询 1<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <div class="sections">
+                <span class="on"><svg width="13" height="13"><use href="#i-tableview"/></svg>数据</span>
+                <span><svg width="13" height="13"><use href="#i-columns"/></svg>结构</span>
+                <span><svg width="13" height="13"><use href="#i-edit"/></svg>设计</span>
+                <span><svg width="13" height="13"><use href="#i-import"/></svg>导入导出</span>
+              </div>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-refresh"/></svg>刷新</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新增记录</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-copy"/></svg>复制为…</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-export"/></svg>导出</span>
+              <span class="grow"></span>
+              <div class="seg">
+                <span class="on"><svg width="14" height="14"><use href="#i-grid"/></svg></span>
+                <span><svg width="14" height="14"><use href="#i-form"/></svg></span>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="filterbar">
+                  <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-sort"/></svg>筛选与排序</span>
+                  <span class="sep"></span>
+                  <span class="fchip"><b>rating</b> 等于 <b>PG-13</b><i>✕</i></span>
+                  <span class="fchip"><b>length</b> 大于 <b>90</b><i>✕</i></span>
+                  <span class="tb" style="color:#8b9199"><svg width="12" height="12"><use href="#i-plus"/></svg>添加条件</span>
+                  <span class="fchip" style="background:#eef4fd;border-color:#cfe1f6;color:#1a63b4"><svg width="11" height="11"><use href="#i-sort"/></svg>length ↓</span>
+                  <span class="grow"></span>
+                  <span class="lbl">共 1,000 行 · 命中 214</span>
+                </div>
+
+                <div class="gridwrap">
+                  <table class="grid">
+                    <colgroup><col style="width:44px"><col style="width:72px"><col style="width:240px"><col><col style="width:78px"><col style="width:86px"><col style="width:74px"><col style="width:88px"></colgroup>
+                    <thead>
+                      <tr>
+                        <th style="width:44px"></th><th>film_id<span class="srt">▲</span></th><th>title</th><th>description</th>
+                        <th>release_year</th><th style="text-align:right">rental_rate</th><th style="text-align:right">length<span class="srt">▼</span></th><th>rating</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">1</td><td>ACADEMY DINOSAUR</td><td class="mut">A Epic Drama of a Feminist And a Mad Scientist…</td><td>2006</td><td class="num">0.99</td><td class="num">86</td><td><span class="cellbadge">PG</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">2</td><td>ACE GOLDFINGER</td><td class="mut">A Astounding Epistle of a Database Administrator…</td><td>2006</td><td class="num">4.99</td><td class="num">48</td><td><span class="cellbadge">G</span></td></tr>
+                      <tr class="on"><td style="text-align:center"><span class="cbx on"></span></td><td class="num">3</td><td>ADAPTATION HOLES</td><td class="mut">A Astounding Reflection of a Lumberjack And a…</td><td>2006</td><td class="num">2.99</td><td class="num">50</td><td><span class="cellbadge">NC-17</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">4</td><td>AFFAIR PREJUDICE</td><td class="mut">A Fanciful Documentary of a Frisbee And a…</td><td>2006</td><td class="num">2.99</td><td class="num">117</td><td><span class="cellbadge">G</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">5</td><td>AFRICAN EGG</td><td class="mut">A Fast-Paced Documentary of a Pastry Cook And…</td><td>2006</td><td class="num">2.99</td><td class="num">130</td><td><span class="cellbadge">G</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">6</td><td>AGENT TRUMAN</td><td class="mut">A Intrepid Panorama of a Robot And a Boy who…</td><td>2006</td><td class="num">2.99</td><td class="num">169</td><td><span class="cellbadge">PG</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">7</td><td>AIRPLANE SIERRA</td><td class="mut">A Touching Saga of a Hunter And a Butler who…</td><td>2006</td><td class="num">4.99</td><td class="num">62</td><td><span class="cellbadge">PG-13</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">8</td><td>AIRPORT POLLOCK</td><td class="mut">A Epic Tale of a Moose And a Girl who must…</td><td>2006</td><td class="num">4.99</td><td class="num">54</td><td><span class="cellbadge">R</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">9</td><td>ALABAMA DEVIL</td><td class="mut">A Thoughtful Panorama of a Database Administrator…</td><td>2006</td><td class="num">2.99</td><td class="num">114</td><td><span class="cellbadge">PG-13</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">10</td><td>ALADDIN CALENDAR</td><td class="mut">A Action-Packed Tale of a Man And a Lethal…</td><td>2006</td><td class="num">4.99</td><td class="num">63</td><td><span class="cellbadge">NC-17</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">11</td><td>ALAMO VIDEOTAPE</td><td class="mut">A Boring Epistle of a Butler And a Cat who…</td><td>2006</td><td class="num">0.99</td><td class="num">126</td><td><span class="cellbadge">G</span></td></tr>
+                      <tr><td style="text-align:center"><span class="cbx"></span></td><td class="num">12</td><td>ALASKA PHANTOM</td><td class="mut">A Fanciful Saga of a Hunter And a Pastry Cook…</td><td>2006</td><td class="num">0.99</td><td class="num">136</td><td><span class="cellbadge">PG</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="editbar">
+                  <span class="hint"><svg width="13" height="13"><use href="#i-alert"/></svg>1 处修改待提交</span>
+                  <span class="sep"></span>
+                  <span class="tb"><svg width="13" height="13"><use href="#i-plus"/></svg>新增行</span>
+                  <span class="tb"><svg width="13" height="13"><use href="#i-trash"/></svg>删除选中</span>
+                  <span class="grow"></span>
+                  <span class="tb" style="color:#8b9199">撤销</span>
+                  <span class="btn pri" style="height:24px">应用修改</span>
+                </div>
+                <div class="dstatus">
+                  <span>已选 1 行</span><span>第 1 页</span><span>50 条/页</span><span>共 1,000 行（估算）</span>
+                  <div class="pg">
+                    <span class="b"><svg width="12" height="12"><use href="#i-arrow-left"/></svg></span>
+                    <span style="padding:0 6px">1 / 20</span>
+                    <span class="b"><svg width="12" height="12"><use href="#i-arrow-right"/></svg></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila / film</span>
+              <div class="r"><span>查询 0.042 s</span><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 条件行独立一行（34px），不占用工具栏；底部编辑条只在有改动时出现。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">06</span>表 · 单记录表单</h2>
+  <p class="lead">字段多、单行值长（如 description）时切表单视图：一屏一条记录，主键与时间字段只读，修改即时高亮。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <div class="sections">
+                <span class="on"><svg width="13" height="13"><use href="#i-tableview"/></svg>数据</span>
+                <span><svg width="13" height="13"><use href="#i-columns"/></svg>结构</span>
+                <span><svg width="13" height="13"><use href="#i-edit"/></svg>设计</span>
+                <span><svg width="13" height="13"><use href="#i-import"/></svg>导入导出</span>
+              </div>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-arrow-left"/></svg>上一条</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-arrow-right"/></svg>下一条</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新增</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-trash"/></svg>删除</span>
+              <span class="grow"></span>
+              <span class="lbl">第 3 / 1,000 条</span>
+              <div class="seg"><span><svg width="14" height="14"><use href="#i-grid"/></svg></span><span class="on"><svg width="14" height="14"><use href="#i-form"/></svg></span></div>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="filterbar">
+                  <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-sort"/></svg>筛选与排序</span>
+                  <span class="sep"></span>
+                  <span class="fchip"><b>rating</b> 等于 <b>NC-17</b><i>✕</i></span>
+                  <span class="grow"></span>
+                  <span class="lbl">共 214 条 · 按 film_id 升序</span>
+                </div>
+
+                <div class="formcard">
+                  <div class="fh"><svg width="14" height="14"><use href="#i-key"/></svg>film_id 3 · ADAPTATION HOLES
+                    <span class="grow"></span><span style="color:#a4620a;font-size:11.5px">● 有未提交修改</span>
+                  </div>
+                  <div class="fgrid">
+                    <div class="fcell"><div class="l">film_id <span class="pk">PK</span></div><div class="v dis">3</div></div>
+                    <div class="fcell"><div class="l">title <span class="req">*</span></div><div class="v edit">ADAPTATION HOLES</div></div>
+                    <div class="fcell"><div class="l">release_year</div><div class="v">2006</div></div>
+                    <div class="fcell"><div class="l">language_id <span class="pk" style="background:#eef4fd;color:#1a63b4">FK</span></div><div class="v">1 · English</div></div>
+                    <div class="fcell" style="grid-column:1 / span 2"><div class="l">description</div><div class="v" style="height:64px;align-items:flex-start;padding-top:6px;line-height:1.5">A Astounding Reflection of a Lumberjack And a Student who must Find a Monkey in Nigeria</div></div>
+                    <div class="fcell"><div class="l">rental_rate</div><div class="v">2.99</div></div>
+                    <div class="fcell"><div class="l">length</div><div class="v">50</div></div>
+                    <div class="fcell"><div class="l">replacement_cost</div><div class="v">12.99</div></div>
+                    <div class="fcell"><div class="l">rating</div><div class="v">NC-17</div></div>
+                    <div class="fcell"><div class="l">last_update</div><div class="v dis">2026-11-20 09:14:22</div></div>
+                    <div class="fcell"><div class="l">special_features</div><div class="v">Trailers, Commentaries</div></div>
+                  </div>
+                </div>
+
+                <div class="editbar">
+                  <span class="hint"><svg width="13" height="13"><use href="#i-alert"/></svg>title 已修改</span>
+                  <span class="grow"></span>
+                  <span class="tb" style="color:#8b9199">撤销</span>
+                  <span class="btn" style="height:24px">恢复原值</span>
+                  <span class="btn pri" style="height:24px">应用修改</span>
+                </div>
+                <div class="dstatus"><span>行 3 / 1,000</span><span>按 film_id 升序</span></div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila / film</span>
+              <div class="r"><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 表单两列布局，长文本跨两列；只读字段灰底、正在编辑的字段蓝边。</div>
+</section>
+
+<style>
+  /* 结构页 */
+  .struct{padding:12px 14px;overflow:hidden}
+  .struct h4{margin:0 0 6px;font-size:11px;color:#8b9199;font-weight:600;letter-spacing:.04em;width:100%}
+  .struct table.grid th{height:28px}
+  .struct table.grid td{height:28px}
+  /* 设计器：工具条下的对象选项卡 + 字段网格 + 底部属性条 */
+  .ftabs{height:31px;flex:none;display:flex;align-items:stretch;padding:0 8px;background:#f7f8f9;
+         border-bottom:1px solid #e1e4e8}
+  .ftabs span{display:flex;align-items:center;padding:0 12px;font-size:12px;color:#55585d;
+              white-space:nowrap;position:relative;border-right:1px solid #eceef1}
+  .ftabs span:last-child{border-right:none}
+  .ftabs span.on{background:#fff;color:#17181a;font-weight:600}
+  .ftabs span.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:#43484f}
+
+  .dgridwrap{flex:1;min-height:0;overflow:hidden;background:#fcfcfd}
+  table.dgrid{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}
+  table.dgrid th{height:28px;background:#fafbfc;border-bottom:1px solid #e1e4e8;border-right:1px solid #eef0f3;
+                 text-align:left;padding:0 8px;font-weight:600;color:#55585d;font-size:11.5px;white-space:nowrap}
+  table.dgrid td{height:30px;border-bottom:1px solid #f1f3f5;border-right:1px solid #f1f3f5;padding:0 8px;
+                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#17181a}
+  table.dgrid th:last-child,table.dgrid td:last-child{border-right:none}
+  table.dgrid td.c{text-align:center;padding:0}
+  table.dgrid td.num{text-align:right;font-variant-numeric:tabular-nums;color:#55585d;padding-right:10px}
+  table.dgrid td.nm{font-weight:600;color:#17181a}
+  table.dgrid td.ty{font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;color:#2b2f36;
+                    position:relative;padding-right:20px}
+  table.dgrid td.ty::after{content:"";position:absolute;right:9px;top:50%;margin-top:-1.5px;
+                           border:4px solid transparent;border-top-color:#9aa1ab;display:none}
+  table.dgrid tr.sel td.ty::after{display:block}
+  table.dgrid td.cm{color:#63676d;font-size:11.5px}
+  table.dgrid td.mut{color:#8b9199}
+  .rn{width:30px;text-align:center!important;color:#a8aeb8;font-size:11px;padding:0!important}
+  table.dgrid tr.sel td{background:#f0f3f7}
+  table.dgrid tr.sel td:first-child{box-shadow:inset 2px 0 0 #43484f}
+  table.dgrid tr.sel td.cm{color:#17181a}
+  table.dgrid tr.newrow td{background:#fffdf6}
+  table.dgrid tr.newrow td.nm{color:#a4620a}
+  table.dgrid .edit{display:inline-flex;align-items:center;height:22px;padding:0 6px;margin-left:-7px;
+                    border-radius:4px;background:#fff;box-shadow:0 0 0 1px #a9b0ba,0 0 0 3px rgba(67,72,79,.08)}
+  table.dgrid tr.addrow td{color:#a8aeb8;font-size:11.5px;background:#fcfcfd;border-right:none}
+
+  .dfoot{height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;
+         border-top:1px solid #e1e4e8;background:#fafbfc;font-size:11.5px;color:#63676d}
+  .dfoot .f{height:24px;width:220px;border:1px solid #d5dae1;border-radius:5px;background:#fff;
+            display:flex;align-items:center;padding:0 7px;font-size:12px;color:#17181a;
+            font-family:"Cascadia Code",Consolas,monospace}
+  .sqlkw{color:#1a63b4}.sqlstr{color:#0f7b6c}.sqlfn{color:#a4620a}.sqlcm{color:#9aa1ab}.sqlid{color:#2b2f36}
+  /* 编辑器 + 结果 */
+  .editor{flex:none;display:flex;min-height:0;border-bottom:1px solid #e1e4e8;background:#fff}
+  .gutter{width:44px;flex:none;background:#fafbfc;border-right:1px solid #f4f6f8;font-family:"Cascadia Code",Consolas,monospace;
+          font-size:11px;color:#b3b9c2;text-align:right;padding:8px 8px 0 0;line-height:20px}
+  .codearea{flex:1;padding:8px 14px;font-family:"Cascadia Code",Consolas,monospace;font-size:12px;line-height:20px;white-space:pre;overflow:hidden}
+  .sqlbar{height:30px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px;border-bottom:1px solid #eef0f3;background:#fff}
+  .rtabs{height:28px;flex:none;display:flex;align-items:stretch;border-bottom:1px solid #e1e4e8;background:#fafbfc;padding:0 8px}
+  .rtab{display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:#63676d;border-bottom:2px solid transparent}
+  .rtab.on{color:#17181a;font-weight:600;border-bottom-color:#43484f}
+  .rtab .n{background:#eceef1;border-radius:999px;padding:0 5px;font-size:10px;color:#55585d}
+  .statcards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 14px 4px}
+  .statcard{border:1px solid #eceff3;border-radius:8px;padding:9px 11px;background:#fff}
+  .statcard .k{font-size:11px;color:#8b9199}
+  .statcard .v{font-size:19px;font-weight:650;letter-spacing:-.01em;margin-top:2px;font-variant-numeric:tabular-nums}
+  .statcard .v small{font-size:11px;font-weight:500;color:#8b9199;margin-left:3px}
+</style>
+
+<section class="card">
+  <h2><span class="num">07</span>表 · 结构页</h2>
+  <p class="lead">只读地看"这张表怎么定义的"：字段、索引、外键三块自上而下，与数据页共用同一套标签，不新开窗口。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <div class="sections">
+                <span><svg width="13" height="13"><use href="#i-tableview"/></svg>数据</span>
+                <span class="on"><svg width="13" height="13"><use href="#i-columns"/></svg>结构</span>
+                <span><svg width="13" height="13"><use href="#i-edit"/></svg>设计</span>
+                <span><svg width="13" height="13"><use href="#i-import"/></svg>导入导出</span>
+              </div>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>添加字段</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-key"/></svg>添加索引</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-refresh"/></svg>刷新</span>
+              <span class="grow"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-code"/></svg>查看 DDL</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-copy"/></svg>复制结构</span>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="struct">
+                  <h4>字段（13）</h4>
+                  <table class="grid">
+                    <colgroup><col style="width:34px"><col style="width:168px"><col style="width:140px"><col style="width:56px"><col style="width:64px"><col style="width:150px"><col style="width:48px"><col style="width:56px"><col></colgroup>
+                    <thead><tr><th>#</th><th>名称</th><th>类型</th><th>允许空</th><th>键</th><th>默认值</th><th>自增</th><th>无符号</th><th>注释</th></tr></thead>
+                    <tbody>
+                      <tr><td class="rownum" style="width:34px">1</td><td style="font-weight:600">film_id</td><td class="code" style="font-size:11.5px">smallint</td><td>否</td><td><span class="pk">PK</span></td><td class="mut">—</td><td>是</td><td>是</td><td class="mut">自增主键</td></tr>
+                      <tr><td class="rownum" style="width:34px">2</td><td style="font-weight:600">title</td><td class="code" style="font-size:11.5px">varchar(128)</td><td>否</td><td class="mut">—</td><td class="mut">—</td><td>否</td><td>否</td><td class="mut">影片标题</td></tr>
+                      <tr><td class="rownum" style="width:34px">3</td><td style="font-weight:600">description</td><td class="code" style="font-size:11.5px">text</td><td>是</td><td class="mut">—</td><td class="mut">NULL</td><td>否</td><td>否</td><td class="mut">剧情简介</td></tr>
+                      <tr><td class="rownum" style="width:34px">4</td><td style="font-weight:600">release_year</td><td class="code" style="font-size:11.5px">year</td><td>是</td><td class="mut">—</td><td class="mut">NULL</td><td>否</td><td>否</td><td class="mut">上映年份</td></tr>
+                      <tr><td class="rownum" style="width:34px">5</td><td style="font-weight:600">language_id</td><td class="code" style="font-size:11.5px">tinyint</td><td>否</td><td><span class="pk" style="background:#eef4fd;color:#1a63b4">FK</span></td><td class="mut">—</td><td>否</td><td>是</td><td class="mut">FK → language.id</td></tr>
+                      <tr><td class="rownum" style="width:34px">6</td><td style="font-weight:600">original_language_id</td><td class="code" style="font-size:11.5px">tinyint</td><td>是</td><td><span class="pk" style="background:#eef4fd;color:#1a63b4">FK</span></td><td class="mut">NULL</td><td>否</td><td>是</td><td class="mut">原语言</td></tr>
+                      <tr><td class="rownum" style="width:34px">7</td><td style="font-weight:600">rental_rate</td><td class="code" style="font-size:11.5px">decimal(4,2)</td><td>是</td><td class="mut">—</td><td class="mut">4.99</td><td>否</td><td>否</td><td class="mut">租赁费率</td></tr>
+                      <tr><td class="rownum" style="width:34px">8</td><td style="font-weight:600">length</td><td class="code" style="font-size:11.5px">smallint</td><td>是</td><td class="mut">—</td><td class="mut">NULL</td><td>否</td><td>是</td><td class="mut">片长（分钟）</td></tr>
+                      <tr><td class="rownum" style="width:34px">9</td><td style="font-weight:600">replacement_cost</td><td class="code" style="font-size:11.5px">decimal(5,2)</td><td>是</td><td class="mut">—</td><td class="mut">19.99</td><td>否</td><td>否</td><td class="mut">赔偿成本</td></tr>
+                      <tr><td class="rownum" style="width:34px">10</td><td style="font-weight:600">rating</td><td class="code" style="font-size:11.5px">enum</td><td>是</td><td class="mut">—</td><td class="mut">G</td><td>否</td><td>否</td><td class="mut">分级</td></tr>
+                      <tr><td class="rownum" style="width:34px">11</td><td style="font-weight:600">last_update</td><td class="code" style="font-size:11.5px">timestamp</td><td>否</td><td class="mut">—</td><td class="mut">CURRENT_TIMESTAMP</td><td>否</td><td>否</td><td class="mut">更新时间</td></tr>
+                    </tbody>
+                  </table>
+
+                  <h4 style="margin-top:14px">索引（3）</h4>
+                  <table class="grid">
+                    <colgroup><col style="width:34px"><col style="width:168px"><col style="width:96px"><col style="width:220px"><col style="width:70px"><col></colgroup>
+                    <thead><tr><th>#</th><th>名称</th><th>类型</th><th>字段</th><th>唯一</th><th>方法</th></tr></thead>
+                    <tbody>
+                      <tr><td class="rownum" style="width:34px">1</td><td style="font-weight:600">PRIMARY</td><td>主键</td><td class="code" style="font-size:11.5px">film_id</td><td>是</td><td class="mut">BTREE</td></tr>
+                      <tr><td class="rownum" style="width:34px">2</td><td style="font-weight:600">idx_title</td><td>普通</td><td class="code" style="font-size:11.5px">title</td><td>否</td><td class="mut">BTREE</td></tr>
+                      <tr><td class="rownum" style="width:34px">3</td><td style="font-weight:600">idx_fk_language</td><td>普通</td><td class="code" style="font-size:11.5px">language_id</td><td>否</td><td class="mut">BTREE</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila / film</span><span>13 字段 · 3 索引 · 1 外键</span>
+              <div class="r"><span>只读展示</span><span>改结构请切「设计」</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 结构与数据共用标签页，切段不丢滚动位置；只读页不出现"应用"按钮，编辑入口收在「设计」。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">08</span>表 · 设计器（Navicat 式结构）</h2>
+  <p class="lead">改成"一条工具条 + 一排对象选项卡 + 一张字段网格 + 一条底部属性"的经典结构：字段的每个属性都在网格里直接改，右侧不再放属性栏，<b>SQL 预览</b>收进选项卡。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film / 设计</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span><span class="cnt">改</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-table"/></svg>film · 设计<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-query"/></svg>查询 1<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+
+            <div class="toolbar">
+              <span class="tb"><svg width="14" height="14"><use href="#i-check"/></svg>保存</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>添加字段</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-columns"/></svg>插入字段</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-trash"/></svg>删除字段</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-key"/></svg>主键</span>
+              <span class="sep"></span>
+              <span class="tb">↑ 上移</span>
+              <span class="tb">↓ 下移</span>
+              <span class="grow"></span>
+              <span class="tb" style="color:#a4620a"><svg width="14" height="14"><use href="#i-alert"/></svg>2 处变更</span>
+              <span class="btn" style="height:24px">生成预览</span>
+              <span class="btn pri" style="height:24px">应用变更</span>
+            </div>
+
+            <div class="ftabs">
+              <span class="on">字段</span><span>索引</span><span>外键</span><span>触发器</span><span>选项</span><span>注释</span><span>SQL 预览</span>
+            </div>
+
+            <div class="dgridwrap">
+              <table class="dgrid">
+                <colgroup><col style="width:30px"><col style="width:186px"><col style="width:128px"><col style="width:60px"><col style="width:56px"><col style="width:78px"><col style="width:54px"><col style="width:52px"><col></colgroup>
+                <thead><tr><th></th><th>名</th><th>类型</th><th>长度</th><th>小数点</th><th>不是 null</th><th>虚拟</th><th>键</th><th>注释</th></tr></thead>
+                <tbody>
+                  <tr><td class="rn">1</td><td class="nm">film_id</td><td class="ty">smallint</td><td class="num">5</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c"><span class="pk">PK</span></td><td class="cm">自增主键</td></tr>
+                  <tr><td class="rn">2</td><td class="nm">title</td><td class="ty">varchar</td><td class="num">128</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">影片标题</td></tr>
+                  <tr class="sel"><td class="rn">3</td><td class="nm"><span class="edit">description</span></td><td class="ty">text</td><td class="num mut">—</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">剧情简介，最长 5000 字</td></tr>
+                  <tr><td class="rn">4</td><td class="nm">release_year</td><td class="ty">year</td><td class="num mut">—</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">上映年份</td></tr>
+                  <tr><td class="rn">5</td><td class="nm">language_id</td><td class="ty">tinyint</td><td class="num">3</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c"><span class="pk" style="background:#eef4fd;color:#1a63b4">FK</span></td><td class="cm">FK → language.language_id</td></tr>
+                  <tr><td class="rn">6</td><td class="nm">original_language_id</td><td class="ty">tinyint</td><td class="num">3</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c"><span class="pk" style="background:#eef4fd;color:#1a63b4">FK</span></td><td class="cm">原语言</td></tr>
+                  <tr><td class="rn">7</td><td class="nm">rental_rate</td><td class="ty">decimal</td><td class="num">4</td><td class="num">2</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">租赁费率</td></tr>
+                  <tr><td class="rn">8</td><td class="nm">length</td><td class="ty">smallint</td><td class="num">5</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">片长（分钟）</td></tr>
+                  <tr><td class="rn">9</td><td class="nm">replacement_cost</td><td class="ty">decimal</td><td class="num">5</td><td class="num">2</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">赔偿成本</td></tr>
+                  <tr><td class="rn">10</td><td class="nm">rating</td><td class="ty">enum</td><td class="num mut">—</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">分级</td></tr>
+                  <tr><td class="rn">11</td><td class="nm">special_features</td><td class="ty">set</td><td class="num mut">—</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">花絮</td></tr>
+                  <tr class="newrow"><td class="rn"></td><td class="nm">summary</td><td class="ty">varchar</td><td class="num">255</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">AI 生成的剧情摘要</td></tr>
+                  <tr><td class="rn">12</td><td class="nm">last_update</td><td class="ty">timestamp</td><td class="num mut">—</td><td class="mut" style="text-align:center">—</td><td class="c"><span class="cbx on"></span></td><td class="c"><span class="cbx"></span></td><td class="c mut">—</td><td class="cm">更新时间</td></tr>
+                  <tr class="addrow"><td colspan="9">＋ 在末尾空行直接输入，回车提交一个新字段</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="dfoot">
+              <span>默认值</span>
+              <div class="f">NULL</div>
+              <span style="color:#a8aeb8">留空 = 无默认值</span>
+              <span style="margin-left:auto;color:#8b9199">第 3 行 · 允许 NULL · utf8mb4_0900_ai_ci</span>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila / film（设计草稿）</span>
+              <div class="r"><span>13 字段 · 3 索引</span><span>2 处变更未应用</span><span>Esc 放弃</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 工具条 32 / 选项卡 31 / 网格行高 30 / 底部属性条 34；网格 9 列，注释列吃剩余，数字列右对齐。</div>
+
+  <div class="notes">
+    <div class="note-box">
+      <h4>结构对齐 Navicat</h4>
+      <ul>
+        <li>第一行：保存 · 添加/插入/删除字段 · 主键 · 上移/下移，右侧放"变更数 + 应用"</li>
+        <li>第二行：字段 / 索引 / 外键 / 触发器 / 选项 / 注释 / SQL 预览 七个选项卡</li>
+        <li>第三行：字段网格，列序与 Navicat 一致：名、类型、长度、小数点、不是 null、虚拟、键、注释</li>
+        <li>底部：当前字段的默认值等高频属性；其余低频项放「选项」「注释」页</li>
+      </ul>
+    </div>
+    <div class="note-box">
+      <h4>与旧稿的差异</h4>
+      <ul>
+        <li>取消"字段清单 + 右侧属性栏 + 右侧变更预览"三栏，全部收进网格</li>
+        <li>SQL 预览不再是常驻窄栏，改为独立选项卡（点开占满网格区，只读）</li>
+        <li>新增行以琥珀底标出，未保存前右侧对象树显示"改"角标</li>
+        <li>应用变更仍在工具条右侧，需先在 SQL 预览页确认语句</li>
+      </ul>
+    </div>
+  </div>
+</section>
+  <h2><span class="num">09</span>SQL 查询 · 结果</h2>
+  <p class="lead">上半编辑、下半结果，比例可拖。结果页签区分"结果 / 概况 / 执行计划 / 消息"，导出与"复制为"放在结果区右上，不挤占执行区。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / 查询 1</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="12" height="12"><use href="#i-code"/></svg><span class="nm" style="font-weight:500">按分类统计影片</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="12" height="12"><use href="#i-code"/></svg><span class="nm" style="font-weight:500">近 30 天租赁</span></div>
+              <div class="row lvl2"><span class="ind"></span><svg width="14" height="14"><use href="#i-er"/></svg><span class="grp">ER 图</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-query"/></svg>查询 1<span class="x">✕</span></div>
+              <div class="tab"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="sqlbar">
+              <span class="tb pri" style="height:22px;padding:0 9px"><svg width="12" height="12" style="filter:brightness(4)"><use href="#i-play"/></svg>运行</span>
+              <span class="tb dim"><svg width="13" height="13"><use href="#i-stop"/></svg>停止</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-code"/></svg>美化</span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-edit"/></svg>注释</span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-clock"/></svg>执行计划</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-export"/></svg>保存</span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-clock"/></svg>历史</span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-ai"/></svg>AI</span>
+              <span class="grow"></span>
+              <span class="field" style="height:22px;width:110px;justify-content:space-between">sakila <i style="font-style:normal;color:#a8aeb8">▾</i></span>
+              <span class="tb" style="color:#0f7b6c"><svg width="13" height="13"><use href="#i-shield"/></svg>可写</span>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="editor" style="height:262px">
+                  <div class="gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12</div>
+                  <div class="codearea"><span class="sqlkw">SELECT</span> f.film_id,
+       f.title,
+       c.name <span class="sqlkw">AS</span> category,
+       f.rental_rate,
+       f.length
+<span class="sqlkw">FROM</span> film f
+<span class="sqlkw">JOIN</span> film_category fc <span class="sqlkw">ON</span> fc.film_id = f.film_id
+<span class="sqlkw">JOIN</span> category c       <span class="sqlkw">ON</span> c.category_id = fc.category_id
+<span class="sqlkw">WHERE</span> f.rating = <span class="sqlstr">'PG-13'</span>
+  <span class="sqlkw">AND</span> f.length &gt; <span class="sqlfn">90</span>
+<span class="sqlkw">ORDER BY</span> f.length <span class="sqlkw">DESC</span>
+<span class="sqlkw">LIMIT</span> <span class="sqlfn">100</span>;</div>
+                </div>
+
+                <div class="rtabs">
+                  <div class="rtab on">结果 <span class="n">100</span></div>
+                  <div class="rtab">概况</div>
+                  <div class="rtab">执行计划</div>
+                  <div class="rtab">消息 <span class="n">2</span></div>
+                  <div class="grow"></div>
+                  <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-copy"/></svg>复制为…</span>
+                  <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-export"/></svg>导出</span>
+                  <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-columns"/></svg>列</span>
+                </div>
+
+                <div class="gridwrap">
+                  <table class="grid">
+                    <colgroup><col style="width:44px"><col style="width:78px"><col><col style="width:150px"><col style="width:96px"><col style="width:84px"></colgroup>
+                    <thead><tr><th class="rownum">#</th><th>film_id</th><th>title</th><th>category</th><th style="text-align:right">rental_rate</th><th style="text-align:right">length</th></tr></thead>
+                    <tbody>
+                      <tr><td class="rownum">1</td><td class="num">333</td><td>FREAKY POCUS</td><td class="mut">Drama</td><td class="num">4.99</td><td class="num">185</td></tr>
+                      <tr><td class="rownum">2</td><td class="num">893</td><td>SOLDIERS EVOLUTION</td><td class="mut">Documentary</td><td class="num">0.99</td><td class="num">184</td></tr>
+                      <tr><td class="rownum">3</td><td class="num">631</td><td>MISSION ZOOLANDER</td><td class="mut">Action</td><td class="num">2.99</td><td class="num">183</td></tr>
+                      <tr><td class="rownum">4</td><td class="num">127</td><td>CAT CONEHEADS</td><td class="mut">Comedy</td><td class="num">2.99</td><td class="num">181</td></tr>
+                      <tr><td class="rownum">5</td><td class="num">76</td><td>BIRDS PERDITION</td><td class="mut">Horror</td><td class="num">4.99</td><td class="num">179</td></tr>
+                      <tr><td class="rownum">6</td><td class="num">248</td><td>DRUMS DYNAMITE</td><td class="mut">Family</td><td class="num">0.99</td><td class="num">178</td></tr>
+                      <tr><td class="rownum">7</td><td class="num">702</td><td>RACING MOTHERSDAY</td><td class="mut">Sci-Fi</td><td class="num">2.99</td><td class="num">177</td></tr>
+                      <tr><td class="rownum">8</td><td class="num">515</td><td>LION UNCUT</td><td class="mut">Animation</td><td class="num">0.99</td><td class="num">176</td></tr>
+                      <tr><td class="rownum">9</td><td class="num">92</td><td>BLANKET BEVERLY</td><td class="mut">Classics</td><td class="num">4.99</td><td class="num">175</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="dstatus">
+                  <span>返回 100 行</span><span>耗时 42 ms</span><span>只读查询</span>
+                  <div class="pg"><span style="padding:0 6px">1 / 2</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila</span><span>查询 1 · 未保存</span>
+              <div class="r"><span>42 ms</span><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 编辑区与结果区之间可拖拽分割（默认 40/60），双击分割条复位；结果表头吸顶。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">10</span>SQL 查询 · 概况与执行计划</h2>
+  <p class="lead">执行完先看"花了多久、扫了多少行"，再决定要不要优化。概况与执行计划同页上下排布，不必来回切。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / 查询 1</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="14" height="14"><use href="#i-view"/></svg><span class="grp">视图</span><span class="cnt">7</span></div>
+              <div class="row lvl2 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-query"/></svg><span class="grp">查询</span><span class="cnt">4</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="12" height="12"><use href="#i-code"/></svg><span class="nm" style="font-weight:500">按分类统计影片</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="12" height="12"><use href="#i-code"/></svg><span class="nm" style="font-weight:500">近 30 天租赁</span></div>
+            </div>
+          </div>
+
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-query"/></svg>查询 1<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="sqlbar">
+              <span class="tb pri" style="height:22px;padding:0 9px"><svg width="12" height="12" style="filter:brightness(4)"><use href="#i-play"/></svg>运行</span>
+              <span class="tb dim"><svg width="13" height="13"><use href="#i-stop"/></svg>停止</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-code"/></svg>美化</span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-edit"/></svg>注释</span>
+              <span class="tb on"><svg width="13" height="13"><use href="#i-clock"/></svg>执行计划</span>
+              <span class="sep"></span>
+              <span class="tb"><svg width="13" height="13"><use href="#i-export"/></svg>保存</span>
+              <span class="grow"></span>
+              <span class="field" style="height:22px;width:110px;justify-content:space-between">sakila <i style="font-style:normal;color:#a8aeb8">▾</i></span>
+              <span class="tb" style="color:#0f7b6c"><svg width="13" height="13"><use href="#i-shield"/></svg>可写</span>
+            </div>
+
+            <div class="body">
+              <div class="content">
+                <div class="editor" style="height:132px">
+                  <div class="gutter">1<br>2<br>3<br>4<br>5<br>6</div>
+                  <div class="codearea"><span class="sqlkw">SELECT</span> c.name <span class="sqlkw">AS</span> category, <span class="sqlfn">COUNT</span>(*) <span class="sqlkw">AS</span> total
+<span class="sqlkw">FROM</span> film f
+<span class="sqlkw">JOIN</span> film_category fc <span class="sqlkw">ON</span> fc.film_id = f.film_id
+<span class="sqlkw">JOIN</span> category c       <span class="sqlkw">ON</span> c.category_id = fc.category_id
+<span class="sqlkw">GROUP BY</span> c.name
+<span class="sqlkw">ORDER BY</span> total <span class="sqlkw">DESC</span>;</div>
+                </div>
+
+                <div class="rtabs">
+                  <div class="rtab">结果 <span class="n">16</span></div>
+                  <div class="rtab on">概况</div>
+                  <div class="rtab">执行计划</div>
+                  <div class="rtab">消息</div>
+                  <div class="grow"></div>
+                  <span class="tb" style="color:#1a63b4"><svg width="13" height="13"><use href="#i-ai"/></svg>让 AI 分析这条查询</span>
+                </div>
+
+                <div class="statcards">
+                  <div class="statcard"><div class="k">总耗时</div><div class="v">184<small>ms</small></div></div>
+                  <div class="statcard"><div class="k">返回行数</div><div class="v">16</div></div>
+                  <div class="statcard"><div class="k">扫描行数</div><div class="v">2,841</div></div>
+                  <div class="statcard"><div class="k">使用索引</div><div class="v">3<small>/ 3 表</small></div></div>
+                </div>
+
+                <div style="padding:8px 14px 0">
+                  <div class="hh" style="font-size:11px;color:#8b9199;font-weight:600;letter-spacing:.04em;margin-bottom:5px">执行计划（EXPLAIN）</div>
+                  <table class="grid">
+                    <colgroup><col style="width:40px"><col style="width:96px"><col style="width:110px"><col style="width:74px"><col style="width:172px"><col style="width:126px"><col style="width:64px"><col></colgroup>
+                    <thead><tr><th>id</th><th>select_type</th><th>table</th><th>type</th><th>possible_keys</th><th>key</th><th style="text-align:right">rows</th><th>Extra</th></tr></thead>
+                    <tbody>
+                      <tr><td class="num">1</td><td>SIMPLE</td><td>c</td><td><span class="cellbadge">index</span></td><td class="mut">PRIMARY</td><td class="code" style="font-size:11px">PRIMARY</td><td class="num">16</td><td class="mut">Using index; temporary</td></tr>
+                      <tr><td class="num">1</td><td>SIMPLE</td><td>fc</td><td><span class="cellbadge">ref</span></td><td class="mut">PRIMARY, idx_fk_category</td><td class="code" style="font-size:11px">idx_fk_category</td><td class="num">62</td><td class="mut">Using index</td></tr>
+                      <tr><td class="num">1</td><td>SIMPLE</td><td>f</td><td><span class="cellbadge">eq_ref</span></td><td class="mut">PRIMARY</td><td class="code" style="font-size:11px">PRIMARY</td><td class="num">1</td><td class="mut">Using where</td></tr>
+                    </tbody>
+                  </table>
+                  <div style="margin-top:8px;border:1px solid #f0dcbd;background:#fdf9f0;border-radius:7px;padding:8px 10px;font-size:11.5px;color:#a4620a;display:flex;gap:7px;align-items:flex-start">
+                    <svg width="12" height="12" style="margin-top:2px"><use href="#i-alert"/></svg>
+                    <span>category 表出现 <b>Using temporary</b>：按 c.name 分组会先建临时表。若该查询高频，可考虑在 category(name) 上建索引。</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>sakila</span><span>184 ms · 16 行</span>
+              <div class="r"><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 概况用四张数字卡（等宽数字），执行计划下方直接给优化提示，避免"看懂了但不知道怎么办"。</div>
+</section>
+
+<style>
+  .app{position:relative}
+  .scrim{position:absolute;left:0;right:0;bottom:0;top:36px;background:rgba(22,27,36,.34);display:flex;align-items:center;justify-content:center;z-index:5}
+  .scrim.top{top:0;z-index:9}
+  .modal{width:536px;background:#fff;border-radius:12px;box-shadow:0 20px 54px rgba(16,24,40,.26);overflow:hidden}
+  .modal .mh{height:46px;display:flex;align-items:center;gap:9px;padding:0 18px;border-bottom:1px solid #eef0f3}
+  .modal .mh .t{font-size:13.5px;font-weight:650}
+  .modal .mh .s{color:#8b9199;font-size:11.5px}
+  .modal .mh .x{margin-left:auto;color:#a8aeb8}
+  .modal .mb{padding:14px 18px 8px}
+  .mrow{display:grid;grid-template-columns:84px 1fr;gap:10px;align-items:center;margin-bottom:11px;font-size:12px}
+  .mrow > .k{color:#63676d}
+  .mf{height:50px;display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:0 18px;border-top:1px solid #eef0f3;background:#fafbfc}
+  .radios{display:flex;gap:14px;font-size:12px;color:#2b2f36}
+  .radios span{display:flex;align-items:center;gap:6px}
+  .radio{width:13px;height:13px;border-radius:50%;border:1px solid #c8ced7;display:inline-block;position:relative}
+  .radio.on{border-color:#43484f}
+  .radio.on::after{content:"";position:absolute;inset:2.5px;border-radius:50%;background:#43484f}
+  .drawer{position:absolute;right:0;top:36px;bottom:0;width:470px;background:#fff;border-left:1px solid #dfe3e8;
+          box-shadow:-14px 0 40px rgba(16,24,40,.14);display:flex;flex-direction:column}
+  .drawer .dh{height:46px;flex:none;display:flex;align-items:center;gap:9px;padding:0 14px;border-bottom:1px solid #eef0f3}
+  .drawer .dh .t{font-size:13px;font-weight:650}
+  .drawer .dh .s{color:#8b9199;font-size:11.5px;margin-top:1px}
+  .drawer .dh .x{margin-left:auto;color:#a8aeb8}
+  .drawer pre{margin:0;flex:1;padding:12px 14px;font-family:"Cascadia Code",Consolas,monospace;font-size:11.5px;line-height:1.8;
+              background:#fcfcfd;overflow:hidden;color:#33404f}
+  .drawer .df{height:46px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid #eef0f3;justify-content:flex-end;background:#fafbfc}
+  .menu{position:absolute;width:216px;background:#fff;border:1px solid #e1e4e8;border-radius:8px;
+        box-shadow:0 12px 30px rgba(16,24,40,.18);padding:4px;z-index:8}
+  .mi{height:26px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:5px;font-size:12px;color:#2b2f36}
+  .mi.on{background:#eceef1}
+  .mi.dim{color:#a8aeb8}
+  .mi .k{margin-left:auto;color:#b3b9c2;font-size:10.5px}
+  .msep{height:1px;background:#eef0f3;margin:4px 6px}
+  .toast{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);background:#2b2f36;color:#fff;
+         border-radius:8px;padding:8px 14px;font-size:12px;box-shadow:0 8px 22px rgba(16,24,40,.25);display:flex;gap:8px;align-items:center}
+</style>
+
+<section class="card">
+  <h2><span class="num">11</span>导入数据 · 对话框</h2>
+  <p class="lead">导入是最容易"点错就写坏数据"的动作，因此做成可校验的模态：文件、编码、表头、冲突策略四件事一次说清，底部常驻目标表名。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila / film</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+            </div>
+          </div>
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-table"/></svg>film<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <div class="sections">
+                <span class="on"><svg width="13" height="13"><use href="#i-tableview"/></svg>数据</span>
+                <span><svg width="13" height="13"><use href="#i-columns"/></svg>结构</span>
+                <span><svg width="13" height="13"><use href="#i-edit"/></svg>设计</span>
+                <span><svg width="13" height="13"><use href="#i-import"/></svg>导入导出</span>
+              </div>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>筛选</div>
+            </div>
+            <div class="body">
+              <div class="content">
+                <table class="grid">
+                  <colgroup><col style="width:44px"><col style="width:72px"><col><col style="width:120px"><col style="width:120px"></colgroup>
+                  <thead><tr><th class="rownum">#</th><th>film_id</th><th>title</th><th>release_year</th><th>rating</th></tr></thead>
+                  <tbody>
+                    <tr><td class="rownum">1</td><td class="num">1</td><td>ACADEMY DINOSAUR</td><td>2006</td><td>PG</td></tr>
+                    <tr><td class="rownum">2</td><td class="num">2</td><td>ACE GOLDFINGER</td><td>2006</td><td>G</td></tr>
+                    <tr><td class="rownum">3</td><td class="num">3</td><td>ADAPTATION HOLES</td><td>2006</td><td>NC-17</td></tr>
+                    <tr><td class="rownum">4</td><td class="num">4</td><td>AFFAIR PREJUDICE</td><td>2006</td><td>G</td></tr>
+                    <tr><td class="rownum">5</td><td class="num">5</td><td>AFRICAN EGG</td><td>2006</td><td>G</td></tr>
+                    <tr><td class="rownum">6</td><td class="num">6</td><td>AGENT TRUMAN</td><td>2006</td><td>PG</td></tr>
+                    <tr><td class="rownum">7</td><td class="num">7</td><td>AIRPLANE SIERRA</td><td>2006</td><td>PG-13</td></tr>
+                    <tr><td class="rownum">8</td><td class="num">8</td><td>AIRPORT POLLOCK</td><td>2006</td><td>R</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scrim">
+          <div class="modal">
+            <div class="mh">
+              <svg width="16" height="16"><use href="#i-import"/></svg>
+              <div><div class="t">导入数据</div><div class="s">sakila.film · 13 个字段</div></div>
+              <span class="x"><svg width="14" height="14"><use href="#i-close"/></svg></span>
+            </div>
+            <div class="mb">
+              <div class="mrow"><span class="k">文件</span>
+                <div style="display:flex;gap:6px">
+                  <span class="field" style="flex:1;color:#17181a">D:/data/film_2026.csv</span>
+                  <span class="btn">浏览…</span>
+                </div>
+              </div>
+              <div class="mrow"><span class="k">格式</span>
+                <div class="radios">
+                  <span><i class="radio on"></i>CSV</span>
+                  <span><i class="radio"></i>JSON</span>
+                  <span><i class="radio"></i>SQL INSERT</span>
+                </div>
+              </div>
+              <div class="mrow"><span class="k">编码</span>
+                <div style="display:flex;gap:6px">
+                  <span class="field" style="width:130px;justify-content:space-between">UTF-8 <i style="font-style:normal;color:#a8aeb8">▾</i></span>
+                  <span class="field" style="width:130px;justify-content:space-between">逗号 , <i style="font-style:normal;color:#a8aeb8">▾</i></span>
+                </div>
+              </div>
+              <div class="mrow"><span class="k">首行</span>
+                <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:#2b2f36">
+                  <span class="cbx on"></span>作为列名（自动匹配字段）
+                </div>
+              </div>
+              <div class="mrow"><span class="k">冲突处理</span>
+                <div class="radios">
+                  <span><i class="radio"></i>中止</span>
+                  <span><i class="radio on"></i>跳过重复</span>
+                  <span><i class="radio"></i>覆盖</span>
+                </div>
+              </div>
+              <div style="margin:12px 0 4px;border:1px solid #eef0f3;border-radius:8px;background:#fafbfc;padding:9px 11px;font-size:11.5px;color:#55585d;line-height:1.6">
+                预览：识别到 <b>13 列 / 1,000 行</b>，其中 2 行 film_id 已存在（将被跳过）。<br>
+                未匹配字段 <b style="color:#a4620a">special_features</b> 将写入 NULL。
+              </div>
+            </div>
+            <div class="mf">
+              <span class="btn">取消</span>
+              <span class="btn pri">开始导入</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 遮罩 34% 黑，弹窗 536 宽；预览信息在提交前给出"列数 / 行数 / 冲突数 / 未匹配字段"。</div>
+</section>
+
+<section class="card">
+  <h2><span class="num">12</span>DDL 抽屉与右键菜单</h2>
+  <p class="lead">不离开当前页就能看建表语句：右侧抽屉承载长文本 SQL，左侧内容保留上下文。右键菜单则统一收敛"打开 / 设计 / 复制 / 导出 / 删除"。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev / sakila</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1 on"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl2"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="grp">表</span><span class="cnt">23</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">film</span></div>
+              <div class="row lvl3 on"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span></div>
+              <div class="row lvl3"><span class="ind"></span><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span></div>
+            </div>
+          </div>
+          <div class="main">
+            <div class="tabbar">
+              <div class="tab on"><svg width="15" height="15"><use href="#i-database"/></svg>sakila<span class="x">✕</span></div>
+              <div class="tab add">＋</div><div class="grow"></div>
+            </div>
+            <div class="toolbar">
+              <span class="chip">表 / 视图</span><span class="sep"></span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-tableview"/></svg>打开表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-edit"/></svg>设计表</span>
+              <span class="tb"><svg width="14" height="14"><use href="#i-plus"/></svg>新建表</span>
+              <span class="grow"></span>
+              <div class="search"><svg width="13" height="13"><use href="#i-search"/></svg>名称 / 注释</div>
+              <span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span>
+            </div>
+            <div class="body">
+              <div class="content">
+                <div class="objhd"><span style="width:18px"></span><span style="width:140px">名称</span><span style="flex:1">注释</span><span class="c-rows">行数</span><span class="c-size">大小</span></div>
+                <div class="objlist">
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">actor</span><span class="cm">演员信息</span><span class="meta"><span class="c-rows">200</span><span class="c-size">32 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">address</span><span class="cm">地址（关联 city）</span><span class="meta"><span class="c-rows">603</span><span class="c-size">96 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">category</span><span class="cm">影片分类</span><span class="meta"><span class="c-rows">16</span><span class="c-size">16 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">city</span><span class="cm">城市（关联 country）</span><span class="meta"><span class="c-rows">600</span><span class="c-size">48 KB</span></span></div>
+                  <div class="objrow"><svg width="14" height="14"><use href="#i-table"/></svg><span class="nm">customer</span><span class="cm">客户主数据</span><span class="meta"><span class="c-rows">599</span><span class="c-size">112 KB</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scrim"></div>
+        <div class="drawer">
+          <div class="dh">
+            <svg width="16" height="16"><use href="#i-code"/></svg>
+            <div><div class="t">建表语句</div><div class="s">sakila / actor</div></div>
+            <span class="x"><svg width="15" height="15"><use href="#i-close"/></svg></span>
+          </div>
+          <pre><span class="sqlkw">CREATE TABLE</span> `actor` (
+  `actor_id` <span class="sqlkw">SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT</span>,
+  `first_name` <span class="sqlkw">VARCHAR</span>(45) <span class="sqlkw">NOT NULL</span>,
+  `last_name` <span class="sqlkw">VARCHAR</span>(45) <span class="sqlkw">NOT NULL</span>,
+  `last_update` <span class="sqlkw">TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP</span>
+                  <span class="sqlkw">ON UPDATE CURRENT_TIMESTAMP</span>,
+  <span class="sqlkw">PRIMARY KEY</span> (`actor_id`),
+  <span class="sqlkw">KEY</span> `idx_actor_last_name` (`last_name`)
+) <span class="sqlkw">ENGINE</span>=InnoDB <span class="sqlkw">DEFAULT CHARSET</span>=utf8mb4
+  <span class="sqlkw">COLLATE</span>=utf8mb4_0900_ai_ci
+  <span class="sqlkw">COMMENT</span>=<span class="sqlstr">'演员信息'</span>;</pre>
+          <div class="df">
+            <span class="tb" style="color:#55585d"><svg width="13" height="13"><use href="#i-copy"/></svg>复制</span>
+            <span class="btn">保存为 .sql</span>
+            <span class="btn pri">关闭</span>
+          </div>
+        </div>
+
+        <div class="scrim top" style="background:transparent;align-items:flex-start;justify-content:flex-start;pointer-events:none">
+          <div class="menu" style="left:318px;top:266px">
+            <div class="mi on"><svg width="13" height="13"><use href="#i-tableview"/></svg>打开表<span class="k">Enter</span></div>
+            <div class="mi"><svg width="13" height="13"><use href="#i-edit"/></svg>设计表</div>
+            <div class="mi"><svg width="13" height="13"><use href="#i-query"/></svg>新建查询<span class="k">Ctrl+Q</span></div>
+            <div class="msep"></div>
+            <div class="mi"><svg width="13" height="13"><use href="#i-copy"/></svg>复制名称</div>
+            <div class="mi"><svg width="13" height="13"><use href="#i-code"/></svg>查看 DDL</div>
+            <div class="mi"><svg width="13" height="13"><use href="#i-export"/></svg>导出 SQL</div>
+            <div class="msep"></div>
+            <div class="mi" style="color:#b3352f"><svg width="13" height="13"><use href="#i-trash"/></svg>删除表…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><span class="tag">1180 × 740</span> 抽屉 470 宽从右侧滑入，Esc 关闭；右键菜单 216 宽，危险项用红字并单独成组。</div>
+</section>
+
+<style>
+  .emptywrap{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;background:#fff}
+  .emptywrap .ic{width:64px;height:64px;border-radius:18px;background:#f4f5f7;display:grid;place-items:center;margin-bottom:14px}
+  .emptywrap h3{margin:0;font-size:16px;font-weight:650;letter-spacing:-.01em}
+  .emptywrap p{margin:6px 0 0;color:#8b9199;font-size:12.5px;text-align:center;line-height:1.7}
+  .emptywrap .acts{display:flex;gap:8px;margin-top:16px}
+  .emptywrap .kbd{margin-top:18px;color:#a8aeb8;font-size:11.5px;display:flex;gap:14px}
+  .kbd b{display:inline-block;border:1px solid #e1e4e8;border-bottom-width:2px;border-radius:4px;padding:0 5px;
+         font-family:"Cascadia Code",Consolas,monospace;font-size:10.5px;color:#63676d;background:#fafbfc;margin-right:4px}
+</style>
+
+<section class="card">
+  <h2><span class="num">13</span>空状态与新建数据库</h2>
+  <p class="lead">没有打开任何页签时给出三条明确出路，而不是一片空白；库级操作（新建 / 字符集）用轻量弹窗，并在提交前回显将执行的 SQL。</p>
+
+  <div class="frame">
+    <div class="scale">
+      <div class="app">
+        <div class="titlebar">
+          <div class="brand"><i>P</i>PortNest</div>
+          <span class="path">/ sakila-dev</span>
+          <div class="right"><div class="winbtn">—</div><div class="winbtn">□</div><div class="winbtn">✕</div></div>
+        </div>
+        <div class="workarea">
+          <div class="rail">
+            <div class="rb on"><svg width="18" height="18"><use href="#i-assets"/></svg><span>资产树</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-terminal"/></svg><span>终端</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-database"/></svg><span>数据库</span></div>
+            <div class="sp"></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-ai"/></svg><span>AI</span></div>
+            <div class="rb"><svg width="18" height="18"><use href="#i-settings"/></svg><span>设置</span></div>
+          </div>
+          <div class="tree">
+            <div class="tree-hd">对象
+              <div class="acts"><span class="iconbtn"><svg width="14" height="14"><use href="#i-plus"/></svg></span><span class="iconbtn"><svg width="14" height="14"><use href="#i-refresh"/></svg></span></div>
+            </div>
+            <div class="tree-search"><svg width="13" height="13"><use href="#i-search"/></svg>搜索数据库、表、视图</div>
+            <div class="tree-body">
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron-down"/></svg></span><svg width="16" height="16"><use href="#i-mysql"/></svg><span class="nm">sakila-dev</span><span class="cnt">3</span></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">analytics</span></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">sakila</span></div>
+              <div class="row lvl1"><span class="ind"><svg width="11" height="11"><use href="#i-chevron"/></svg></span><svg width="15" height="15"><use href="#i-database"/></svg><span class="nm">scratch</span></div>
+            </div>
+          </div>
+          <div class="main">
+            <div class="tabbar"><div class="tab add">＋</div><div class="grow"></div></div>
+            <div class="body">
+              <div class="content">
+                <div class="emptywrap">
+                  <div class="ic"><svg width="34" height="34"><use href="#i-database"/></svg></div>
+                  <h3>还没有打开任何对象</h3>
+                  <p>在左侧对象树里双击一张表，或直接写一条 SQL。<br>打开过的对象会以标签页保留在这里。</p>
+                  <div class="acts">
+                    <span class="btn pri"><svg width="13" height="13" style="filter:brightness(4)"><use href="#i-query"/></svg>新建 SQL 查询</span>
+                    <span class="btn"><svg width="13" height="13"><use href="#i-tableview"/></svg>打开表</span>
+                    <span class="btn"><svg width="13" height="13"><use href="#i-import"/></svg>导入 SQL 文件</span>
+                  </div>
+                  <div class="kbd">
+                    <span><b>Ctrl</b><b>Q</b>新建查询</span>
+                    <span><b>Ctrl</b><b>P</b>快速打开</span>
+                    <span><b>F5</b>运行</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="statusbar">
+              <span><i class="dot"></i>已连接 · MySQL 8.0.36</span><span>未选择数据库</span>
+              <div class="r"><span><svg width="12" height="12" style="vertical-align:-2px"><use href="#i-shield"/></svg> 可写</span></div>
+            </div>
+          </div>
+        </div>
+
+        
+      </div>
+    </div>
+  </div>
+  <div class="cap" style="margin-top:14px"><b>浮层样张</b> · 弹窗 484 宽，遮罩 34% 黑，标题区 46 / 内容 18 边距 / 底部 50</div>
+  <div class="frame plain" style="margin-top:8px">
+    <div style="background:#eff1f4;border-radius:8px;padding:34px 0;display:flex;justify-content:center">
+      <div class="modal" style="width:484px">
+            <div class="mh">
+              <svg width="16" height="16"><use href="#i-database"/></svg>
+              <div><div class="t">新建数据库</div><div class="s">sakila-dev · MySQL 8.0.36</div></div>
+              <span class="x"><svg width="14" height="14"><use href="#i-close"/></svg></span>
+            </div>
+            <div class="mb">
+              <div class="mrow"><span class="k">名称</span><span class="field" style="color:#17181a">analytics_2026</span></div>
+              <div class="mrow"><span class="k">字符集</span><span class="field" style="justify-content:space-between">utf8mb4 <i style="font-style:normal;color:#a8aeb8">▾</i></span></div>
+              <div class="mrow"><span class="k">排序规则</span><span class="field" style="justify-content:space-between">utf8mb4_0900_ai_ci <i style="font-style:normal;color:#a8aeb8">▾</i></span></div>
+              <div class="mrow" style="align-items:flex-start"><span class="k">将执行</span>
+                <div style="background:#fafbfc;border:1px solid #eef0f3;border-radius:7px;padding:8px 10px;font-family:'Cascadia Code',Consolas,monospace;font-size:11px;line-height:1.8;color:#33404f">
+                  <span class="sqlkw">CREATE DATABASE</span> `analytics_2026`<br>
+                  &nbsp;&nbsp;<span class="sqlkw">CHARACTER SET</span> utf8mb4<br>
+                  &nbsp;&nbsp;<span class="sqlkw">COLLATE</span> utf8mb4_0900_ai_ci;
+                </div>
+              </div>
+              <div class="mrow" style="margin-bottom:2px"><span class="k"></span>
+                <span style="color:#8b9199;font-size:11.5px">名称只允许字母、数字与下划线，创建后不可重命名。</span>
+              </div>
+            </div>
+            <div class="mf">
+              <span class="btn">取消</span>
+              <span class="btn pri">创建</span>
+            </div>
+          </div>
+    </div>
+  </div>
+
+  <div class="cap"><span class="tag">1180 × 740</span> 空状态给出主 / 次 / 三 级入口与三组快捷键；新建库弹窗回显 SQL，避免"建完了才发现字符集不对"。</div>
+</section>
+
+<style>
+  .confirm{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px 0 4px}
+  .crow{display:grid;grid-template-columns:46px 1fr;border-bottom:1px solid var(--line2)}
+  .crow:last-child{border-bottom:none}
+  .cno{background:#fafbfc;color:var(--ink4);display:grid;place-items:center;border-right:1px solid var(--line2);
+       font-family:"Cascadia Code",Consolas,monospace;font-size:12px}
+  .cb{padding:11px 15px}
+  .cb b{font-size:13.5px;color:var(--ink)}
+  .cb p{margin:3px 0 0;font-size:12.5px;line-height:1.65;color:var(--ink2)}
+</style>
+</section>
+<section class="card">
+  <h2><span class="num">14</span>状态与交互规范</h2>
+  <p class="lead">同一套控件在五种状态下的表现必须一致，否则用户会以为"这里坏了"。下面这张表可直接作为组件实现的验收清单。</p>
+
+  <table class="spec">
+    <thead><tr><th style="width:16%">状态</th><th style="width:34%">视觉</th><th>行为</th></tr></thead>
+    <tbody>
+      <tr><td><b>加载中</b></td><td>表格保留表头与骨架行；按钮内图标替换为 12px 转圈，文字不变</td><td>不遮挡已有数据；超过 400ms 才显示，避免闪烁</td></tr>
+      <tr><td><b>空（无数据）</b></td><td>表头保留，内容区居中 1 行说明 + 1 个主按钮</td><td>区分"没有表""筛选无结果""没有权限"三种文案</td></tr>
+      <tr><td><b>空（无页签）</b></td><td>图标 + 标题 + 说明 + 三个入口 + 快捷键</td><td>入口与工具栏同名同序，避免两套叫法</td></tr>
+      <tr><td><b>错误</b></td><td>页签内联错误条（浅红底、左图标、右关闭），不弹窗</td><td>错误归属到具体页签；连接断开才升级为全局提示</td></tr>
+      <tr><td><b>禁用</b></td><td>整体 45% 透明度，保留形状与位置</td><td>不做灰度处理，避免与"加载中"混淆；悬停显示原因</td></tr>
+      <tr><td><b>只读</b></td><td>状态栏出现锁图标；编辑类按钮禁用；单元格不出现编辑光标</td><td>切只读需二次确认，切换后立即影响所有页签</td></tr>
+      <tr><td><b>有未提交修改</b></td><td>页签标题后加圆点；底部编辑条常驻；应用按钮为主色</td><td>关闭页签 / 切库时拦截确认，Esc 只撤销当前单元格</td></tr>
+      <tr><td><b>选中</b></td><td>浅灰底 + 左侧 2px 强调条；文字颜色不变</td><td>多选时强调条只在首行，其余行仅底色</td></tr>
+      <tr><td><b>焦点</b></td><td>2px 强调色描边，偏移 1px</td><td>仅键盘可见（:focus-visible），鼠标点击不显示</td></tr>
+    </tbody>
+  </table>
+
+  <h3>与现有实现的对应关系</h3>
+  <table class="spec">
+    <thead><tr><th style="width:26%">设计稿页面</th><th style="width:30%">对应组件</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>01 对象列表</td><td><code>ObjectPanel</code> + <code>ObjectInfoPane</code></td><td>沿用现有双栏，信息栏新增"相关"分组</td></tr>
+      <tr><td>02 / 03 / 04 表格 · 图标 · 详情</td><td><code>ObjectPanel</code> 的 view 切换</td><td>三种视图共用同一份排序与筛选状态</td></tr>
+      <tr><td>05 / 06 数据网格 · 表单</td><td><code>TableWorkspace</code> + <code>DataGrid</code></td><td>条件行独立成 34px 一条；编辑条只在有改动时出现</td></tr>
+      <tr><td>07 结构</td><td><code>StructureView</code></td><td>字段 / 索引分表展示，只读</td></tr>
+      <tr><td>08 设计器</td><td><code>DesignerView</code></td><td>预览区从右侧挪到底部通栏，宽度更够用</td></tr>
+      <tr><td>09 / 10 查询</td><td><code>QueryPanel</code> + <code>ResultTabs</code></td><td>概况与执行计划合并为一页，减少切换</td></tr>
+      <tr><td>11 / 12 / 13 浮层</td><td>导入导出、DDL 抽屉、右键菜单、新建库</td><td>统一 536 宽弹窗与 470 宽抽屉两种规格</td></tr>
+    </tbody>
+  </table>
+
+  <h3>需要你确认的三件事</h3>
+  <div class="confirm">
+    <div class="crow"><span class="cno">01</span><div class="cb"><b>默认视图</b><p>对象列表默认停在「列表」还是「表格」？设计稿按列表做默认——信息密度低、注释可读，切表格只是点一下。</p></div></div>
+    <div class="crow"><span class="cno">02</span><div class="cb"><b>信息栏是否默认展开</b><p>信息栏占 352px，展开后对象列表的注释列会明显变短。设计稿按"单击某张表才展开"处理，避免一进来就挤。</p></div></div>
+    <div class="crow"><span class="cno">03</span><div class="cb"><b>设计器的预览位置</b><p>现实现是右侧窄栏（约 300px），SQL 会被截断；设计稿改为底部通栏。若要保持现状，只需把宽度调到 380 以上。</p></div></div>
+  </div>
+
+</section>
+
+<footer>
+  PortNest 数据库模块界面设计稿 · 13 个页面 · 2026-11-26<br>
+  尺寸与配色取自 <code>src/styles/tokens.css</code>；对象图标与实现共用同一套 24 网格彩色图标
+</footer>
+
+</div>
+</body>
+</html>

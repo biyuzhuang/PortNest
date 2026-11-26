@@ -1,5 +1,6 @@
 import type {
   DatabaseColumnInfo,
+  DatabaseForeignKeyDefinition,
   DatabaseIndexInfo,
   DatabaseTableDefinition,
   DatabaseTableInfo,
@@ -11,7 +12,13 @@ import type {
 export type TableSection = "data" | "structure" | "design" | "transfer";
 
 /** 对象面板的三种显示方式，对齐 Navicat 的 List / Detail / Icons */
-export type ObjectView = "list" | "detail" | "icons";
+export type ObjectView = "list" | "table" | "detail" | "icons";
+
+/**
+ * 内容区展示范围：树里单击哪个节点，右侧就展示该节点范围内的对象。
+ * 数据库节点 = all（表 + 视图），「表」组 = tables，「视图」组 = views。
+ */
+export type ObjectScope = "all" | "tables" | "views";
 
 /** 表数据区的两种呈现：网格 / 单记录表单 */
 export type DataView = "grid" | "form";
@@ -84,6 +91,8 @@ export type DatabaseTab = {
   title: string;
   database: string;
   view: ObjectView;
+  /** 展示范围：全部对象 / 仅表 / 仅视图；由对象树里单击的节点决定 */
+  objectScope?: ObjectScope;
   /** 详情视图下正在查看的表 */
   detailTable?: string;
 };
@@ -149,6 +158,8 @@ export type TableTab = {
   filters: FilterSpec;
   columns: DatabaseColumnInfo[];
   indexes: DatabaseIndexInfo[];
+  /** 外键约束：结构页只读展示用，打开表时顺带读一次 */
+  foreignKeys?: DatabaseForeignKeyDefinition[];
   rows: QueryResult | null;
   designer: DatabaseTableDefinition | null;
   /** 进入设计器时的快照，用于「变更」页算 diff */
@@ -161,6 +172,10 @@ export type TableTab = {
   primaryKey: string[];
   /** 列宽，按表持久化到 localStorage */
   columnWidths: Record<string, number>;
+  /** 统计总行数：undefined = 未开启统计，null = 统计失败/带筛选不可用 */
+  totalRows?: number | null;
+  /** 正在统计总数 */
+  totalLoading?: boolean;
 };
 
 export type WorkspaceTab = DatabaseTab | QueryTab | TableTab;
@@ -266,6 +281,17 @@ export const rowToJson = (columns: string[], values: unknown[]) => {
 
 export const formatBytes = (value?: number | null) =>
   value == null ? "—" : value < 1024 ? `${value}B` : value < 1048576 ? `${(value / 1024).toFixed(1)}KB` : `${(value / 1048576).toFixed(1)}MB`;
+
+/** 信息页写法：`16.00 KB (16,384)`、`0 bytes (0)`；缺失时 `--`（对齐 Navicat 属性面板） */
+export const formatBytesExact = (value?: number | null) => {
+  if (value == null) return "--";
+  const units = ["bytes", "KB", "MB", "GB", "TB", "PB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+  const shown = unit === 0 ? `${value} bytes` : `${size.toFixed(2)} ${units[unit]}`;
+  return `${shown} (${value.toLocaleString("en-US")})`;
+};
 
 export const tableCount = (tables: DatabaseTableInfo[] | undefined, kind: "BASE TABLE" | "VIEW") =>
   (tables || []).filter(item => item.kind === kind).length;

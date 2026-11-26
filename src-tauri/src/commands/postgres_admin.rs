@@ -1359,6 +1359,11 @@ async fn list_tables_impl(
                 collation: None,
                 created_at: None,
                 updated_at: None,
+                row_format: None,
+                checked_at: None,
+                data_free: None,
+                max_data_length: None,
+                create_options: None,
             }
         })
         .collect())
@@ -1742,12 +1747,16 @@ pub async fn postgres_execute_sql_batch(
     connection_id: String,
     sql: String,
     database: Option<String>,
+    stop_on_error: Option<bool>,
 ) -> Result<super::BatchExecutionResult, String> {
+    let stop_on_error = stop_on_error.unwrap_or(true);
     let statements = super::split_statements(&sql)?;
     let database = database.as_deref().filter(|value| !value.is_empty());
     let manual = statements.iter().any(|item| manages_transaction(item));
     let blocked = statements.iter().any(|item| unable_in_transaction(item));
-    let wrap = statements.len() > 1 && !manual && !blocked;
+    // 「失败即停」关闭时不用事务包裹：PG 事务一旦有语句失败就会进入 aborted，
+    // 后续语句全部报错，等于没继续执行；逐条自动提交才符合“继续跑完”的语义。
+    let wrap = statements.len() > 1 && !manual && !blocked && stop_on_error;
 
     let client = client_for(&state, &connection_id, database).await?;
     let mut client = client.lock().await;
@@ -1793,7 +1802,9 @@ pub async fn postgres_execute_sql_batch(
                     duration_ms: started.elapsed().as_millis() as u64,
                 });
                 failure = Some(message);
-                break;
+                if stop_on_error {
+                    break;
+                }
             }
         }
     }
@@ -1807,7 +1818,13 @@ pub async fn postgres_execute_sql_batch(
     };
 
     if wrap {
-        if failure.is_some() {
+        if failure.is_some() && !stop_on_error {
+            // 继续执行模式：保留已成功的语句
+            client
+                .query("COMMIT")
+                .await
+                .map_err(|e| format!("提交事务失败: {e}"))?;
+        } else if failure.is_some() {
             match client.query("ROLLBACK").await {
                 Ok(_) => transaction = "rolled_back".to_string(),
                 Err(rollback) => {
@@ -1826,8 +1843,8 @@ pub async fn postgres_execute_sql_batch(
     Ok(super::BatchExecutionResult {
         statements: outcomes,
         transaction,
-        // PG 的事务回滚是完整的，不存在 MySQL 那种隐式提交
-        partial: false,
+        // 回滚模式下 PG 事务是完整的；继续执行模式下可能有部分语句已提交
+        partial: failure.is_some() && !stop_on_error,
         error: failure,
     })
 }
@@ -2520,10 +2537,23 @@ pub async fn postgres_export_sql(
         return Err("导出路径不能为空".to_string());
     }
     let tables = list_tables_impl(&state, &connection_id, &options.database).await?;
+    let single_table = options
+        .table
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(table) = single_table {
+        if !tables.iter().any(|item| item.name == table) {
+            return Err(format!("表不存在: {table}"));
+        }
+    }
     let mut output = String::new();
     let mut exported_tables = 0usize;
     let mut exported_rows = 0u64;
     for table in tables.iter().filter(|table| table.kind == "BASE TABLE") {
+        if single_table.is_some_and(|name| name != table.name) {
+            continue;
+        }
         let create =
             show_create_impl(&state, &connection_id, &options.database, &table.name).await?;
         output.push_str(&create);

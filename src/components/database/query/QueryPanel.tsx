@@ -30,6 +30,7 @@ const isReadOnlySql = (sql: string) => {
   return false;
 };
 /** 去掉注释与字面量后再按分号切，避免把字符串里的 ; 当成语句分隔符 */
+import { databaseSettings } from "../../../stores/databaseSettings";
 const statementHeads = (sql: string) => {
   const masked = stripSqlComments(sql)
     .replace(/'(?:[^'\\]|\\.|'')*'/g, "''")
@@ -76,16 +77,48 @@ export const QueryPanel: Component<Props> = props => {
   const [messages, setMessages] = createSignal<string[]>([]);
   const [explain, setExplain] = createSignal<DatabaseExplainResult | null>(null);
   const [explaining, setExplaining] = createSignal(false);
-  let loadedDatabase = "";
+  let loadedAutocompleteKey = "";
+  const [autocompleteLoading, setAutocompleteLoading] = createSignal(false);
 
   onCleanup(() => aiContextStore.setSQLSelection(""));
 
+  /**
+   * 补全数据源：默认只加载当前库的字段；开启「加载全库字段」后再补充同连接其它库，
+   * 按 表+列 去重后合并。库很多时只取前 24 个，避免一次打开几十条元数据查询。
+   */
   createEffect(() => {
     const database = props.tab.database;
-    if (database === loadedDatabase) return;
-    loadedDatabase = database;
-    if (!database) { setAutocomplete([]); return; }
-    void api.databaseAutocomplete(props.connection.id, database).then(setAutocomplete).catch(() => setAutocomplete([]));
+    const loadAll = databaseSettings().loadAllColumns;
+    const key = `${database}|${loadAll ? "all" : "current"}`;
+    if (key === loadedAutocompleteKey) return;
+    loadedAutocompleteKey = key;
+    if (!database) { setAutocomplete([]); setAutocompleteLoading(false); return; }
+    let cancelled = false;
+    setAutocompleteLoading(loadAll && props.databases.length > 1);
+    void (async () => {
+      try {
+        const base = await api.databaseAutocomplete(props.connection.id, database).catch(() => [] as DatabaseAutocompleteItem[]);
+        if (cancelled) return;
+        if (!loadAll) { setAutocomplete(base); return; }
+        const resolved = props.databases.length > 0
+          ? props.databases
+          : await api.databaseListDatabases(props.connection.id).catch(() => []);
+        const others = resolved.map(item => item.name).filter(name => name !== database).slice(0, 24);
+        const chunks = await Promise.all(others.map(name => api.databaseAutocomplete(props.connection.id, name).catch(() => [] as DatabaseAutocompleteItem[])));
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const merged = [...base, ...chunks.flat()].filter(item => {
+          const id = `${item.table}\u0000${item.column}`;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        });
+        setAutocomplete(merged);
+      } finally {
+        if (!cancelled) setAutocompleteLoading(false);
+      }
+    })();
+    onCleanup(() => { cancelled = true; });
   });
 
   // 整批没跑起来时也要留一条可读的错误，否则界面上什么都看不到
@@ -102,8 +135,9 @@ export const QueryPanel: Component<Props> = props => {
       return;
     }
     lastError = "";
-    const rolledBack = props.tab.batch?.transaction === "rolled_back"
-      || props.tab.batch?.transaction === "rollback_failed";
+    const batch = props.tab.batch;
+    const rolledBack = batch?.transaction === "rolled_back"
+      || batch?.transaction === "rollback_failed";
     const lines = outcomes.map(item => {
       const label = `#${item.index} ${summarizeStatement(item.statement)}`;
       if (item.error) return `错误：${label} — ${item.error}`;
@@ -113,7 +147,6 @@ export const QueryPanel: Component<Props> = props => {
       return `${rolledBack ? "已回滚" : "成功"}：${label} — ${detail}，耗时 ${item.duration_ms} ms`;
     });
     // 事务结果单独提示：回滚意味着前面的「成功」其实没有落库
-    const batch = props.tab.batch;
     if (batch?.transaction === "rolled_back" || batch?.transaction === "rollback_failed") {
       const notice = batch.transaction === "rollback_failed"
         ? "错误：批次执行失败且回滚也失败，请立即人工检查数据"
@@ -121,6 +154,9 @@ export const QueryPanel: Component<Props> = props => {
           ? "警告：批次已回滚，但其中包含 DDL（隐式提交），那部分已生效"
           : "警告：批次执行失败，已回滚，前面的语句均未生效";
       lines.unshift(notice);
+    } else if (batch?.transaction === "committed" && batch.error) {
+      // 「失败即停」关闭时：出错的语句跳过，其余语句已提交，必须让用户知道
+      lines.unshift("警告：部分语句执行失败，已成功的语句已提交，请核对数据");
     }
     setMessages(current => [...lines.reverse(), ...current].slice(0, 50));
     // 有失败就跳到消息页：失败原因比空结果更值得先看到
@@ -141,7 +177,7 @@ export const QueryPanel: Component<Props> = props => {
       feedback.error("当前处于只读模式，只允许执行 SELECT / SHOW / DESCRIBE / EXPLAIN");
       return;
     }
-    if (heads.some(isDangerousSql) && !await feedback.confirm("检测到高风险 SQL，可能修改或删除表结构/数据。确定继续执行吗？", "高风险 SQL")) return;
+    if (databaseSettings().confirmDangerousSql && heads.some(isDangerousSql) && !await feedback.confirm("检测到高风险 SQL，可能修改或删除表结构/数据。确定继续执行吗？", "高风险 SQL")) return;
     recordHistory(sql);
     props.onExecute(selectedSql().trim() ? selectedSql() : undefined);
   };
@@ -240,13 +276,20 @@ export const QueryPanel: Component<Props> = props => {
         onOpenAgent={() => aiContextStore.openAgent("sql")}
       />
 
+      <Show when={autocompleteLoading()}>
+        <div class="db-query-hint">
+          <Icon name="refresh" size={12} />
+          <span>正在加载全库字段，补全稍后可用</span>
+        </div>
+      </Show>
+
       <Show when={historyOpen() || favoritesOpen()}>
         <div class="db-query-list" role="dialog" aria-label={historyOpen() ? "查询历史" : "收藏的 SQL"}>
           <header>
             <strong>{historyOpen() ? "查询历史" : "收藏的 SQL"}</strong>
             <span class="db-toolbar-spacer" />
             <button class="db-icon-btn" aria-label="关闭" onClick={() => { setHistoryOpen(false); setFavoritesOpen(false); }}>
-              <Icon name="close" size={12} />
+              <Icon name="close" size={14} />
             </button>
           </header>
           <For each={historyOpen() ? history() : favorites()} fallback={<p class="db-query-list-empty">还没有记录</p>}>{item => (

@@ -30,7 +30,7 @@
   color: var(--ui-text);
   background: transparent;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--fs-13);
   font-weight: 400;
   line-height: 1.35;
   text-align: left;
@@ -130,13 +130,13 @@
 .asset-context-caption {
   padding: 7px 9px 4px;
   color: var(--ui-muted);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   font-weight: 600;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
 .hexhub-context-header { min-height: 36px; padding: 0 6px 0 9px; border-bottom: 1px solid var(--ui-line); }
-.hexhub-context-header > strong { color: var(--ui-text); font-size: 12.5px; font-weight: 600; }
+.hexhub-context-header > strong { color: var(--ui-text); font-size: var(--fs-125); font-weight: 600; }
 .hexhub-context-header-actions button { width: 26px; height: 26px; border-radius: 6px; color: var(--ui-muted); }
 .hexhub-context-header-actions button:hover:not(:disabled) {
   color: var(--ui-text);
@@ -211,7 +211,7 @@ select,
   border-color: color-mix(in srgb, var(--pn-blue) 60%, var(--ui-line-strong));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pn-blue) 14%, transparent);
 }
-.sidebar-search .search-input { font-size: 13px; }
+.sidebar-search .search-input { font-size: var(--fs-13); }
 .sidebar-nav { padding: 4px 7px 10px; }
 .connection-item,
 .folder-header {
@@ -249,8 +249,8 @@ select,
   box-shadow: none;
 }
 .conn-icon svg { width: 12px; height: 12px; stroke-width: 1.9; }
-.conn-name { color: var(--ui-text); font-size: 13px; font-weight: 500; }
-.conn-host { font-size: 11px; }
+.conn-name { color: var(--ui-text); font-size: var(--fs-13); font-weight: 500; }
+.conn-host { font-size: var(--fs-11); }
 .folder-icon { width: 19px; height: 19px; flex: 0 0 19px; color: var(--pn-amber); }
 .folder-icon svg { width: 15px; height: 15px; }
 .folder-count {
@@ -319,7 +319,7 @@ select,
    4. File manager
    ========================================================= */
 
-.file-manager { color: var(--ui-text); background: var(--ui-surface); font-size: 13px; }
+.file-manager { color: var(--ui-text); background: var(--ui-surface); font-size: var(--fs-13); }
 .nav-btn:hover { color: var(--ui-text); background: var(--ui-hover); }
 .file-list { background: var(--ui-surface); }
 
@@ -347,15 +347,15 @@ select,
 /* Settings AI model list */
 
 .ai-model-available-list { background: var(--ui-surface); border-color: var(--ui-line); border-radius: 7px; }
-.ai-model-available-row { min-height: 32px; border-color: var(--ui-line); color: var(--ui-text); font-size: 12px; }
+.ai-model-available-row { min-height: 32px; border-color: var(--ui-line); color: var(--ui-text); font-size: var(--fs-12); }
 .ai-model-available-row:hover { color: var(--ui-text); background: var(--ui-hover); }
 .ai-model-available-head { border-color: var(--ui-line); }
 .ai-model-row { min-height: 40px; border-color: var(--ui-line); }
-.ai-model-row-main strong { font-size: 12px; }
-.ai-model-row-main small { font-size: 11px; }
-.ai-model-advanced-grid label > span { font-size: 10.5px; }
-.ai-model-advanced-grid input { font-size: 12px; }
-.ai-model-capabilities-label { font-size: 10.5px; }
+.ai-model-row-main strong { font-size: var(--fs-12); }
+.ai-model-row-main small { font-size: var(--fs-11); }
+.ai-model-advanced-grid label > span { font-size: var(--fs-105); }
+.ai-model-advanced-grid input { font-size: var(--fs-12); }
+.ai-model-capabilities-label { font-size: var(--fs-105); }
 
 /* =========================================================
    6. AI workspace
@@ -363,22 +363,22 @@ select,
 
 .ai-conversation-bar { background: transparent; }
 .ai-conversation-list > header { background: var(--ui-subtle); border-bottom: 1px solid var(--ui-line); }
-.ai-conversation-list > header strong { font-size: 12px; }
-.ai-conversation-list > header small { font-size: 10.5px; }
-.ai-conversation-list > header button { min-height: 28px; font-size: 11px; border-radius: 6px; }
+.ai-conversation-list > header strong { font-size: var(--fs-12); }
+.ai-conversation-list > header small { font-size: var(--fs-105); }
+.ai-conversation-list > header button { min-height: 28px; font-size: var(--fs-11); border-radius: 6px; }
 .ai-conversation-current { border-radius: 8px; background: var(--ui-subtle); }
-.ai-conversation-current strong { font-size: 12.5px; }
-.ai-conversation-current small { font-size: 10.5px; }
+.ai-conversation-current strong { font-size: var(--fs-125); }
+.ai-conversation-current small { font-size: var(--fs-105); }
 .ai-conversation-item { min-height: 38px; padding: 7px 8px; border-radius: 7px; }
 .ai-conversation-item:hover { background: var(--ui-menu-hover); }
 .ai-conversation-item.active { background: var(--ui-menu-selected); box-shadow: inset 2px 0 0 var(--pn-blue); }
-.ai-conversation-item-copy strong { font-size: 12px; }
-.ai-conversation-item-copy small { font-size: 10.5px; }
+.ai-conversation-item-copy strong { font-size: var(--fs-12); }
+.ai-conversation-item-copy small { font-size: var(--fs-105); }
 .ai-conversation-drawer { background: var(--ui-surface); border-right: 1px solid var(--ui-line); }
 .ai-conversation-drawer > header { background: var(--ui-subtle); border-bottom: 1px solid var(--ui-line); }
-.ai-conversation-drawer > header strong { font-size: 12.5px; }
-.ai-conversation-drawer > header small { font-size: 10.5px; }
-.ai-conversation-drawer-new { min-height: 28px; font-size: 11px; border-radius: 6px; }
+.ai-conversation-drawer > header strong { font-size: var(--fs-125); }
+.ai-conversation-drawer > header small { font-size: var(--fs-105); }
+.ai-conversation-drawer-new { min-height: 28px; font-size: var(--fs-11); border-radius: 6px; }
 .ai-conversation-drawer > footer { background: var(--ui-surface); border-top: 1px solid var(--ui-line); }
 .ai-conversation-drawer-toggle {
   color: var(--ui-muted);
@@ -414,13 +414,13 @@ select,
 .ai-preset-popover > header strong,
 .ai-model-popover > header strong,
 .agent-model-popover > header strong {
-  font-size: 12.5px;
+  font-size: var(--fs-125);
 }
 .ai-permissions-popover > header small,
 .ai-preset-popover > header small,
 .ai-model-popover > header small,
 .agent-model-popover > header small {
-  font-size: 10.5px;
+  font-size: var(--fs-105);
 }
 .ai-permissions-popover > footer,
 .ai-preset-popover > footer {
@@ -441,14 +441,14 @@ select,
   background: var(--ui-menu-selected);
 }
 .ai-preset-search input { border-color: var(--ui-line-strong); background: var(--ui-input); }
-.ai-send-button { font-size: 12px; }
-.ai-composer-footer button { border-radius: 7px; font-size: 12px; }
+.ai-send-button { font-size: var(--fs-12); }
+.ai-composer-footer button { border-radius: 7px; font-size: var(--fs-12); }
 .ai-tool-card { border-radius: 9px; }
 .ai-tool-approve { background: var(--ui-primary); border-color: transparent; }
 .ai-tool-approve:hover { background: var(--ui-primary-hover); }
 .ai-tool-approve.danger { background: var(--danger); }
-.agent-task-strip { min-height: 32px; font-size: 10.5px; }
-.agent-task-strip strong { font-size: 11px; }
+.agent-task-strip { min-height: 32px; font-size: var(--fs-105); }
+.agent-task-strip strong { font-size: var(--fs-11); }
 .ai-mode-tabs button { border-radius: 7px; }
 .ai-mode-tabs button.active { box-shadow: inset 0 -2px 0 var(--pn-blue); background: transparent; }
 .ai-mode-icon { border-radius: 6px; }
@@ -485,8 +485,8 @@ select,
 .overview-memory-item:nth-child(2) {
   background: transparent;
 }
-.overview-tile-value { font-size: 14px; }
-.overview-tile-label { font-size: 10.5px; }
+.overview-tile-value { font-size: var(--fs-14); }
+.overview-tile-label { font-size: var(--fs-105); }
 .rail-gauge { background: color-mix(in srgb, var(--pn-green) 14%, transparent); }
 .rail-gauge.level-warning { background: color-mix(in srgb, var(--pn-amber) 15%, transparent); }
 .rail-gauge.level-critical { background: color-mix(in srgb, var(--pn-red) 15%, transparent); }
@@ -530,14 +530,14 @@ select,
 /* Docker dashboard */
 
 .docker-tabs { background: var(--ui-subtle); border-bottom: 1px solid var(--ui-line); }
-.docker-tab { border-radius: 6px 6px 0 0; color: var(--ui-muted); font-size: 12.5px; }
+.docker-tab { border-radius: 6px 6px 0 0; color: var(--ui-muted); font-size: var(--fs-125); }
 .docker-tab.active {
   color: var(--pn-blue);
   background: var(--ui-surface);
   border-color: var(--ui-line);
   box-shadow: inset 0 -2px 0 var(--pn-blue);
 }
-.docker-table th { background: var(--ui-subtle); color: var(--ui-muted); font-size: 11.5px; }
+.docker-table th { background: var(--ui-subtle); color: var(--ui-muted); font-size: var(--fs-115); }
 .docker-table tr:hover td { background: var(--ui-hover); }
 .docker-toolbar button,
 .btn-action {
@@ -548,7 +548,7 @@ select,
 .btn-action:hover { background: var(--ui-hover); }
 .stats-modal { background: var(--ui-surface); border-color: var(--ui-line-strong); border-radius: 12px; }
 .stat-item { background: var(--ui-subtle); }
-.system-info h3 { font-size: 13px; }
+.system-info h3 { font-size: var(--fs-13); }
 
 /* Key picker and import dialog */
 
@@ -562,7 +562,7 @@ select,
 }
 .key-picker-table { border-color: var(--ui-line); background: var(--ui-surface); }
 .key-picker-head { background: var(--ui-subtle); color: var(--ui-muted); }
-.key-picker-row { min-height: 34px; border-color: var(--ui-line); color: var(--ui-text); font-size: 12.5px; }
+.key-picker-row { min-height: 34px; border-color: var(--ui-line); color: var(--ui-text); font-size: var(--fs-125); }
 .key-picker-row:nth-child(odd):not(.key-picker-head):not(.selected) { background: transparent; }
 .key-picker-row:hover:not(.key-picker-head) { background: var(--ui-hover); }
 .key-picker-row.selected,
@@ -610,7 +610,7 @@ select,
   background: var(--ui-input);
   border-color: var(--ui-line-strong);
 }
-.ssh-tunnel-grid label { font-size: 11.5px; }
+.ssh-tunnel-grid label { font-size: var(--fs-115); }
 .tunnel-panel-actions button,
 .broadcast-select-actions button {
   border-radius: 6px;

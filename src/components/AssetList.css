@@ -184,7 +184,7 @@
   right: 1px;
   bottom: 0;
   color: var(--accent);
-  font-size: 9px;
+  font-size: var(--fs-9);
   font-style: normal;
   font-weight: 700;
   line-height: 1;
@@ -209,7 +209,7 @@
   gap: var(--space-5);
   padding: 0 var(--space-4);
   color: var(--text-1);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
 }
 
 /* Creation / last-connection timestamps stay on one line: the column is sized
@@ -228,7 +228,7 @@
   color: var(--text-3);
   background: var(--surface-base);
   border-bottom: 1px solid var(--line);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   font-weight: 650;
   letter-spacing: .04em;
   text-transform: uppercase;
@@ -344,7 +344,7 @@
   overflow: hidden;
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-115);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -442,7 +442,7 @@
   border: 0;
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   font-weight: 550;
   cursor: pointer;
   transition: background var(--dur-hover) ease;
@@ -595,7 +595,7 @@
   }
 
   .asset-breadcrumb-separator {
-    font-size: 10px;
+    font-size: var(--fs-10);
   }
 
   .asset-toolbar-actions {

@@ -7,6 +7,8 @@ import { SettingsModal } from "./components/SettingsModal";
 import { FeedbackHost } from "./components/FeedbackHost";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initTheme } from "./stores/themeStore";
+import { initUiZoom } from "./stores/zoomStore";
+import { initDatabaseSettings } from "./stores/databaseSettings";
 import "./visual-refresh.css";
 // Loaded last so the asset tree can override the older global layers.
 import "./components/AssetList.css";
@@ -27,6 +29,9 @@ import "./styles/overlays.css";
 // Create/edit asset window: compact geometry wins over the legacy App.css
 // metrics, so it is loaded after every other layer.
 import "./components/ConnectionForm.css";
+// Database workspace: its own denser control chrome (28px rows) must win over the
+// global form layer, so it is imported last — after forms.css and App.css.
+import "./styles/database/index.css";
 
 const isSettingsWindow = new URLSearchParams(window.location.search).get("window") === "settings";
 document.addEventListener("contextmenu", event => event.preventDefault(), { capture: true });
@@ -37,6 +42,8 @@ document.addEventListener("keydown", event => {
   }
 });
 initTheme();
+initUiZoom();
+initDatabaseSettings();
 render(
   () => isSettingsWindow
     ? <>

@@ -279,14 +279,28 @@ pub async fn database_execute_sql_batch(
     connection_id: String,
     sql: String,
     database: Option<String>,
+    stop_on_error: Option<bool>,
 ) -> Result<super::BatchExecutionResult, String> {
     match connection_protocol(&state, &connection_id)?.as_str() {
         "mysql" => {
-            super::mysql_admin::mysql_execute_sql_batch(state, connection_id, sql, database).await
+            super::mysql_admin::mysql_execute_sql_batch(
+                state,
+                connection_id,
+                sql,
+                database,
+                stop_on_error,
+            )
+            .await
         }
         "postgresql" | "highgo" => {
-            super::postgres_admin::postgres_execute_sql_batch(state, connection_id, sql, database)
-                .await
+            super::postgres_admin::postgres_execute_sql_batch(
+                state,
+                connection_id,
+                sql,
+                database,
+                stop_on_error,
+            )
+            .await
         }
         protocol => Err(format!("暂不支持的数据库协议: {protocol}")),
     }

@@ -58,7 +58,7 @@
 }
 
 .metrics-strip-label {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--text-primary);
   white-space: nowrap;
   font-weight: 500;

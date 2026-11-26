@@ -47,7 +47,15 @@
   height: var(--space-1);
   background: var(--accent);
 }
-.db-tab-icon { display: inline-flex; color: var(--text-3); }
+.db-tab-icon {
+  display: inline-flex;
+  width: var(--icon-md);
+  height: var(--icon-md);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
 .db-tab.is-active .db-tab-icon { color: var(--accent); }
 .db-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .db-tab-dirty { width: var(--space-2); height: var(--space-2); border-radius: var(--r-full); background: #d9a441; flex: none; }
@@ -65,19 +73,33 @@
 .db-tab.is-active .db-tab-close { opacity: 1; }
 .db-tab-close:hover { background: var(--surface-hover); color: var(--text-1); }
 
-.db-tab-new {
+/* 新建查询：主按钮，固定高度居中，标签滚动区变窄时只收文案不收按钮 */
+.db-new-query {
   display: inline-flex;
   flex: none;
+  align-self: center;
   align-items: center;
-  justify-content: center;
-  width: var(--h-tab);
-  border: 0;
-  border-left: 1px solid var(--line);
-  background: transparent;
-  color: var(--text-3);
+  gap: var(--space-1);
+  height: var(--h-row);
+  margin: 0 var(--space-2);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: inherit;
+  font-size: var(--fs-11);
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background var(--dur-hover) ease;
 }
-.db-tab-new:hover { background: var(--surface-hover); color: var(--text-1); }
+.db-new-query:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+.db-new-query:focus-visible { outline: var(--space-1) solid var(--accent); outline-offset: 2px; }
+@container dbworkspace (max-width: 720px) {
+  .db-new-query .db-btn-label { display: none; }
+  .db-new-query { padding: 0 var(--space-3); }
+}
 
 /* 状态栏 */
 

@@ -16,7 +16,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.permission-dialog small { color: var(--text-muted); font-size: 11px; }
+.permission-dialog small { color: var(--text-muted); font-size: var(--fs-11); }
 .permission-owner-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -46,7 +46,7 @@
 .remote-editor-dialog > header div { min-width: 0; flex: 1; }
 .remote-editor-dialog > header strong,
 .remote-editor-dialog > header small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.remote-editor-dialog > header strong { color: var(--text-primary); font-size: 13px; }
+.remote-editor-dialog > header strong { color: var(--text-primary); font-size: var(--fs-13); }
 .remote-editor-dialog > header small { margin-top: 3px; color: var(--text-muted); font: 11px var(--font-mono); }
 .remote-editor-dialog > header button {
   width: 28px;
@@ -81,5 +81,5 @@
   padding: 0 14px;
   border-top: 1px solid var(--border-light);
 }
-.remote-editor-dialog > footer span { flex: 1; color: var(--text-muted); font-size: 11px; }
+.remote-editor-dialog > footer span { flex: 1; color: var(--text-muted); font-size: var(--fs-11); }
 .remote-editor-dialog > footer button { min-width: 68px; }

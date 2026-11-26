@@ -18,7 +18,7 @@
 .text-context-caption {
   padding: 4px 7px 5px;
   color: var(--text-muted);
-  font-size: 9.5px;
+  font-size: var(--fs-95);
   font-weight: 650;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -35,7 +35,7 @@
   color: var(--text-primary);
   background: transparent;
   text-align: left;
-  font-size: 11.5px;
+  font-size: var(--fs-115);
   cursor: pointer;
 }
 .text-context-menu button:hover:not(:disabled) { background: color-mix(in srgb, var(--text-primary) 7%, transparent); }

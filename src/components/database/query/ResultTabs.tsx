@@ -78,7 +78,7 @@ export const ResultTabs: Component<Props> = props => {
             onClick={() => { props.onActive("result"); props.onActiveResult(pane.index); }}
           >
             {pane.label}
-            <Show when={pane.badge > 0}><em>{pane.badge}</em></Show>
+            <Show when={pane.badge > 0}><em>{pane.badge} 行</em></Show>
           </button>
         )}</For>
         {/* 还没结果时保留一个占位页签，让空状态有落点 */}
@@ -98,12 +98,12 @@ export const ResultTabs: Component<Props> = props => {
         <button role="tab" aria-selected={props.active === "plan"} class={props.active === "plan" ? "is-active" : ""} onClick={() => props.onActive("plan")}>执行计划</button>
         <span class="db-toolbar-spacer" />
         <Show when={props.active === "result" && result()}>
-          <button class="db-text-btn" onClick={copyResult}><Icon name="copy" size={12} />复制</button>
-          <button class="db-text-btn" onClick={exportCsv}><Icon name="export" size={12} />CSV</button>
+          <button class="db-text-btn" onClick={copyResult}><Icon name="copy" size={14} />复制</button>
+          <button class="db-text-btn" onClick={exportCsv}><Icon name="export" size={14} />CSV</button>
         </Show>
         <Show when={props.active === "plan"}>
           <button class="db-text-btn" onClick={() => props.onExplain()} disabled={props.explaining}>
-            <Icon name="refresh" size={12} />{props.explaining ? "生成中…" : "重新生成"}
+            <Icon name="refresh" size={14} />{props.explaining ? "生成中…" : "重新生成"}
           </button>
         </Show>
       </div>
@@ -111,7 +111,7 @@ export const ResultTabs: Component<Props> = props => {
       <div class="db-result-body">
         <Show when={rollbackNotice()}>
           <div class={`db-batch-notice ${props.batch?.transaction === "rollback_failed" ? "is-danger" : ""}`.trim()} role="status">
-            <Icon name="info" size={12} />
+            <Icon name="info" size={14} />
             <span>{rollbackNotice()}</span>
           </div>
         </Show>
@@ -122,17 +122,17 @@ export const ResultTabs: Component<Props> = props => {
                 <table class="db-grid is-data">
                   <thead>
                     <tr>
-                      <th class="db-col-index is-frozen">#</th>
                       <For each={current().columns}>{name => <th class="db-th"><span class="db-th-name">{name}</span></th>}</For>
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={current().rows}>{(row, index) => (
+                    <For each={current().rows}>{row => (
                       <tr class="db-row">
-                        <td class="db-col-index is-frozen">{index() + 1}</td>
                         <For each={row.values}>{value => (
                           <td class={`db-cell ${isNullValue(value) ? "is-null" : ""}`} title={formatCell(value)}>
-                            {isNullValue(value) ? <em class="db-cell-null">NULL</em> : formatCell(value)}
+                            <span class="db-cell-text">
+                              {isNullValue(value) ? <em class="db-cell-null">NULL</em> : formatCell(value)}
+                            </span>
                           </td>
                         )}</For>
                       </tr>

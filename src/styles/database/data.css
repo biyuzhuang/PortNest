@@ -11,9 +11,23 @@
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--line);
 }
-.db-section-nav nav { display: inline-flex; align-items: stretch; height: 100%; gap: var(--space-1); }
+/* 窄窗口下「数据 / 结构 / 设计 / 导入导出」不能折行，
+   否则中文会被拆成竖排；放不下时让这一条自己横向滚动 */
+.db-section-nav nav {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: stretch;
+  height: 100%;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.db-section-nav nav::-webkit-scrollbar { height: 0; }
 .db-section-nav nav button {
   position: relative;
+  flex: none;
+  white-space: nowrap;
   padding: 0 var(--space-4);
   border: 0;
   background: transparent;
@@ -90,42 +104,11 @@
 .db-cond .db-input { min-width: 120px; flex: 1; }
 .db-cond-priority { color: var(--text-3); font-size: var(--fs-11); }
 
-/* 复制为… 下拉 */
-
-.db-menu-group { position: relative; }
-.db-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 30;
-  display: none;
-  flex-direction: column;
-  min-width: 140px;
-  padding: var(--space-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
-  background: var(--surface-raised);
-  box-shadow: 0 10px 28px color-mix(in srgb, #000 20%, transparent);
-}
-.db-menu-group:hover .db-menu,
-.db-menu-group:focus-within .db-menu { display: flex; }
-.db-menu button {
-  height: var(--h-row);
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--r-xs);
-  background: transparent;
-  color: var(--text-2);
-  font-family: inherit;
-  font-size: var(--fs-12);
-  text-align: left;
-  cursor: pointer;
-}
-.db-menu button:hover { background: var(--surface-hover); color: var(--text-1); }
 
 /* 表单视图 */
 
 .db-formview {
+  container: formview / inline-size;
   display: grid;
   flex: 1;
   grid-template-columns: minmax(0, 1fr) 15.5rem;
@@ -152,22 +135,37 @@
 .db-formview-head small { color: var(--text-3); font-size: var(--fs-11); }
 .db-formview-dirty { color: #8a5a00; }
 
-.db-formview-fields { display: flex; flex-direction: column; gap: var(--space-2); }
-.db-field { display: grid; grid-template-columns: 9.25rem minmax(0, 1fr); align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-2); border-radius: var(--r-xs); }
-.db-field:hover { background: var(--surface-hover); }
-.db-field.is-dirty { background: color-mix(in srgb, #d9a441 12%, transparent); }
-.db-field-label { display: flex; flex-direction: column; gap: 0; text-align: right; min-width: 0; }
-.db-field-label span { color: var(--text-2); font-size: var(--fs-12); overflow: hidden; text-overflow: ellipsis; }
-.db-field-label small { color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-11); }
+/* 字段网格：标签在上、值在下，两列铺开。原来「标签右对齐 + 值在右」的单列
+   在字段多的时候一屏放不下，也不符合记录表单「逐格填写」的用法。 */
+.db-formview-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-4);
+  align-items: start;
+}
+.db-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.db-field.is-dirty .db-field-value { border-color: #d9a441; background: color-mix(in srgb, #d9a441 10%, transparent); }
+.db-field-label { display: flex; align-items: center; gap: var(--space-2); text-align: left; min-width: 0; }
+.db-field-label span { color: var(--text-2); font-size: var(--fs-12); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 类型名（尤其 enum 取值列表）不折行：一折行整条记录的行高就散了 */
+.db-field-label small {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .db-field-input { min-width: 0; }
 .db-field-value {
   display: block;
   width: 100%;
-  min-height: var(--h-row);
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid transparent;
+  min-height: var(--h-control);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
   border-radius: var(--r-xs);
-  background: transparent;
+  background: var(--surface-base);
   color: var(--text-1);
   font-family: inherit;
   font-size: var(--fs-12);
@@ -175,7 +173,7 @@
   overflow-wrap: anywhere;
   cursor: text;
 }
-.db-field-value:hover { border-color: var(--line); background: var(--surface-sunken); }
+.db-field-value:hover { border-color: var(--line-strong); background: var(--surface-sunken); }
 
 .db-record-nav { display: flex; flex-direction: column; gap: var(--space-3); align-self: start; }
 .db-record-card { padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-base); }
@@ -200,3 +198,60 @@
 }
 .db-transfer-card h4 { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-13); font-weight: 500; }
 .db-transfer-card p { margin: 0; color: var(--text-3); font-size: var(--fs-12); line-height: 1.6; }
+
+/* ---------- 记录操作条：网格下方、SQL 行上方 ---------------------------- */
+
+.db-editbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-control);
+  padding: 0 var(--space-3);
+  border-top: 1px solid var(--line);
+  background: var(--surface-base);
+}
+.db-editbar-group { display: inline-flex; align-items: center; gap: var(--space-1); }
+.db-editbar-divider { width: 1px; height: var(--space-5); background: var(--line); }
+.db-editbar-spacer { flex: 1; min-width: var(--space-2); }
+
+.db-editbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-7);
+  height: var(--space-6);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur-hover) ease, color var(--dur-hover) ease, border-color var(--dur-hover) ease;
+}
+.db-editbar-btn:hover:not(:disabled) { border-color: var(--line); background: var(--surface-hover); color: var(--text-1); }
+.db-editbar-btn:focus-visible { outline: var(--space-1) solid var(--accent); outline-offset: -1px; }
+.db-editbar-btn:disabled { color: var(--text-3); opacity: 0.45; cursor: default; }
+.db-editbar-btn.is-commit:not(:disabled) { color: var(--accent); }
+.db-editbar-btn.is-commit:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.db-editbar-btn.is-discard:not(:disabled) { color: var(--danger); }
+.db-editbar-btn.is-discard:hover:not(:disabled) { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.db-editbar-btn.is-stop:not(:disabled) { color: var(--danger); }
+
+.db-editbar-pending {
+  padding: 0 var(--space-2);
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--space-6);
+}
+.db-editbar-hint { color: var(--text-3); font-size: var(--fs-11); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 可编辑单元格：双击即可改，给个光标提示 */
+.db-grid.is-data .db-cell.is-editable { cursor: cell; }
+
+@container formview (max-width: 720px) {
+  .db-formview-fields { grid-template-columns: minmax(0, 1fr); }
+}

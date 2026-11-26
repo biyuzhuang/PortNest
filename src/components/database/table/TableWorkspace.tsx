@@ -7,6 +7,7 @@ import { DataToolbar } from "./DataToolbar";
 import { DataGrid, type CellEdit } from "./DataGrid";
 import { DataFormView } from "./DataFormView";
 import { DataStatusBar } from "./DataStatusBar";
+import { DataEditBar } from "./DataEditBar";
 import { FilterSortPanel } from "./FilterSortPanel";
 import { StructureView } from "./StructureView";
 import { DesignerView } from "../designer/DesignerView";
@@ -28,7 +29,6 @@ export type TableActions = {
   onDiscard: () => void;
   onApplyChanges: () => void;
   onCopySelected: () => void;
-  onCopyAs: (kind: "insert" | "update" | "json") => void;
   onExportSelected: () => void;
   onExportPage: () => void;
   onExportCsvFile: () => void;
@@ -103,20 +103,11 @@ export const TableWorkspace: Component<Props> = props => {
       <Show when={props.tab.section === "data"}>
         <div class="db-data">
           <DataToolbar
-            pendingCount={pendingCount()}
-            running={props.running}
             filters={props.tab.filters}
             orders={props.tab.orders}
             filterOpen={filterOpen()}
             dataView={props.tab.dataView}
-            onRefresh={() => props.actions.onRefresh()}
-            onApply={() => props.actions.onApplyChanges()}
-            onDiscard={() => props.actions.onDiscard()}
-            onStop={() => props.actions.onStop()}
-            onAddRecord={() => props.actions.onAddRecord()}
-            onDeleteSelected={() => props.actions.onDeleteSelected()}
             onCopySelected={() => props.actions.onCopySelected()}
-            onCopyAs={kind => props.actions.onCopyAs(kind)}
             onExportSelected={() => props.actions.onExportSelected()}
             onExportPage={() => props.actions.onExportPage()}
             onOpenDdl={() => props.actions.onOpenDdl()}
@@ -173,12 +164,28 @@ export const TableWorkspace: Component<Props> = props => {
               />
             </Show>
 
+            <DataEditBar
+              readOnly={props.readOnly}
+              hasPrimaryKey={props.tab.primaryKey.length > 0}
+              pendingCount={pendingCount()}
+              selectedCount={Object.keys(props.tab.pending.selected).length}
+              running={props.running}
+              onAdd={() => props.actions.onAddRecord()}
+              onDelete={() => props.actions.onDeleteSelected()}
+              onApply={() => props.actions.onApplyChanges()}
+              onDiscard={() => props.actions.onDiscard()}
+              onRefresh={() => props.actions.onRefresh()}
+              onStop={() => props.actions.onStop()}
+            />
+
             <DataStatusBar
               statement={props.tab.rows!.statement}
               tableName={props.tab.table}
               page={props.tab.page}
               pageSize={props.tab.pageSize}
               rowCount={props.tab.rows!.rows.length}
+              totalRows={props.tab.totalRows}
+              totalLoading={props.tab.totalLoading}
               elapsedMs={props.tab.rows!.execution_time_ms}
               truncated={props.tab.rows!.truncated}
               selectedCount={Object.keys(props.tab.pending.selected).length}
@@ -197,7 +204,7 @@ export const TableWorkspace: Component<Props> = props => {
       </Show>
 
       <Show when={props.tab.section === "structure"}>
-        <StructureView columns={props.tab.columns} indexes={props.tab.indexes} onShowDdl={() => props.actions.onOpenDdl()} />
+        <StructureView columns={props.tab.columns} indexes={props.tab.indexes} foreignKeys={props.tab.foreignKeys ?? props.tab.designer?.foreign_keys} onShowDdl={() => props.actions.onOpenDdl()} />
       </Show>
 
       <Show when={props.tab.section === "design"}>
@@ -219,7 +226,7 @@ export const TableWorkspace: Component<Props> = props => {
       <Show when={props.tab.section === "transfer"}>
         <div class="db-transfer">
           <div class="db-transfer-card">
-            <h4><Icon name="import" size={14} />导入 CSV</h4>
+            <h4><Icon name="import" size={16} />导入 CSV</h4>
             <p>首行为列名，导入在事务中执行，任一行失败整体回滚。</p>
             <input
               ref={element => { fileInput = element; }}
@@ -235,7 +242,7 @@ export const TableWorkspace: Component<Props> = props => {
             <button class="db-btn" onClick={() => fileInput?.click()}>选择 CSV 文件</button>
           </div>
           <div class="db-transfer-card">
-            <h4><Icon name="export" size={14} />导出</h4>
+            <h4><Icon name="export" size={16} />导出</h4>
             <p>导出当前页为 CSV，或用对象面板的「导出 SQL」导出整库结构与数据。</p>
             <button class="db-btn" onClick={() => props.actions.onExportCsvFile()}>导出本页 CSV</button>
           </div>

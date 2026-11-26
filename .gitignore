@@ -16,6 +16,10 @@ docs/*
 test_write.txt
 .qoder-tmp/
 tauri-dev.*.log
+.edgeprof/
+
+# Agent / tooling workspace（本地笔记与临时产物）
+.workbuddy/
 
 # Misc
 src-tauri/kubernetes.repo

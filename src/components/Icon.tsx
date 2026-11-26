@@ -1,11 +1,15 @@
 import type { Component, JSX } from "solid-js";
 
-export type IconName = "assets" | "list" | "grid" | "terminal" | "database" | "table" | "view" | "query" | "play" | "activity" | "import" | "export" | "trash" | "copy" | "edit" | "chevronRight" | "chevronDown" | "chevronUp" | "sort" | "arrowLeft" | "arrowRight" | "arrowUp" | "arrowDown" | "check" | "eye" | "eyeOff" | "home" | "file" | "sparkles" | "scissors" | "copyPlus" | "link" | "docker" | "settings" | "search" | "plus" | "folder" | "folderOpen" | "refresh" | "more" | "close" | "minimize" | "maximize" | "restore" | "pin" | "key" | "info" | "transfer" | "back" | "lock" | "shield" | "image" | "mic" | "alert" | "power";
+export type IconName = "assets" | "list" | "objectList" | "objectTable" | "grid" | "terminal" | "database" | "table" | "view" | "query" | "play" | "activity" | "import" | "export" | "trash" | "copy" | "edit" | "chevronRight" | "chevronDown" | "chevronUp" | "sort" | "arrowLeft" | "arrowRight" | "arrowUp" | "arrowDown" | "check" | "eye" | "eyeOff" | "home" | "file" | "sparkles" | "scissors" | "copyPlus" | "link" | "docker" | "settings" | "search" | "plus" | "folder" | "folderOpen" | "refresh" | "more" | "close" | "minimize" | "maximize" | "restore" | "pin" | "key" | "info" | "transfer" | "back" | "lock" | "shield" | "image" | "mic" | "alert" | "power" | "stop";
 
 export const Icon: Component<{ name: IconName; class?: string; size?: number }> = (props) => {
   const paths: Record<IconName, JSX.Element> = {
     assets: <><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/></>,
     list: <><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/></>,
+    // 名称列表：多列短横线，一眼区别于「数据表格」的网格
+    objectList: <><path d="M4 7h6M4 12h6M4 17h6"/><path d="M14 7h6M14 12h6M14 17h6"/></>,
+    // 数据表格：带表头行的网格
+    objectTable: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11"/></>,
     grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></>,
     terminal: <><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></>,
     database: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></>,
@@ -44,9 +48,9 @@ export const Icon: Component<{ name: IconName; class?: string; size?: number }> 
     maximize: <rect x="6" y="6" width="12" height="12" rx=".5"/>,
     restore: <><path d="M8 8V6h10v10h-2"/><rect x="5" y="9" width="10" height="10" rx=".5"/></>,
     pin: <><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></>,
-    key: <><circle cx="8" cy="15" r="4"/><path d="m11 12 8-8m-3 3 2 2m-5 1 2 2"/></>, info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
+    key: <><circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 8.5-8.5m-4.2 1.2 3 3"/></>, info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
     alert: <><path d="M12 3.5 21.5 20h-19Z"/><path d="M12 9.5v4.5M12 17.5h.01"/></>,
-    power: <><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></>,
+    stop: <rect x="6.5" y="6.5" width="11" height="11" rx="2"/>, power: <><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></>,
     transfer: <path d="M4 8h15m0 0-4-4m4 4-4 4M20 16H5m0 0 4 4m-4-4 4-4"/>, back: <path d="m15 18-6-6 6-6"/>,
     lock: <><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
     shield: <><path d="M12 3 20 6v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6Z"/><path d="m9 12 2 2 4-4"/></>,

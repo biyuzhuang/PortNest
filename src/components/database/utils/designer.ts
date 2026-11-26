@@ -79,3 +79,39 @@ export const computeTableDiff = (
     total: columns.length + indexes.length + foreignKeys.length,
   };
 };
+
+// ---------------------------------------------------------------------------
+// 列类型拆分：设计器把 `varchar(128)`、`decimal(4,2)` 拆成「类型 / 长度 / 小数点」
+// 三格编辑，写回时再拼回 column_type。enum / set 的括号里是取值列表，不能拆。
+// ---------------------------------------------------------------------------
+
+export type ColumnTypeParts = { base: string; length: string; scale: string };
+
+const KEEP_WHOLE = /^(enum|set)\b/i;
+
+export const parseColumnType = (columnType: string): ColumnTypeParts => {
+  const raw = (columnType || "").trim();
+  const match = /^([^(]+?)\s*\(([^)]*)\)\s*(.*)$/.exec(raw);
+  if (!match) return { base: raw, length: "", scale: "" };
+  const base = `${match[1].trim()}${match[3] ? ` ${match[3].trim()}` : ""}`;
+  const inner = match[2].trim();
+  if (KEEP_WHOLE.test(base) || inner.includes("'")) return { base: raw, length: "", scale: "" };
+  const [length, scale] = inner.split(",").map(item => item.trim());
+  return { base, length: length ?? "", scale: scale ?? "" };
+};
+
+export const composeColumnType = (parts: ColumnTypeParts): string => {
+  const base = parts.base.trim() || "varchar";
+  if (!parts.length.trim()) return base;
+  const scale = parts.scale.trim();
+  return `${base}(${parts.length.trim()}${scale ? `,${scale}` : ""})`;
+};
+
+/** 常用类型，给类型列的 datalist 用；与协议无关的通用子集 */
+export const COMMON_COLUMN_TYPES = [
+  "bigint", "int", "smallint", "tinyint", "mediumint",
+  "decimal", "numeric", "float", "double",
+  "varchar", "char", "text", "mediumtext", "longtext",
+  "date", "datetime", "timestamp", "time", "year",
+  "boolean", "json", "uuid", "bytea", "blob",
+];

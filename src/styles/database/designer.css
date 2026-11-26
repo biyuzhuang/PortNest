@@ -1,14 +1,49 @@
-/* 表设计器 */
+/* 表设计器（Navicat 式：工具条 / 选项卡 / 字段网格 / 底部属性条） */
 
 .db-designer { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 
+/* ---------- ① 工具条 ----------------------------------------------------- */
+.db-designer-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--h-control);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-base);
+  overflow: hidden;
+}
+.db-designer-toolbar .db-text-btn.is-on { color: var(--accent); background: var(--accent-soft); }
+.db-designer-toolbar .db-btn.is-primary { display: inline-flex; flex: none; align-items: center; gap: var(--space-1); height: var(--h-row); font-size: var(--fs-11); font-weight: 600; white-space: nowrap; }
+.db-designer-toolbar .db-btn.is-primary:disabled { opacity: .45; }
+.db-designer-dirty {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  color: #8a5a00;
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
+
+/* 窄面板：按钮只留图标，右侧的应用区不被挤出去 */
+.db-designer { container: designer / inline-size; }
+@container designer (max-width: 760px) {
+  .db-designer-toolbar .db-btn-label { display: none; }
+  .db-designer-toolbar .db-text-btn { padding: 0 var(--space-3); }
+}
+@container designer (max-width: 560px) {
+  .db-designer-dirty { display: none; }
+}
+
+/* ---------- ② 选项卡 ----------------------------------------------------- */
 .db-designer-tabs {
   display: flex;
   flex: none;
   align-items: stretch;
-  gap: var(--space-1);
   height: var(--h-row-lg);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   border-bottom: 1px solid var(--line);
   background: var(--surface-shell);
   overflow-x: auto;
@@ -16,13 +51,14 @@
 }
 .db-designer-tabs::-webkit-scrollbar { height: 0; }
 .db-designer-tabs button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   height: 100%;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   border: 0;
-  border-bottom: var(--space-1) solid transparent;
+  border-right: 1px solid var(--line);
   background: transparent;
   color: var(--text-2);
   font-family: inherit;
@@ -30,8 +66,18 @@
   white-space: nowrap;
   cursor: pointer;
 }
+.db-designer-tabs button:first-child { border-left: 1px solid var(--line); }
 .db-designer-tabs button:hover { color: var(--text-1); }
-.db-designer-tabs button.is-active { color: var(--text-1); border-bottom-color: var(--accent); }
+.db-designer-tabs button.is-active { background: var(--surface-base); color: var(--text-1); font-weight: 500; }
+.db-designer-tabs button.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: var(--space-1);
+  background: var(--accent);
+}
 .db-designer-tabs em {
   min-width: var(--space-5);
   padding: 0 var(--space-1);
@@ -44,10 +90,77 @@
   font-variant-numeric: tabular-nums;
 }
 
-.db-designer-body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; }
-.db-designer-toolbar { display: flex; flex: none; align-items: center; gap: var(--space-2); height: var(--h-control); padding: 0 var(--space-4); border-bottom: 1px solid var(--line); }
-.db-designer .db-grid-wrap { flex: none; }
+/* ---------- ③ 网格 ------------------------------------------------------- */
+.db-designer-body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.db-designer .db-grid-wrap { flex: 1; min-height: 0; }
 
+.db-grid.is-designer { width: 100%; table-layout: fixed; }
+.db-grid.is-designer thead th { height: var(--h-row-lg); padding: 0 var(--space-3); }
+.db-grid.is-designer tbody td { height: var(--h-row-lg); padding: 0 var(--space-2); }
+.db-grid.is-designer tbody td:first-child { padding: 0; }
+/* 网格里名称 / 注释用界面字体，只有类型与索引字段走等宽 */
+.db-grid.is-designer .is-field-name,
+.db-grid.is-designer .is-field-comment,
+.db-grid.is-designer .is-keys { font-family: var(--font-ui); }
+.db-grid.is-designer .db-cell.is-field-name { font-weight: 500; }
+.db-grid.is-designer th.is-center,
+.db-grid.is-designer td.is-center { text-align: center; }
+.db-grid.is-designer th.is-numeric,
+.db-grid.is-designer td.is-numeric { text-align: right; }
+.db-grid.is-designer td.is-center .db-input,
+.db-grid.is-designer td.is-numeric .db-input { text-align: inherit; }
+
+.db-grid.is-designer .db-input.is-cell {
+  height: var(--h-row);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+}
+.db-grid.is-designer td.is-numeric .db-input.is-cell { padding-right: var(--space-2); }
+.db-grid.is-designer .db-input.is-num,
+.db-grid.is-designer .db-input.is-num::-webkit-outer-spin-button { font-variant-numeric: tabular-nums; }
+.db-grid.is-designer .db-select.is-flush {
+  width: 100%;
+  height: var(--h-row);
+  padding: 0 var(--space-2);
+  border-color: transparent;
+  background: transparent;
+}
+
+/* 虚拟列（生成列）整行加一点琥珀底，和自我解释的「键」列区分开 */
+.db-row.is-virtual td { background: color-mix(in srgb, #d9a441 7%, transparent); }
+.db-row.is-virtual.is-selected td { background: color-mix(in srgb, #d9a441 14%, transparent); }
+
+.db-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--space-6);
+  height: var(--space-5);
+  padding: 0 var(--space-1);
+  border-radius: var(--r-xs);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-weight: 600;
+  line-height: 1;
+}
+.db-key.is-pk { background: color-mix(in srgb, #d9a441 20%, transparent); color: #8a5a00; }
+:root[data-theme="dark"] .db-key.is-pk { background: color-mix(in srgb, #d9a441 26%, transparent); color: #f0c46a; }
+.db-key.is-fk { background: var(--accent-soft); color: var(--accent); }
+.db-key.is-uni { background: var(--surface-sunken); color: var(--text-3); }
+
+.db-designer-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--h-row-lg);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+}
+
+/* ---------- ④ 底部属性条 -------------------------------------------------- */
 .db-designer-foot {
   display: flex;
   flex: none;
@@ -57,40 +170,31 @@
   padding: 0 var(--space-4);
   border-top: 1px solid var(--line);
   background: var(--surface-shell);
+  overflow: hidden;
+}
+.db-foot-label { flex: none; color: var(--text-3); font-size: var(--fs-11); }
+.db-foot-check { display: inline-flex; flex: none; align-items: center; gap: var(--space-2); color: var(--text-2); font-size: var(--fs-11); }
+.db-input.is-foot { height: var(--h-row); width: 14rem; flex: none; }
+.db-input.is-foot.is-mono { width: 18rem; }
+.db-input.is-foot:disabled { opacity: 0.5; }
+.db-foot-meta {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.db-col-drag { width: var(--space-6); padding: 0 !important; color: var(--text-3); }
-.db-drag-handle { display: inline-flex; justify-content: center; width: 100%; cursor: grab; letter-spacing: -2px; }
-.db-col-action { width: var(--h-row); padding: 0 !important; text-align: center; }
-
-.db-grid.is-designer { width: auto; min-width: 100%; }
-.db-grid.is-designer tbody td { height: var(--h-row); padding: 0 var(--space-2); }
-.db-grid.is-designer th:last-child { width: var(--h-row); }
-.db-grid.is-designer .db-input.is-cell { padding: 0 var(--space-2); }
-.db-grid.is-compact tbody td { height: var(--h-row); }
-
-.db-options { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); max-width: 560px; }
+/* ---------- 选项 / 注释页 -------------------------------------------------- */
+.db-options { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); max-width: 560px; overflow: auto; }
 .db-field-line { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: var(--space-3); }
 .db-field-line > span { color: var(--text-2); font-size: var(--fs-12); text-align: right; }
 .db-field-line > span.is-mono { font-family: var(--font-mono); font-size: var(--fs-11); }
 .db-options-note { margin: 0; color: var(--text-3); font-size: var(--fs-11); line-height: 1.6; }
 .db-comment-list { display: flex; flex-direction: column; gap: var(--space-2); max-height: 320px; overflow: auto; }
 
-.db-changes { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-5); max-width: 720px; }
-.db-change-list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-3); padding: 0; list-style: none; }
-.db-change {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-left: var(--space-1) solid var(--line);
-  border-radius: 0 var(--r-xs) var(--r-xs) 0;
-  background: var(--surface-sunken);
-  font-size: var(--fs-12);
-}
-.db-change.is-added { border-left-color: #3f9d5a; }
-.db-change.is-removed { border-left-color: #c0392b; }
-.db-change.is-changed { border-left-color: #d9a441; }
-.db-change-kind { flex: none; color: var(--text-3); font-size: var(--fs-11); }
-.db-change strong { font-family: var(--font-mono); font-weight: 500; }
-.db-change small { color: var(--text-3); font-size: var(--fs-11); }
+/* 设计器内联的 DDL 预览：占满整块内容区 */
+.db-designer-body .db-ddl.is-inline { flex: 1; margin: var(--space-4); overflow: auto; }

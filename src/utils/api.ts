@@ -447,7 +447,7 @@ export interface MysqlDatabaseInfo { name: string; charset?: string; collation?:
 export interface MysqlCharsetInfo { name: string; description: string; default_collation: string; collations: string[] }
 export interface MysqlSqlImportResult { total: number; completed: number; failures: Array<{ statement: number; summary: string }> }
 export interface MysqlSqlExportResult { tables: number; rows: number; bytes: number }
-export interface MysqlTableInfo { name: string; kind: string; engine?: string; rows?: number; comment: string; data_length?: number; index_length?: number; auto_increment?: number; collation?: string; created_at?: string; updated_at?: string }
+export interface MysqlTableInfo { name: string; kind: string; engine?: string; rows?: number; comment: string; data_length?: number; index_length?: number; auto_increment?: number; collation?: string; created_at?: string; updated_at?: string; row_format?: string; checked_at?: string; data_free?: number; max_data_length?: number; create_options?: string }
 export interface MysqlColumnInfo { name: string; data_type: string; column_type: string; nullable: boolean; default_value?: string; extra: string; comment: string; key: string; charset?: string; collation?: string; ordinal: number; generation_expression?: string }
 export interface MysqlIndexInfo { name: string; unique: boolean; /** 是否主键索引（MySQL 主键名恒为 PRIMARY，PostgreSQL 为 `<表>_pkey`） */ primary?: boolean; column?: string; sequence: number; prefix_length?: number; direction?: string; index_type: string }
 export interface MysqlColumnDefinition { name: string; column_type: string; nullable: boolean; default_value?: string; auto_increment: boolean; charset?: string; collation?: string; comment: string; generation_expression?: string; extra?: string }
@@ -832,7 +832,7 @@ export const api = {
   async databaseListIndexes(connectionId: string, database: string, table: string): Promise<DatabaseIndexInfo[]> { return invoke("database_list_indexes", { connectionId, database, table }); },
   async databaseExecuteSql(connectionId: string, sql: string, database?: string): Promise<QueryResult> { return invoke("database_execute_sql", { connectionId, sql, database: database || null }); },
   /** 一次提交多条语句，返回逐条结果；后端遇到第一条失败即停止 */
-  async databaseExecuteSqlBatch(connectionId: string, sql: string, database?: string): Promise<BatchExecutionResult> { return invoke("database_execute_sql_batch", { connectionId, sql, database: database || null }); },
+  async databaseExecuteSqlBatch(connectionId: string, sql: string, database?: string, stopOnError = true): Promise<BatchExecutionResult> { return invoke("database_execute_sql_batch", { connectionId, sql, database: database || null, stopOnError }); },
   async databaseCancelQuery(connectionId: string): Promise<void> { return invoke("database_cancel_query", { connectionId }); },
   async databaseAutocomplete(connectionId: string, database: string): Promise<DatabaseAutocompleteItem[]> { return invoke("database_autocomplete", { connectionId, database }); },
   async databaseExplainSql(connectionId: string, sql: string, database?: string): Promise<DatabaseExplainResult> { return invoke("database_explain_sql", { connectionId, sql, database: database || null }); },
@@ -850,7 +850,7 @@ export const api = {
   async databaseApplyTableChanges(connectionId: string, database: string, table: string, changes: DatabaseTableChangeSet): Promise<number> { return invoke("database_apply_table_changes", { connectionId, database, table, changes }); },
   async databaseImportCsv(connectionId: string, database: string, table: string, csv: string): Promise<number> { return invoke("database_import_csv", { connectionId, database, table, csv }); },
   async databaseImportSql(connectionId: string, path: string, database?: string, continueOnError = false): Promise<DatabaseSqlImportResult> { return invoke("database_import_sql", { connectionId, options: { path, database: database || null, continue_on_error: continueOnError } }); },
-  async databaseExportSql(connectionId: string, path: string, database: string): Promise<DatabaseSqlExportResult> { return invoke("database_export_sql", { connectionId, options: { path, database } }); },
+  async databaseExportSql(connectionId: string, path: string, database: string, table?: string): Promise<DatabaseSqlExportResult> { return invoke("database_export_sql", { connectionId, options: { path, database, table: table || null } }); },
   /** 用尚未保存的配置探测一条数据库连接（分阶段报告） */
   async databaseTestConnection(config: ConnectionConfig): Promise<DbTestReport> { return invoke("database_test_connection", { config }); },
   /** 连通性检查，返回往返耗时（毫秒） */

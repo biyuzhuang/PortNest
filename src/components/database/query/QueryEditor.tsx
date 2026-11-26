@@ -15,6 +15,31 @@ const TOKEN = /(--[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/)|('(?:''|\\.|[^'])*')|(\b\d+(?
 const escapeHtml = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/** 这些词出现在表名后面时是子句开头，不是别名 */
+const NOT_ALIAS = new Set([
+  "WHERE", "GROUP", "ORDER", "LIMIT", "OFFSET", "HAVING", "JOIN", "LEFT", "RIGHT",
+  "INNER", "OUTER", "CROSS", "FULL", "ON", "USING", "UNION", "SET", "VALUES", "AS",
+  "AND", "OR", "FOR", "LOCK", "PARTITION", "TABLESAMPLE", "WITH", "NATURAL",
+]);
+
+/**
+ * 从 SQL 里收集「别名 → 表名」和「表名 → 表名」。
+ * 没有这一步，`FROM base_app_data b where b.` 里的 `b` 会被当成表名去匹配，结果永远为空。
+ */
+const buildTableAliases = (sql: string): Map<string, string> => {
+  const aliases = new Map<string, string>();
+  const pattern = /\b(?:from|join|into|update)\s+([`"[\]\w.]+)(?:\s+(?:as\s+)?([A-Za-z_][\w$]*))?/gi;
+  for (const match of sql.matchAll(pattern)) {
+    const raw = match[1].replace(/[`"[\]]/g, "");
+    const table = raw.split(".").pop() || raw;
+    if (!table) continue;
+    aliases.set(table.toLowerCase(), table);
+    const alias = match[2];
+    if (alias && !NOT_ALIAS.has(alias.toUpperCase())) aliases.set(alias.toLowerCase(), table);
+  }
+  return aliases;
+};
+
 /** 把 SQL 拆成带类名的 span；不做完整词法分析，但足以让关键字/字符串/注释可辨 */
 const highlight = (sql: string) => {
   let result = "";
@@ -84,12 +109,17 @@ export const QueryEditor: Component<Props> = props => {
     const position = textarea.selectionStart ?? 0;
     const before = props.value.slice(0, position);
     const prefix = (before.match(/[A-Za-z0-9_]*$/) || [""])[0];
-    if (!prefix && !before.endsWith(".")) { hide(); return; }
-    const tableMatch = before.match(/([A-Za-z0-9_]+)\.([A-Za-z0-9_]*)$/);
+    // 只有在「表名/别名 + 点」后面才按列补全；否则按表名 + 列名 + 关键字补全
+    const qualified = before.match(/([A-Za-z0-9_$]+)\.([A-Za-z0-9_]*)$/);
+    const dotContext = /[A-Za-z0-9_$]+\.([A-Za-z0-9_]*)$/.test(before);
+    if (!prefix && !dotContext) { hide(); return; }
     let candidates: string[];
-    if (tableMatch) {
-      const table = tableMatch[1].toLowerCase();
-      candidates = props.autocomplete.filter(item => item.table.toLowerCase() === table).map(item => item.column);
+    if (qualified) {
+      // 别名先还原成真实表名（FROM base_app_data b 里的 b）
+      const target = buildTableAliases(props.value).get(qualified[1].toLowerCase()) ?? qualified[1];
+      candidates = props.autocomplete
+        .filter(item => item.table.toLowerCase() === target.toLowerCase())
+        .map(item => item.column);
     } else {
       const tables = Array.from(new Set(props.autocomplete.map(item => item.table)));
       const columns = Array.from(new Set(props.autocomplete.map(item => item.column)));

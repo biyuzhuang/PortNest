@@ -44,7 +44,7 @@
 .key-dialog-header h2 {
   margin:0;
   color:var(--text-2);
-  font-size:18px;
+  font-size: var(--fs-18);
   font-weight:500;
   line-height:24px;
 }
@@ -52,7 +52,7 @@
 .key-dialog-header p {
   margin:1px 0 0;
   color:var(--text-3);
-  font-size:12px;
+  font-size: var(--fs-12);
 }
 
 .key-dialog-close {
@@ -150,7 +150,7 @@
   cursor:pointer;
 }
 
-.sort-mark { color:var(--text-3); font-size:11px; }
+.sort-mark { color:var(--text-3); font-size: var(--fs-11); }
 .sort-mark.active { color:var(--text-3); }
 .key-picker-empty { padding:50px 12px; text-align:center; color:var(--text-3); }
 .key-picker-error { margin-top:7px; color:var(--text-3); font:12px "Cascadia Code", Consolas, monospace; }
@@ -175,7 +175,7 @@
   border:1px solid var(--line-control);
   border-radius:var(--r-sm);
   font:inherit;
-  font-size:12.5px;
+  font-size: var(--fs-125);
   cursor:pointer;
   transition:background var(--dur-hover) ease, color var(--dur-hover) ease;
 }
@@ -220,7 +220,7 @@
   display:block;
   margin:0 0 7px 2px;
   color:var(--text-2);
-  font-size:14px;
+  font-size: var(--fs-14);
 }
 
 .key-import-field input,
@@ -274,7 +274,7 @@
   background:var(--surface-sunken);
 }
 
-.key-file-icon { color:var(--text-2); font-size:18px; }
+.key-file-icon { color:var(--text-2); font-size: var(--fs-18); }
 .key-passphrase-input { position:relative; }
 .key-passphrase-input input { padding-right:38px; }
 
@@ -322,7 +322,7 @@
   border-radius:3px;
   color:var(--text-2);
   background:var(--surface-sunken);
-  font-size:13px;
+  font-size: var(--fs-13);
   cursor:pointer;
 }
 
@@ -366,7 +366,7 @@
 
 .ssh-key-field .ssh-key-settings-icon {
   color:var(--text-2);
-  font-size:18px;
+  font-size: var(--fs-18);
 }
 
 @media (max-width: 620px) {

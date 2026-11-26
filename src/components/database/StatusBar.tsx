@@ -29,11 +29,11 @@ export const StatusBar: Component<Props> = props => (
       title={props.readOnly ? "只读模式：仅允许 SELECT / SHOW / EXPLAIN" : "可写模式：允许修改数据"}
       onClick={() => props.onToggleReadOnly()}
     >
-      <Icon name={props.readOnly ? "lock" : "shield"} size={12} />
+      <Icon name={props.readOnly ? "lock" : "shield"} size={14} />
       {props.readOnly ? "只读" : "可写"}
     </button>
     <button class={`db-status-btn ${props.infoOpen ? "is-on" : ""}`} title="信息窗格（F6）" onClick={() => props.onToggleInfo()}>
-      <Icon name="info" size={12} />
+      <Icon name="info" size={14} />
       信息
     </button>
   </footer>

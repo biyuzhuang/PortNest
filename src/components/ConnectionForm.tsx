@@ -73,7 +73,6 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
     return next;
   });
   const fieldInvalid = (field: string, invalid: boolean) => touched().has(field) && invalid;
-  const protocolIconKind = () => protocol() === "local" ? "local" : isDatabase() ? "database" : "ssh";
   const protocolDescription = (id: string) => id === "local"
     ? "本机终端"
     : id === "mysql"
@@ -299,7 +298,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
         <header class="connect-modal-header">
           <div class="connect-modal-heading">
             <span class={`connect-modal-protocol-icon protocol-${protocol()}`}>
-              <ProtocolIcon kind={protocolIconKind()} />
+              <ProtocolIcon kind={protocol()} size={24} />
             </span>
             <div>
               <span class="connect-modal-kicker">{props.connection?.id ? "连接设置" : "创建新资产"}</span>
@@ -327,7 +326,7 @@ export const ConnectionForm: Component<ConnectionFormProps> = (props) => {
                     onClick={() => selectProtocol(item.id)}
                   >
                     <span class={`connect-protocol-card-icon protocol-${item.id}`}>
-                      <ProtocolIcon kind={item.id === "local" ? "local" : isDatabaseProtocol(item.id) ? "database" : "ssh"} />
+                      <ProtocolIcon kind={item.id} size={17} />
                     </span>
                     <span class="connect-protocol-card-copy">
                       <strong>{item.name}</strong>

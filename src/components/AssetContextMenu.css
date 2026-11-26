@@ -33,7 +33,7 @@
 }
 .hexhub-context-header > strong {
   color:var(--text-2);
-  font-size:12px;
+  font-size: var(--fs-12);
   font-weight:650;
   letter-spacing:.01em;
 }
@@ -73,7 +73,7 @@
   color:var(--text-2);
   background:transparent;
   font-family:var(--font-ui);
-  font-size:12px;
+  font-size: var(--fs-12);
   line-height:1.35;
   text-align:left;
   cursor:default;
@@ -118,7 +118,7 @@
   flex:0 0 auto;
   margin-left:10px;
   color:var(--text-3);
-  font-size:10px;
+  font-size: var(--fs-10);
   letter-spacing:.01em;
 }
 .hexhub-context-arrow {
@@ -153,7 +153,7 @@
 .hexhub-context-submenu.open-left { left:auto; right:calc(100% + 5px); }
 .hexhub-context-submenu.open-up { top:auto; bottom:-5px; }
 .hexhub-context-submenu .hexhub-context-menu .hexhub-context-item,
-.hexhub-context-submenu .hexhub-context-item { min-height:30px; font-size:12px; }
+.hexhub-context-submenu .hexhub-context-item { min-height:30px; font-size: var(--fs-12); }
 /* Row + icon layout (the legacy menu structure is gone). */
 .hexhub-context-menu .hexhub-context-item > .hexhub-context-icon {
   display:grid;

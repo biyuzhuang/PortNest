@@ -108,7 +108,7 @@
 
 .quick-switcher-results strong {
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -118,7 +118,7 @@
   overflow: hidden;
   color: var(--text-3);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -126,7 +126,7 @@
 .quick-switcher-results em {
   flex: 0 0 auto;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-11);
   font-style: normal;
 }
 
@@ -155,7 +155,7 @@
   color: var(--text-3);
   background: var(--surface-sunken);
   border-top: 1px solid var(--line);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
 }
 
 .quick-switcher kbd {
@@ -261,11 +261,33 @@
   border: 1px solid var(--line-control);
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   cursor: pointer;
 }
 
 .btn-cancel:hover { background: var(--surface-hover); }
+
+/* 弹窗主按钮：之前只给了底色（见 App.css / Themes.css），高度和横向内边距
+   全靠继承，结果在确认框里被压成一个 32×32 的方块，"确定"两个字几乎贴边。
+   这里只补几何（与 .btn-cancel 同一行高），底色、圆角、阴影仍交给主题层，
+   避免把皮肤渐变覆盖成纯色。 */
+.btn-save {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  height: var(--h-control);
+  min-width: 0;
+  padding: 0 var(--space-5);
+  font: inherit;
+  font-size: var(--fs-125);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn-save:disabled { opacity: .5; cursor: default; }
 
 .btn-cancel:focus-visible,
 .btn-save:focus-visible {
@@ -337,7 +359,7 @@
   border: 1px solid var(--line-control);
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   cursor: pointer;
 }
 
@@ -382,7 +404,7 @@
   display: block;
   margin-bottom: 2px;
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   font-weight: 650;
   letter-spacing: .06em;
 }
@@ -426,7 +448,7 @@
 
 .folder-location-icon { color: var(--text-3); }
 .folder-location-card > div { min-width: 0; flex: 1; }
-.folder-location-card small { display: block; color: var(--text-3); font-size: 10.5px; }
+.folder-location-card small { display: block; color: var(--text-3); font-size: var(--fs-105); }
 .folder-location-card strong { color: var(--text-1); font-size: var(--fs-12); font-weight: 550; }
 
 .folder-location-select {
@@ -449,7 +471,7 @@
 }
 
 .folder-name-field { display: block; }
-.folder-name-field > span { display: block; margin-bottom: 5px; color: var(--text-2); font-size: 11.5px; font-weight: 600; }
+.folder-name-field > span { display: block; margin-bottom: 5px; color: var(--text-2); font-size: var(--fs-115); font-weight: 600; }
 
 .folder-name-input {
   display: flex;
@@ -513,7 +535,7 @@
   gap: var(--space-3);
   margin-top: 5px;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 .folder-name-field.invalid .folder-name-message { color: var(--danger); }
@@ -528,7 +550,7 @@
   border-top: 1px solid var(--line);
 }
 
-.folder-dialog-hint { color: var(--text-3); font-size: 10.5px; }
+.folder-dialog-hint { color: var(--text-3); font-size: var(--fs-105); }
 .folder-dialog-hint kbd {
   padding: 1px 4px;
   border: 1px solid var(--line);
@@ -608,7 +630,7 @@
   border: 0;
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   text-align: left;
   cursor: pointer;
   transition: background var(--dur-hover) ease;
@@ -630,7 +652,7 @@
 .app-menu-shortcut {
   flex: 0 0 auto;
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: var(--fs-105);
   font-variant-numeric: tabular-nums;
 }
 
@@ -671,7 +693,7 @@
   border: 1px solid var(--line-control);
   border-radius: var(--r-sm);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   cursor: pointer;
 }
 

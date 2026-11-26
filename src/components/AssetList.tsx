@@ -5,11 +5,12 @@ import {
   folderTrail,
   sortAssetsByTreeOrder,
 } from "../stores/connectionStore";
-import { api, isDatabaseProtocol, type ConnectionRecord } from "../utils/api";
+import { api, type ConnectionRecord } from "../utils/api";
 import { matchesAssetFilter, uiStore } from "../stores/uiStore";
 import { feedback } from "../stores/feedbackStore";
 import { ProtocolIcon } from "./ProtocolIcon";
 import { Icon } from "./Icon";
+import { ColorIcon } from "./ColorIcon";
 import { AssetContextMenu, type AssetMenuAction, type AssetMenuHeaderAction } from "./AssetContextMenu";
 
 interface AssetListProps {
@@ -214,9 +215,6 @@ export const AssetList: Component<AssetListProps> = (props) => {
     return <span class="asset-latency online">{state.latency}ms</span>;
   };
 
-  const protocolSkin = (protocol: string) =>
-    protocol === "local" ? "local" : isDatabaseProtocol(protocol) ? "database" : "terminal";
-
   const formatTime = (timestamp?: number) => {
     if (!timestamp) return "—";
     return new Date(timestamp * 1000).toLocaleString("zh-CN", {
@@ -415,7 +413,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               setSelectionAnchorId(null);
             }}
           >
-            <div class="asset-name-cell"><span class="asset-folder-icon"><Icon name="folder" size={15} /></span>..</div>
+            <div class="asset-name-cell"><span class="asset-folder-icon"><ColorIcon name="folder" size={16} /></span>..</div>
             <div>—</div><div>—</div><div>—</div><div>—</div>
             <div>—</div>
           </div>
@@ -431,7 +429,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
                 setSelectionAnchorId(null);
               }}
             >
-              <div class="asset-name-cell"><span class="asset-folder-icon"><Icon name="folder" size={15} /></span>{folder.name}</div>
+              <div class="asset-name-cell"><span class="asset-folder-icon"><ColorIcon name="folder" size={16} /></span>{folder.name}</div>
               <div>—</div><div>—</div><div>—</div><div>—</div>
               <div>
                 {folderConnectionCount(folder.id)} 个连接
@@ -450,7 +448,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
               onDblClick={() => props.onConnect(connection)}
               onContextMenu={(event) => openConnectionMenu(event, connection)}
             >
-              <div class="asset-name-cell"><span class={`asset-terminal-icon protocol-${protocolSkin(connection.protocol)}`}><ProtocolIcon kind={isDatabaseProtocol(connection.protocol) ? "database" : "terminal"} /></span>{connection.name}</div>
+              <div class="asset-name-cell"><span class={`asset-terminal-icon protocol-${connection.protocol}`}><ProtocolIcon kind={connection.protocol} size={18} /></span>{connection.name}</div>
               <div>{renderLatency(connection)}</div>
               <div class="asset-mono asset-host-cell"><Icon name="copy" size={11} /><span>{connection.protocol === "local" ? "本机" : `${connection.host}:${connection.port}`}</span></div>
               <div class="asset-mono">{connection.protocol === "local" ? "—" : (connection.username || "—")}</div>
@@ -462,7 +460,7 @@ export const AssetList: Component<AssetListProps> = (props) => {
 
         <Show when={visibleFolders().length === 0 && visibleConnections().length === 0}>
           <div class="asset-empty">
-            <span><ProtocolIcon kind={uiStore.assetFilter() === "database" ? "database" : "terminal"} /></span>
+            <span><ProtocolIcon kind={uiStore.assetFilter() === "database" ? "database" : "terminal"} size={16} /></span>
             <strong>{query() ? "没有匹配的连接" : "这里还没有连接"}</strong>
             <p class="asset-empty-hint">
               {query() ? "换个关键词试试，或清空搜索查看全部资产" : "新建一个连接，或从其他工具导入现有配置"}

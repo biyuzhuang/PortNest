@@ -58,7 +58,7 @@
 .docker-table {
   width:100%;
   border-collapse:collapse;
-  font-size:13px;
+  font-size: var(--fs-13);
 }
 
 .docker-table th {
@@ -88,7 +88,7 @@
 
 .container-id {
   font-family:var(--font-mono);
-  font-size:12px;
+  font-size: var(--fs-12);
   color:var(--text-secondary);
 }
 
@@ -98,12 +98,12 @@
 
 .cell-ports {
   font-family:var(--font-mono);
-  font-size:12px;
+  font-size: var(--fs-12);
 }
 
 .cell-mountpoint {
   font-family:var(--font-mono);
-  font-size:11px;
+  font-size: var(--fs-11);
   color:var(--text-secondary);
   max-width:300px;
   overflow:hidden;
@@ -121,7 +121,7 @@
   display:inline-block;
   padding:3px 8px;
   border-radius:12px;
-  font-size:11px;
+  font-size: var(--fs-11);
   font-weight:500;
   color:white;
 }
@@ -133,7 +133,7 @@
   background:var(--bg-secondary);
   color:var(--text-primary);
   cursor:pointer;
-  font-size:12px;
+  font-size: var(--fs-12);
   transition:all 0.2s;
 }
 
@@ -177,7 +177,7 @@
   border-radius:4px;
   color:white;
   cursor:pointer;
-  font-size:13px;
+  font-size: var(--fs-13);
 }
 
 .btn-refresh:hover {
@@ -190,7 +190,7 @@
   border-radius:4px;
   padding:16px;
   font-family:var(--font-mono);
-  font-size:12px;
+  font-size: var(--fs-12);
   line-height:1.5;
   color:var(--text-primary);
   overflow:auto;
@@ -200,7 +200,7 @@
 }
 
 .logs-title {
-  font-size:13px;
+  font-size: var(--fs-13);
   color:var(--text-secondary);
   margin-left:12px;
 }
@@ -212,7 +212,7 @@
   border-radius:4px;
   color:var(--text-primary);
   cursor:pointer;
-  font-size:13px;
+  font-size: var(--fs-13);
 }
 
 .btn-back:hover {
@@ -242,7 +242,7 @@
 
 .stats-header h3 {
   margin:0;
-  font-size:16px;
+  font-size: var(--fs-16);
   color:var(--text-primary);
 }
 
@@ -279,12 +279,12 @@
 
 .stat-label {
   color:var(--text-secondary);
-  font-size:13px;
+  font-size: var(--fs-13);
 }
 
 .stat-value {
   color:var(--text-primary);
-  font-size:14px;
+  font-size: var(--fs-14);
   font-weight:500;
   font-family:var(--font-mono);
 }
@@ -295,7 +295,7 @@
 
 .system-info h3 {
   margin:0 0 16px 0;
-  font-size:16px;
+  font-size: var(--fs-16);
   color:var(--text-primary);
 }
 
@@ -316,13 +316,13 @@
 }
 
 .info-label {
-  font-size:12px;
+  font-size: var(--fs-12);
   color:var(--text-secondary);
   text-transform:uppercase;
 }
 
 .info-value {
-  font-size:16px;
+  font-size: var(--fs-16);
   color:var(--text-primary);
   font-weight:500;
 }
@@ -333,7 +333,7 @@
   justify-content:center;
   height:200px;
   color:var(--text-secondary);
-  font-size:14px;
+  font-size: var(--fs-14);
 }
 
 .error-message {
@@ -343,5 +343,5 @@
   border-radius:4px;
   color:var(--text-3);
   margin-bottom:16px;
-  font-size:13px;
+  font-size: var(--fs-13);
 }

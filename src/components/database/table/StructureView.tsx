@@ -1,10 +1,11 @@
 import { Component, For, Show } from "solid-js";
 import { Icon } from "../../Icon";
-import type { DatabaseColumnInfo, DatabaseIndexInfo } from "../../../utils/api";
+import type { DatabaseColumnInfo, DatabaseForeignKeyDefinition, DatabaseIndexInfo } from "../../../utils/api";
 
 type Props = {
   columns: DatabaseColumnInfo[];
   indexes: DatabaseIndexInfo[];
+  foreignKeys?: DatabaseForeignKeyDefinition[];
   onShowDdl: () => void;
 };
 
@@ -15,7 +16,7 @@ export const StructureView: Component<Props> = props => (
       <em>{props.columns.length}</em>
       <span class="db-toolbar-spacer" />
       <button class="db-text-btn" onClick={() => props.onShowDdl()}>
-        <Icon name="query" size={12} />查看 DDL
+        <Icon name="query" size={14} />查看 DDL
       </button>
     </div>
     <div class="db-grid-wrap">
@@ -37,7 +38,7 @@ export const StructureView: Component<Props> = props => (
             <tr class="db-row">
               <td class="db-col-index db-index">{index() + 1}</td>
               <td class="db-cell is-object-name">
-                <Show when={column.key === "PRI"}><Icon name="key" size={11} class="db-key-icon" /></Show>
+                <Show when={column.key === "PRI"}><Icon name="key" size={14} class="db-key-icon" /></Show>
                 {column.name}
               </td>
               <td class="db-cell is-mono">{column.column_type}</td>
@@ -78,5 +79,35 @@ export const StructureView: Component<Props> = props => (
         <div class="db-grid-empty"><p>这张表没有索引</p><small>在「设计表 → 索引」里添加</small></div>
       </Show>
     </div>
+
+    {/* 外键：结构页只读展示，改约束走「设计表 → 外键」 */}
+    <Show when={props.foreignKeys && props.foreignKeys.length > 0}>
+      <div class="db-structure-head">
+        <strong>外键</strong>
+        <em>{props.foreignKeys!.length}</em>
+      </div>
+      <div class="db-grid-wrap">
+        <table class="db-grid is-compact">
+          <thead>
+            <tr><th>名称</th><th>字段</th><th>引用表</th><th>引用字段</th><th>ON DELETE</th><th>ON UPDATE</th></tr>
+          </thead>
+          <tbody>
+            <For each={props.foreignKeys}>{(key, index) => (
+              <tr class="db-row">
+                <td class="db-cell is-object-name">
+                  <Show when={index() === 0}><Icon name="link" size={12} class="db-key-icon" /></Show>
+                  {key.name}
+                </td>
+                <td class="db-cell is-mono">{key.columns.join(", ")}</td>
+                <td class="db-cell is-mono">{key.referenced_schema ? `${key.referenced_schema}.${key.referenced_table}` : key.referenced_table}</td>
+                <td class="db-cell is-mono">{key.referenced_columns.join(", ")}</td>
+                <td class="db-cell">{key.on_delete || "RESTRICT"}</td>
+                <td class="db-cell">{key.on_update || "RESTRICT"}</td>
+              </tr>
+            )}</For>
+          </tbody>
+        </table>
+      </div>
+    </Show>
   </div>
 );

@@ -34,7 +34,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: var(--fs-125);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -94,8 +94,8 @@
 .app-select-option.selected { color: var(--accent); }
 .app-select-option:disabled { opacity: .45; cursor: not-allowed; }
 .app-select-option-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
-.app-select-option-copy strong { overflow: hidden; color: inherit; font-size: 12px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.app-select-option-copy small { overflow: hidden; color: var(--text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.app-select-option-copy strong { overflow: hidden; color: inherit; font-size: var(--fs-12); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.app-select-option-copy small { overflow: hidden; color: var(--text-muted); font-size: var(--fs-10); text-overflow: ellipsis; white-space: nowrap; }
 .app-select-option > svg { flex: 0 0 auto; color: var(--accent); }
 .ssh-tunnel-grid .app-select-trigger,
 .connect-form-card .app-select-trigger { min-height: 35px; }

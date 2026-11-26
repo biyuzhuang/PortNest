@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>数据库模块 · 现状分析与三版优化方案</title>
+<style>
+  :root {
+    --ink: #1f2329;
+    --ink-2: #4a525e;
+    --ink-3: #7b8494;
+    --line: #e3e7ee;
+    --line-2: #eef1f6;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --blue: #2f6fd0;
+    --blue-bg: #eef4fd;
+    --teal: #0f7b6c;
+    --teal-bg: #eaf6f3;
+    --amber: #a4620a;
+    --amber-bg: #fdf4e6;
+    --rose: #b3352f;
+    --rose-bg: #fdeeed;
+    --violet: #6b4bb5;
+    --violet-bg: #f2eefc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 32px 80px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.72 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 1060px; margin: 0 auto; }
+  header.top { margin-bottom: 26px; }
+  header.top .eyebrow { color: var(--ink-3); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  header.top h1 { margin: 6px 0 8px; font-size: 27px; line-height: 1.35; letter-spacing: -.01em; }
+  header.top .sub { color: var(--ink-2); font-size: 14px; }
+  .meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; color: var(--ink-3); font-size: 12px; }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px 28px 28px;
+    margin: 18px 0;
+  }
+  h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
+  h2 .num {
+    display: inline-grid; place-items: center;
+    width: 26px; height: 26px; margin-right: 9px;
+    border-radius: 8px; background: var(--ink); color: #fff;
+    font-size: 13px; font-weight: 600; vertical-align: 2px;
+  }
+  h3 { margin: 26px 0 8px; font-size: 15px; }
+  h3.first { margin-top: 14px; }
+  p { margin: 8px 0; color: var(--ink-2); }
+  .lead { color: var(--ink-2); font-size: 14px; }
+  small.note { color: var(--ink-3); font-size: 12px; }
+  code, .mono { font-family: "Cascadia Code", Consolas, monospace; font-size: 12.5px; background: #f2f4f8; padding: 1px 5px; border-radius: 4px; color: #33404f; }
+  ul, ol { margin: 8px 0 8px 20px; padding: 0; color: var(--ink-2); }
+  li { margin: 5px 0; }
+  li b { color: var(--ink); }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0 4px; }
+  .kpi { border: 1px solid var(--line-2); background: #fbfcfd; border-radius: 10px; padding: 12px 14px; }
+  .kpi .n { font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+  .kpi .l { color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th { color: var(--ink-3); font-weight: 600; font-size: 12px; background: #fafbfc; }
+  td b { font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.7; white-space: nowrap; }
+  .t-p1 { background: var(--rose-bg); color: var(--rose); }
+  .t-p2 { background: var(--amber-bg); color: var(--amber); }
+  .t-p3 { background: #eff1f5; color: var(--ink-2); }
+  .t-a { background: var(--blue-bg); color: var(--blue); }
+  .t-b { background: var(--violet-bg); color: var(--violet); }
+  .t-c { background: var(--teal-bg); color: var(--teal); }
+
+  .figure { margin: 16px 0 8px; border: 1px solid var(--line); border-radius: 12px; background: #fcfdfe; padding: 12px; overflow: hidden; }
+  .figure svg { width: 100%; height: auto; display: block; }
+  .cap { color: var(--ink-3); font-size: 12px; margin: 8px 2px 0; }
+
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .box { border: 1px solid var(--line-2); border-radius: 10px; padding: 14px 16px; background: #fbfcfd; }
+  .box h4 { margin: 0 0 6px; font-size: 13px; color: var(--ink); }
+  .box ul { margin: 6px 0 0 18px; font-size: 13px; }
+  .box.good { background: #f7fbf9; border-color: #d9ece5; }
+  .box.bad { background: #fdf9f8; border-color: #f2dedb; }
+
+  .verdict {
+    display: flex; gap: 14px; align-items: flex-start;
+    border: 1px solid #d8e4f7; background: var(--blue-bg);
+    border-radius: 12px; padding: 14px 18px; margin: 16px 0 4px;
+  }
+  .verdict .badge { flex: none; font-size: 11px; font-weight: 700; color: #fff; background: var(--blue); border-radius: 6px; padding: 3px 8px; margin-top: 2px; }
+  .verdict p { margin: 0; color: #22405f; }
+
+  .ask { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 14px 0; }
+  .ask .row { display: grid; grid-template-columns: 34px 1fr; gap: 0; border-bottom: 1px solid var(--line-2); }
+  .ask .row:last-child { border-bottom: none; }
+  .ask .no { background: #fafbfc; color: var(--ink-3); font-family: "Cascadia Code", monospace; font-size: 12px; display: grid; place-items: center; border-right: 1px solid var(--line-2); }
+  .ask .body { padding: 11px 14px; }
+  .ask .body b { font-size: 13.5px; }
+  .ask .body p { margin: 3px 0 0; font-size: 12.5px; color: var(--ink-2); }
+  .ask .body .opt { color: var(--ink-3); font-size: 12px; margin-top: 4px; }
+  .ask .body .opt em { font-style: normal; color: var(--blue); font-weight: 600; }
+
+  footer { color: var(--ink-3); font-size: 12px; text-align: center; margin-top: 26px; line-height: 1.9; }
+  @media (max-width: 820px) {
+    body { padding: 22px 14px 60px; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .cols2 { grid-template-columns: 1fr; }
+    section.card { padding: 20px 16px 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="top">
+  <div class="eyebrow">PortNest · 数据库模块</div>
+  <h1>现状梳理与三版结构优化方案</h1>
+  <div class="sub">只做分析与设计，<b>本轮没有改动任何代码</b>。选定方案后再进入实施。</div>
+  <div class="meta">
+    <span><b>范围</b> src/components/database（22 个组件）、stores、styles/database、utils/api 数据库段</span>
+    <span><b>日期</b> 2026-11-26</span>
+    <span><b>状态</b> 待方案确认</span>
+  </div>
+</header>
+
+<!-- ============ 0 ============ -->
+<section class="card">
+  <h2><span class="num">0</span>结论速览</h2>
+  <p class="lead">模块功能是完整的（浏览、数据编辑、设计器、SQL、导入导出、DDL、右键菜单都在），问题不在"缺功能"，而在<b>职责没有归属</b>：一个 1162 行的容器组件同时充当容器、状态机、服务层和适配器，导致同一件事存在多条实现路径、多个状态副本。</p>
+  <div class="kpis">
+    <div class="kpi"><div class="n">1162</div><div class="l">DatabaseWorkspace 行数</div></div>
+    <div class="kpi"><div class="n">9</div><div class="l">它同时承担的职责类别</div></div>
+    <div class="kpi"><div class="n">41</div><div class="l">WorkspaceState 成员（约 20 个概念）</div></div>
+    <div class="kpi"><div class="n">3</div><div class="l">"当前选中的表"的不同语义</div></div>
+  </div>
+  <div class="verdict">
+    <span class="badge">建议</span>
+    <p>走 <b>方案 A（纵向切分：服务层 + 页签控制器）</b>，分成两个阶段落地：第一阶段先做"抽服务层"（即方案 C 的内容，界面零变化），第二阶段再拆编排与状态。方案 B 的插件化留作未来接 PostgreSQL/HighGo 差异化能力时的演进方向，现在做代价过高。</p>
+  </div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section class="card">
+  <h2><span class="num">1</span>现状盘点</h2>
+
+  <h3 class="first">1.1 规模与分布</h3>
+  <table>
+    <thead><tr><th style="width:34%">位置</th><th style="width:12%">规模</th><th>实际承担的事</th></tr></thead>
+    <tbody>
+      <tr><td><code>DatabaseWorkspace.tsx</code></td><td>1162 行</td><td>布局容器 · 元数据编排 · 分页/排序加载 · 行编辑提交 · 设计器 · 导入导出 · 库表 DDL 操作 · 查询执行 · AI 上下文注入 · 快捷键 · 右键菜单 · 对话框 · 28 个 action 适配</td></tr>
+      <tr><td><code>databaseWorkspaceStore.ts</code></td><td>262 行 / 41 成员</td><td>元数据缓存、树展开态、标签页、对象搜索与排序、请求计数、全局错误串、活动文案、右键菜单、schemaVersion、只读开关、请求序号</td></tr>
+      <tr><td><code>utils/api.ts</code></td><td>1195 行</td><td>连接 / SSH / 终端 / 仪表盘 / 数据库 全部领域的 IPC 封装；数据库段同时还留着 <code>mysql_*</code>、<code>postgres_*</code> 与统一 <code>database_*</code> 三套命令</td></tr>
+      <tr><td>子面板 6 个</td><td>332–360 行</td><td>对象树、对象面板、查询面板、表工作区、设计器、数据网格</td></tr>
+      <tr><td>小叶组件 16 个</td><td>35–197 行</td><td>标签栏、状态栏、两个信息面板、工具条、结果页、筛选面板、结构页、编辑条…</td></tr>
+      <tr><td><code>styles/database/</code></td><td>7 个文件 1864 行</td><td>base.css 单文件 699 行，混装按钮/工具条/网格/空状态/容器查询</td></tr>
+    </tbody>
+  </table>
+
+  <h3>1.2 现在的分层长什么样</h3>
+  <div class="figure" id="fig1">
+    <svg viewBox="0 0 1000 500" role="img" aria-label="现状分层图">
+      <defs>
+        <marker id="a1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#9aa4b2"/>
+        </marker>
+        <marker id="a1r" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#c1694f"/>
+        </marker>
+      </defs>
+
+      <!-- 视图层 -->
+      <rect x="16" y="14" width="968" height="118" rx="10" fill="#f7f9fc" stroke="#dfe6f0"/>
+      <text x="32" y="36" font-size="12" fill="#7b8494" font-weight="600">视图层 · 22 个组件</text>
+      <g font-size="11.5" fill="#33404f">
+        <rect x="32" y="48" width="172" height="66" rx="7" fill="#fff" stroke="#d9e0ea"/>
+        <text x="44" y="70">ObjectTreePane</text><text x="44" y="88" font-size="10.5" fill="#7b8494">库/表树 · 拖宽 · 过滤</text><text x="44" y="104" font-size="10.5" fill="#7b8494">右键菜单</text>
+
+        <rect x="220" y="48" width="172" height="66" rx="7" fill="#fff" stroke="#d9e0ea"/>
+        <text x="232" y="70">ObjectPanel</text><text x="232" y="88" font-size="10.5" fill="#7b8494">4 种视图 · 前端搜索排序</text><text x="232" y="104" font-size="10.5" fill="#7b8494">详情页自己拉字段</text>
+
+        <rect x="408" y="48" width="172" height="66" rx="7" fill="#fff" stroke="#d9e0ea"/>
+        <text x="420" y="70">QueryPanel</text><text x="420" y="88" font-size="10.5" fill="#7b8494">编辑器 · 历史 · 收藏</text><text x="420" y="104" font-size="10.5" fill="#7b8494">解释 · 直连 api</text>
+
+        <rect x="596" y="48" width="172" height="66" rx="7" fill="#fff" stroke="#d9e0ea"/>
+        <text x="608" y="70">TableWorkspace</text><text x="608" y="88" font-size="10.5" fill="#7b8494">数据/结构/设计/传输</text><text x="608" y="104" font-size="10.5" fill="#7b8494">DataGrid · 设计器</text>
+
+        <rect x="784" y="48" width="184" height="66" rx="7" fill="#fff" stroke="#d9e0ea"/>
+        <text x="796" y="70">TabBar / StatusBar</text><text x="796" y="88" font-size="10.5" fill="#7b8494">InfoPane · ObjectInfoPane</text><text x="796" y="104" font-size="10.5" fill="#7b8494">三处都在展示「表信息」</text>
+      </g>
+
+      <!-- 越层调用：从两个子面板绕到传输层 -->
+      <path d="M306 116 C 400 150, 620 150, 730 168" fill="none" stroke="#c1694f" stroke-width="1.3" stroke-dasharray="4 3"/>
+      <path d="M494 116 C 560 146, 680 152, 734 172" fill="none" stroke="#c1694f" stroke-width="1.3" stroke-dasharray="4 3"/>
+      <path d="M736 176 L736 378" fill="none" stroke="#c1694f" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#a1r)"/>
+      <rect x="424" y="180" width="238" height="19" rx="3" fill="#f7f9fc"/>
+      <text x="430" y="194" font-size="10.5" fill="#b3352f">绕过编排层直连 IPC（3 处，失败静默）</text>
+
+      <!-- 编排层 -->
+      <rect x="16" y="210" width="684" height="150" rx="10" fill="#eef4fd" stroke="#c9dbf3"/>
+      <text x="32" y="232" font-size="12" fill="#2f6fd0" font-weight="600">编排层 · DatabaseWorkspace（1162 行，9 类职责）</text>
+      <g font-size="11" fill="#22405f">
+        <rect x="32" y="242" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="42" y="259">元数据编排</text>
+        <rect x="190" y="242" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="200" y="259">分页 / 排序 / 筛选</text>
+        <rect x="348" y="242" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="358" y="259">行编辑与提交</text>
+        <rect x="506" y="242" width="178" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="516" y="259">设计器（预览 / 应用）</text>
+
+        <rect x="32" y="276" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="42" y="293">导入 / 导出 / 复制</text>
+        <rect x="190" y="276" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="200" y="293">库表 DDL 动作</text>
+        <rect x="348" y="276" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="358" y="293">SQL 执行 / 取消</text>
+        <rect x="506" y="276" width="178" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="516" y="293">AI 上下文注入</text>
+
+        <rect x="32" y="310" width="150" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="42" y="327">快捷键 / 生命周期</text>
+        <rect x="190" y="310" width="494" height="26" rx="5" fill="#fff" stroke="#cfe0f8"/>
+        <text x="200" y="327">tableActions()：每次渲染重建 28 个回调的对象</text>
+      </g>
+
+      <!-- 状态层 -->
+      <rect x="772" y="210" width="212" height="150" rx="10" fill="#fdf4e6" stroke="#f0dcbd"/>
+      <text x="786" y="232" font-size="12" fill="#a4620a" font-weight="600">状态层 · 事实分散在 3 处</text>
+      <g font-size="11" fill="#5d4419">
+        <text x="786" y="256">databaseWorkspaceStore</text>
+        <text x="786" y="272" font-size="10.5" fill="#8a6a2f">metadata + 树态 + 标签 + 查询态</text>
+        <text x="786" y="288" font-size="10.5" fill="#8a6a2f">+ 错误 + loading + 菜单 + 只读</text>
+        <text x="786" y="312">组件局部 signal（6 个）</text>
+        <text x="786" y="328" font-size="10.5" fill="#8a6a2f">选中对象 / 信息栏 / DDL / 对话框</text>
+        <text x="786" y="350" font-size="10" fill="#b3352f">store 保活、局部态不保活 → 不一致</text>
+      </g>
+
+      <!-- 传输层 -->
+      <rect x="16" y="382" width="968" height="100" rx="10" fill="#f3f5f8" stroke="#dde2ea"/>
+      <text x="32" y="404" font-size="12" fill="#4a525e" font-weight="600">传输层 · utils/api.ts（1195 行，跨 6 个领域）</text>
+      <g font-size="11" fill="#4a525e">
+        <rect x="32" y="416" width="440" height="26" rx="5" fill="#fff" stroke="#dde2ea"/>
+        <text x="42" y="433">database_*　统一命令（当前 UI 全部走这里）</text>
+        <rect x="484" y="416" width="484" height="26" rx="5" fill="#fff" stroke="#dde2ea"/>
+        <text x="494" y="433">mysql_* / postgres_*　两套旧命令仍在导出，无人调用</text>
+        <rect x="32" y="448" width="936" height="22" rx="5" fill="#fff" stroke="#dde2ea"/>
+        <text x="42" y="463" font-size="10.5" fill="#7b8494">协议差异不在这层收敛：引号转义、字符集、能力差异由调用方各自判断</text>
+      </g>
+
+      <path d="M356 360 L356 378" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a1)"/>
+      <path d="M880 360 L880 378" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a1)"/>
+    </svg>
+    <div class="cap">图 1　现状：编排层承担了服务层的活，状态层混装三种事实，两个子面板越过编排层直接调 IPC。</div>
+  </div>
+
+  <h3>1.3 职责边界：谁该管什么 vs 实际谁在管</h3>
+  <table>
+    <thead><tr><th style="width:16%">职责</th><th style="width:26%">合理归属</th><th>现状</th></tr></thead>
+    <tbody>
+      <tr><td><b>IPC 调用与错误处理</b></td><td>数据访问层（服务）</td><td>26 处在 <code>DatabaseWorkspace</code>（有 <code>run()</code> 包装，进全局错误条）；另 3 类在 QueryPanel / ObjectPanel 直连，<b>不进 loading、不进错误条、失败静默</b></td></tr>
+      <tr><td><b>元数据缓存</b></td><td>元数据 store</td><td>store 里只有 <code>tables[db]</code>，而"是否首次展开"的判定（<code>ensureTables</code>）、竞态（<code>nextSequence</code>）、失效（<code>bumpSchema</code>）都在组件里，三者互相依赖</td></tr>
+      <tr><td><b>页签内容状态</b></td><td>页签 store（按 tab 分片）</td><td>全部塞进 <code>TableTab</code> 的 24 个字段：服务器数据（rows/columns/indexes）+ UI 态（page/section/dataView/columnWidths）+ 草稿（pending/designer/preview/dirty）混在一起，<code>patchTab</code> 靠 <code>as unknown as WorkspaceTab</code> 断言绕过类型</td></tr>
+      <tr><td><b>选择（选中哪张表）</b></td><td>单一 <code>selectionStore</code></td><td>四套并行：<code>selectedObject</code>(库:表)、<code>tab.detailTable</code>、<code>ObjectPanel.currentItem</code>、<code>detailTarget()</code>（选中项否则第一张）</td></tr>
+      <tr><td><b>用户偏好</b></td><td>preferences（已有 databaseSettings）</td><td>8 个 localStorage 键散在 5 个文件，无版本、无迁移，只有 autoExpand 打过一次补丁标记</td></tr>
+      <tr><td><b>协议差异</b></td><td>能力矩阵 / 方言适配器</td><td>散落：<code>countRows</code> 手写 mysql/else 引号、<code>DesignerView.mysql()</code>、<code>databaseLabel</code> 三处分支</td></tr>
+    </tbody>
+  </table>
+
+  <h3>1.4 混乱点清单</h3>
+  <table>
+    <thead><tr><th style="width:8%">级别</th><th style="width:30%">问题</th><th>证据与后果</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag t-p1">P1</span></td><td>上帝组件</td><td>1162 行 / 9 类职责 / 28 个 action。任何一处小改都要读完整文件；<code>tableActions(tab)</code> 每次渲染新建对象字面量，<code>TableWorkspace</code> 的 props 引用每次都变</td></tr>
+      <tr><td><span class="tag t-p1">P1</span></td><td>请求路径不唯一</td><td>同一个"读字段"有三个入口：<code>loadTable</code>（走 run）、<code>ObjectPanel</code> 详情页（直连、静默 catch）、设计器 <code>startDesign</code>（走 run 但失败被吞）。用户在不同位置看到不同的失败反馈</td></tr>
+      <tr><td><span class="tag t-p1">P1</span></td><td>状态副本 / 语义重叠</td><td>"选中表"三套语义、"表信息"三个面板（InfoPane / ObjectInfoPane / 详情页）、"排序"两套实现（ObjectPanel 前端比较器 vs FilterSortPanel 走后端）</td></tr>
+      <tr><td><span class="tag t-p2">P2</span></td><td>全局状态被当成局部用</td><td>单个 <code>error</code> 字符串（后一次失败覆盖前一次）、单个 <code>runningTabId</code>（两条查询不能并行）、<code>pending</code> 计数器让任意请求都点亮整棵树</td></tr>
+      <tr><td><span class="tag t-p2">P2</span></td><td>生命周期不一致</td><td>store 用模块级 Map 按 connectionId 保活（切会话不丢），但选中/信息栏/DDL 是组件局部 signal，切走再切回就复位——同一界面里一半状态记得住、一半记不住</td></tr>
+      <tr><td><span class="tag t-p2">P2</span></td><td>持久化散落</td><td>8 个键、5 个文件、无 schema 版本；列宽与冻结列分别按"连接+库+表"和"全局"存，规则不统一</td></tr>
+      <tr><td><span class="tag t-p3">P3</span></td><td>视图语义过载</td><td><code>DatabaseTab.view</code>(list/table/detail/icons)、<code>TableTab.dataView</code>(grid/form)、<code>TableTab.section</code>(data/structure/design/transfer) 三个"view"共存，命名无法自解释</td></tr>
+      <tr><td><span class="tag t-p3">P3</span></td><td>样式层与组件不同构</td><td>base.css 699 行混装基础件；容器查询基准名 <code>dbdata/dbquery/objects</code> 是后加的临时约定</td></tr>
+      <tr><td><span class="tag t-p3">P3</span></td><td>死代码与遗留</td><td>api.ts 里 <code>mysql_*</code>/<code>postgres_*</code> 两套命令无调用方；<code>DatabaseTableInfo = MysqlTableInfo</code> 别名掩盖了"表信息其实是方言无关"的事实</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============ 2 A ============ -->
+<section class="card">
+  <h2><span class="num">A</span>方案 A · 纵向切分：服务层 + 页签控制器</h2>
+  <p class="lead">保留现有组件树、视觉与交互，只把"谁干什么"摆正。核心是引入一层<b>不依赖 Solid 的纯 TypeScript 服务</b>，再用一组<b>按页签类型划分的控制器</b>把服务与状态接起来，容器组件退回布局角色。</p>
+
+  <div class="figure" id="fig2">
+    <svg viewBox="0 0 1000 560" role="img" aria-label="方案 A 分层图">
+      <defs>
+        <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#9aa4b2"/>
+        </marker>
+        <marker id="a2b" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#2f6fd0"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="12" width="968" height="86" rx="10" fill="#f7f9fc" stroke="#dfe6f0"/>
+      <text x="32" y="34" font-size="12" fill="#7b8494" font-weight="600">视图层 · 只接收数据与回调，不认识 api</text>
+      <g font-size="11" fill="#33404f">
+        <rect x="32" y="44" width="224" height="42" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="44" y="70">DatabaseWorkspace（约 200 行布局）</text>
+        <rect x="268" y="44" width="168" height="42" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="280" y="70">ObjectTreePane</text>
+        <rect x="448" y="44" width="168" height="42" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="460" y="70">ObjectPanel</text>
+        <rect x="628" y="44" width="168" height="42" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="640" y="70">TableWorkspace</text>
+        <rect x="808" y="44" width="160" height="42" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="820" y="70">QueryPanel</text>
+      </g>
+
+      <rect x="16" y="116" width="700" height="132" rx="10" fill="#eef4fd" stroke="#c9dbf3"/>
+      <text x="32" y="138" font-size="12" fill="#2f6fd0" font-weight="600">编排层 · 控制器（Solid 工厂函数，一类页签一个）</text>
+      <g font-size="11" fill="#22405f">
+        <rect x="32" y="148" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="44" y="165" font-weight="600">useMetadata</text><text x="44" y="180" font-size="10.5" fill="#5a7794">库/表缓存 · 展开 · 竞态</text>
+        <rect x="252" y="148" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="264" y="165" font-weight="600">useTabs</text><text x="264" y="180" font-size="10.5" fill="#5a7794">打开/关闭/激活/patch</text>
+        <rect x="472" y="148" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="484" y="165" font-weight="600">useTableTab</text><text x="484" y="180" font-size="10.5" fill="#5a7794">分页 · 排序 · 编辑 · 设计</text>
+        <rect x="32" y="196" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="44" y="213" font-weight="600">useQueryTab</text><text x="44" y="228" font-size="10.5" fill="#5a7794">执行 · 批事务 · 取消</text>
+        <rect x="252" y="196" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="264" y="213" font-weight="600">useTransfer</text><text x="264" y="228" font-size="10.5" fill="#5a7794">导入导出 · 复制为 SQL</text>
+        <rect x="472" y="196" width="208" height="40" rx="6" fill="#fff" stroke="#cfe0f8"/>
+        <text x="484" y="213" font-weight="600">useDialogs / useSelection</text><text x="484" y="228" font-size="10.5" fill="#5a7794">唯一"选中"来源</text>
+      </g>
+
+      <rect x="16" y="270" width="700" height="104" rx="10" fill="#eaf6f3" stroke="#c6e3db"/>
+      <text x="32" y="292" font-size="12" fill="#0f7b6c" font-weight="600">服务层 · 纯 TS，无 Solid、无 DOM，可直接单测</text>
+      <g font-size="11" fill="#12463f">
+        <rect x="32" y="302" width="128" height="54" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="42" y="323" font-weight="600">metadata</text><text x="42" y="338" font-size="10.5" fill="#3f6f66">列表/字段/索引</text><text x="42" y="351" font-size="10.5" fill="#3f6f66">/DDL</text>
+        <rect x="172" y="302" width="128" height="54" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="182" y="323" font-weight="600">rows</text><text x="182" y="338" font-size="10.5" fill="#3f6f66">取页/计数</text><text x="182" y="351" font-size="10.5" fill="#3f6f66">/提交变更集</text>
+        <rect x="312" y="302" width="128" height="54" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="322" y="323" font-weight="600">designer</text><text x="322" y="338" font-size="10.5" fill="#3f6f66">预览/应用</text><text x="322" y="351" font-size="10.5" fill="#3f6f66">/外键</text>
+        <rect x="452" y="302" width="128" height="54" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="462" y="323" font-weight="600">transfer</text><text x="462" y="338" font-size="10.5" fill="#3f6f66">CSV/SQL</text><text x="462" y="351" font-size="10.5" fill="#3f6f66">导入导出</text>
+        <rect x="592" y="302" width="108" height="54" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="602" y="323" font-weight="600">query</text><text x="602" y="338" font-size="10.5" fill="#3f6f66">执行/取消</text><text x="602" y="351" font-size="10.5" fill="#3f6f66">/解释</text>
+      </g>
+      <rect x="32" y="366" width="668" height="0" fill="none"/>
+
+      <rect x="730" y="116" width="254" height="258" rx="10" fill="#fdf4e6" stroke="#f0dcbd"/>
+      <text x="746" y="138" font-size="12" fill="#a4620a" font-weight="600">状态层 · 按关注点分片</text>
+      <g font-size="11" fill="#5d4419">
+        <rect x="746" y="148" width="222" height="34" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="756" y="170">metadataStore（按连接）</text>
+        <rect x="746" y="190" width="222" height="34" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="756" y="212">tabsStore（按连接）</text>
+        <rect x="746" y="232" width="222" height="34" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="756" y="254">viewStore（选中/面板开关）</text>
+        <rect x="746" y="274" width="222" height="34" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="756" y="296">preferences（统一持久化）</text>
+        <rect x="746" y="316" width="222" height="34" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="756" y="338">requestScope（按资源）</text>
+      </g>
+
+      <rect x="16" y="398" width="968" height="66" rx="10" fill="#f3f5f8" stroke="#dde2ea"/>
+      <text x="32" y="420" font-size="12" fill="#4a525e" font-weight="600">传输层 · api.ts（数据库段瘦身：只留 database_*，清理 mysql_*/postgres_* 遗留）</text>
+      <rect x="32" y="430" width="936" height="22" rx="5" fill="#fff" stroke="#dde2ea"/>
+      <text x="42" y="445" font-size="10.5" fill="#7b8494">方言差异上移到 services/schema.ts：标识符引号、字符集、能力矩阵集中一处判断</text>
+
+      <rect x="16" y="478" width="968" height="76" rx="10" fill="#fff" stroke="#e3e7ee" stroke-dasharray="5 4"/>
+      <text x="32" y="499" font-size="11.5" fill="#4a525e" font-weight="600">数据流（以「双击表」为例）</text>
+      <text x="32" y="519" font-size="10.5" fill="#7b8494">读：ObjectTreePane.onOpenTable → useTabs.openTable → useTableTab.load(1) → rows.fetchPage → patchTab(rows) → DataGrid</text>
+      <text x="32" y="539" font-size="10.5" fill="#7b8494">写：rows.applyChanges → 成功后 load(当前页) + metadata.invalidate(库) → 树与对象列表重算</text>
+
+      <path d="M366 98 L366 112" stroke="#2f6fd0" stroke-width="1.3" marker-end="url(#a2b)" opacity=".65"/>
+      <path d="M366 248 L366 266" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a2)"/>
+      <path d="M366 374 L366 394" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a2)"/>
+      <path d="M710 180 L726 180" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a2)" stroke-dasharray="3 3"/>
+    </svg>
+    <div class="cap">图 2　方案 A：视图 → 控制器 → 服务 → 传输，四层单向依赖；状态按关注点分片，控制器只做"接线"。</div>
+  </div>
+
+  <div class="cols2">
+    <div class="box">
+      <h4>模块分层与职责</h4>
+      <ul>
+        <li><b>视图</b>：只做渲染与事件上抛，不再出现 <code>api.</code>、不再自己推导选中项。</li>
+        <li><b>控制器</b>：一类页签一个工厂，持有该页签的生命周期逻辑（加载、失效、竞态、错误槽），对外只暴露 <code>props</code> 与 <code>actions</code>。</li>
+        <li><b>服务</b>：函数式，<code>(ctx, args) =&gt; Promise</code>；ctx 只含 <code>connectionId / protocol</code>。不感知 UI。</li>
+        <li><b>传输</b>：仅 IPC 映射与类型。</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h4>依赖关系</h4>
+      <ul>
+        <li>严格单向：视图 → 控制器 → 服务 → 传输。</li>
+        <li>控制器可读写 store；服务<b>不</b>碰 store（保证可单测）。</li>
+        <li>控制器之间不互相调用，跨页签影响走 <code>metadata.invalidate()</code> 这类显式事件。</li>
+        <li>禁止子面板直连 api —— 由 lint 规则或约定守住。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>主要改动范围</h3>
+  <ul>
+    <li>新增 <code>src/services/database/{metadata,rows,designer,transfer,query,schema}.ts</code></li>
+    <li>新增 <code>src/workspace/database/{useMetadata,useTabs,useTableTab,useQueryTab,useTransfer,useSelection,useDialogs}.ts</code></li>
+    <li>新增 <code>src/stores/database/{metadataStore,tabsStore,viewStore,requestScope}.ts</code>，原 <code>databaseWorkspaceStore</code> 拆分后删除</li>
+    <li>重写 <code>DatabaseWorkspace.tsx</code>（1162 → 约 200 行）；<code>ObjectPanel</code> / <code>QueryPanel</code> 去掉 api 调用并改用 props</li>
+    <li><code>TableTab</code> 瘦身：只留"属于这个页签的事实"，UI 态与草稿分到 <code>tabsStore.tableUi[tabId]</code> / <code>drafts[tabId]</code></li>
+    <li>持久化收敛到 <code>preferences</code>，带 <code>schemaVersion</code> + 迁移函数（8 个键统一接管）</li>
+  </ul>
+
+  <div class="cols2">
+    <div class="box good">
+      <h4>优点</h4>
+      <ul>
+        <li>职责边界立刻清晰，新增"一段视图/一类页签"不需要动容器</li>
+        <li>服务层可脱离 UI 单测（当前几乎无法测）</li>
+        <li>界面零改版，可分批合入，每批都能独立验证</li>
+        <li>为方案 B 打底：控制器就是未来 feature 的雏形</li>
+      </ul>
+    </div>
+    <div class="box bad">
+      <h4>缺点 / 风险</h4>
+      <ul>
+        <li>文件数从 22 增至约 40，初期跳转成本上升</li>
+        <li>状态拆分会触及所有 <code>patchTab</code> 调用点（约 40 处），需要一次通改</li>
+        <li>需要写数据迁移，否则用户列宽/历史/展开态会丢</li>
+      </ul>
+    </div>
+  </div>
+  <p><small class="note">适用场景：想把模块做"稳"，后续半年内还要持续加功能（更多协议、更多对象类型、更多导入格式），但不想改视觉。</small></p>
+</section>
+
+<!-- ============ 3 B ============ -->
+<section class="card">
+  <h2><span class="num">B</span>方案 B · 横向分层：工作台内核 + 可注册的 Feature</h2>
+  <p class="lead">把数据库模块当成一个"小应用"来组织：<b>core</b> 提供连接、能力矩阵、请求总线、只读与权限；<b>feature</b> 各自成套（状态切片 + 视图 + 命令）；<b>registry</b> 把"页签类型"映射到 feature，容器只负责遍历注册表。</p>
+
+  <div class="figure" id="fig3">
+    <svg viewBox="0 0 1000 520" role="img" aria-label="方案 B 结构图">
+      <defs>
+        <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#9aa4b2"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="12" width="968" height="58" rx="10" fill="#f7f9fc" stroke="#dfe6f0"/>
+      <text x="32" y="34" font-size="12" fill="#7b8494" font-weight="600">Shell · DatabaseWorkspace（约 120 行：布局 + 遍历注册表）</text>
+      <text x="32" y="56" font-size="11" fill="#5a6472">渲染 ObjectTreePane（来自 browse feature）· 按 tab.kind 查 registry 渲染主体 · 统一状态栏 / 右键菜单</text>
+
+      <rect x="16" y="86" width="700" height="196" rx="10" fill="#f2eefc" stroke="#ded3f5"/>
+      <text x="32" y="108" font-size="12" fill="#6b4bb5" font-weight="600">Features · 每个 feature 自成一列（slice + view + commands）</text>
+      <g font-size="11" fill="#3b2d63">
+        <g>
+          <rect x="32" y="118" width="128" height="152" rx="7" fill="#fff" stroke="#ded3f5"/>
+          <text x="42" y="138" font-weight="600">browse</text>
+          <text x="42" y="156" font-size="10.5" fill="#6a5a92">slice: 元数据/树态</text>
+          <text x="42" y="174" font-size="10.5" fill="#6a5a92">view: 树 + 对象列表</text>
+          <text x="42" y="192" font-size="10.5" fill="#6a5a92">cmd: 展开/刷新/搜索</text>
+          <text x="42" y="218" font-size="10" fill="#8b7cb0">tab: database</text>
+        </g>
+        <g>
+          <rect x="172" y="118" width="128" height="152" rx="7" fill="#fff" stroke="#ded3f5"/>
+          <text x="182" y="138" font-weight="600">table</text>
+          <text x="182" y="156" font-size="10.5" fill="#6a5a92">slice: 页/排序/筛选</text>
+          <text x="182" y="174" font-size="10.5" fill="#6a5a92">view: grid/form/结构</text>
+          <text x="182" y="192" font-size="10.5" fill="#6a5a92">cmd: 翻页/提交/删除</text>
+          <text x="182" y="218" font-size="10" fill="#8b7cb0">tab: table</text>
+        </g>
+        <g>
+          <rect x="312" y="118" width="128" height="152" rx="7" fill="#fff" stroke="#ded3f5"/>
+          <text x="322" y="138" font-weight="600">query</text>
+          <text x="322" y="156" font-size="10.5" fill="#6a5a92">slice: 草稿/结果</text>
+          <text x="322" y="174" font-size="10.5" fill="#6a5a92">view: 编辑器 + 结果</text>
+          <text x="322" y="192" font-size="10.5" fill="#6a5a92">cmd: 执行/取消/解释</text>
+          <text x="322" y="218" font-size="10" fill="#8b7cb0">tab: query</text>
+        </g>
+        <g>
+          <rect x="452" y="118" width="128" height="152" rx="7" fill="#fff" stroke="#ded3f5"/>
+          <text x="462" y="138" font-weight="600">design</text>
+          <text x="462" y="156" font-size="10.5" fill="#6a5a92">slice: 草稿/基线</text>
+          <text x="462" y="174" font-size="10.5" fill="#6a5a92">view: 设计器 + 变更</text>
+          <text x="462" y="192" font-size="10.5" fill="#6a5a92">cmd: 预览/应用</text>
+          <text x="462" y="218" font-size="10" fill="#8b7cb0">由 table 挂载</text>
+        </g>
+        <g>
+          <rect x="592" y="118" width="108" height="152" rx="7" fill="#fff" stroke="#ded3f5"/>
+          <text x="602" y="138" font-weight="600">transfer</text>
+          <text x="602" y="156" font-size="10.5" fill="#6a5a92">slice: 进度</text>
+          <text x="602" y="174" font-size="10.5" fill="#6a5a92">view: 导入导出</text>
+          <text x="602" y="192" font-size="10.5" fill="#6a5a92">cmd: CSV/SQL</text>
+          <text x="602" y="218" font-size="10" fill="#8b7cb0">命令被别处调用</text>
+        </g>
+      </g>
+
+      <rect x="730" y="86" width="254" height="196" rx="10" fill="#eef4fd" stroke="#c9dbf3"/>
+      <text x="746" y="108" font-size="12" fill="#2f6fd0" font-weight="600">Registry</text>
+      <g font-size="11" fill="#22405f">
+        <rect x="746" y="118" width="222" height="30" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="756" y="138">tab.kind → feature</text>
+        <rect x="746" y="156" width="222" height="30" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="756" y="176">feature → view 组件</text>
+        <rect x="746" y="194" width="222" height="30" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="756" y="214">feature → 命令集合</text>
+        <rect x="746" y="232" width="222" height="30" rx="5" fill="#fff" stroke="#cfe0f8"/><text x="756" y="252">能力矩阵（协议差异）</text>
+      </g>
+
+      <rect x="16" y="300" width="968" height="128" rx="10" fill="#eaf6f3" stroke="#c6e3db"/>
+      <text x="32" y="322" font-size="12" fill="#0f7b6c" font-weight="600">Core · 所有 feature 都可依赖，core 不反向依赖任何 feature</text>
+      <g font-size="11" fill="#12463f">
+        <rect x="32" y="332" width="180" height="78" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="44" y="353" font-weight="600">connection</text>
+        <text x="44" y="370" font-size="10.5" fill="#3f6f66">连接生命周期</text>
+        <text x="44" y="386" font-size="10.5" fill="#3f6f66">重连 / 断线重试</text>
+        <rect x="224" y="332" width="180" height="78" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="236" y="353" font-weight="600">capabilities</text>
+        <text x="236" y="370" font-size="10.5" fill="#3f6f66">协议能力矩阵</text>
+        <text x="236" y="386" font-size="10.5" fill="#3f6f66">标识符/字符集/方言</text>
+        <rect x="416" y="332" width="180" height="78" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="428" y="353" font-weight="600">request</text>
+        <text x="428" y="370" font-size="10.5" fill="#3f6f66">请求总线</text>
+        <text x="428" y="386" font-size="10.5" fill="#3f6f66">按资源 loading/error/取消</text>
+        <rect x="608" y="332" width="172" height="78" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="620" y="353" font-weight="600">policy</text>
+        <text x="620" y="370" font-size="10.5" fill="#3f6f66">只读 / 危险语句</text>
+        <text x="620" y="386" font-size="10.5" fill="#3f6f66">确认门槛</text>
+        <rect x="792" y="332" width="176" height="78" rx="6" fill="#fff" stroke="#c6e3db"/>
+        <text x="804" y="353" font-weight="600">preferences</text>
+        <text x="804" y="370" font-size="10.5" fill="#3f6f66">统一 schema 版本</text>
+        <text x="804" y="386" font-size="10.5" fill="#3f6f66">+ 迁移</text>
+      </g>
+
+      <rect x="16" y="442" width="968" height="62" rx="10" fill="#f3f5f8" stroke="#dde2ea"/>
+      <text x="32" y="464" font-size="12" fill="#4a525e" font-weight="600">Transport · api.ts（仅 invoke 映射，不含业务）</text>
+      <text x="32" y="484" font-size="11" fill="#7b8494">feature 之间不直接互相 import：transfer 需要"当前选中行"时，通过 core 的命令总线取，避免特征耦合成网状</text>
+
+      <path d="M360 282 L360 296" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a3)"/>
+      <path d="M360 428 L360 438" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a3)"/>
+      <path d="M700 184 L722 184" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a3)" stroke-dasharray="3 3"/>
+    </svg>
+    <div class="cap">图 3　方案 B：按"功能"纵向成块，容器与 feature 通过注册表解耦；协议差异收进能力矩阵。</div>
+  </div>
+
+  <div class="cols2">
+    <div class="box">
+      <h4>模块分层与职责</h4>
+      <ul>
+        <li><b>Shell</b>：布局 + 按注册表渲染，不含任何业务分支。</li>
+        <li><b>Feature</b>：自己的状态切片、视图、命令；对内自治，对外只暴露命令。</li>
+        <li><b>Core</b>：连接、能力、请求总线、策略、偏好。</li>
+        <li><b>Registry</b>：<code>tab.kind</code> → feature；也是"能力→菜单项"的唯一开关点。</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h4>数据流</h4>
+      <ul>
+        <li>命令总线：<code>dispatch("table.applyChanges")</code>，返回结果与错误槽。</li>
+        <li>状态按 feature 切片，跨 feature 读取走 core 的只读选择器。</li>
+        <li>右键菜单由 registry 依据能力矩阵生成，不再在容器里写死一堆 <code>if</code>。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>主要改动范围</h3>
+  <ul>
+    <li>新增 <code>src/features/database/{browse,table,query,design,transfer}/</code>，每个含 <code>slice.ts / View.tsx / commands.ts</code></li>
+    <li>新增 <code>src/core/database/{connection,capabilities,request,policy,preferences}.ts</code> 与 <code>registry.ts</code></li>
+    <li>删除 <code>databaseWorkspaceStore.ts</code> 与 <code>DatabaseWorkspace</code> 的全部业务逻辑（后者只留布局）</li>
+    <li>右键菜单、工具条按钮改为"能力声明"驱动，视觉上需要重新校对（菜单项顺序/禁用态可能变化）</li>
+  </ul>
+
+  <div class="cols2">
+    <div class="box good">
+      <h4>优点</h4>
+      <ul>
+        <li>扩展性最好：新协议只加 capability，新页签只加 feature</li>
+        <li>天然支持"功能裁剪"（某协议不支持设计器时直接不注册）</li>
+        <li>模块边界可机械校验（feature 之间禁止 import）</li>
+      </ul>
+    </div>
+    <div class="box bad">
+      <h4>缺点 / 风险</h4>
+      <ul>
+        <li>改动面最大：几乎重写，回归测试成本高</li>
+        <li>注册表 + 命令总线是新的抽象，团队需要适应期</li>
+        <li>当前只有 3 种页签、3 种协议，收益暂时小于成本</li>
+      </ul>
+    </div>
+  </div>
+  <p><small class="note">适用场景：确定要长期演进成"多协议数据库工作台"（PG / HighGo / Redis / Mongo 各自能力差异大），或要做插件化、多窗口。</small></p>
+</section>
+
+<!-- ============ 4 C ============ -->
+<section class="card">
+  <h2><span class="num">C</span>方案 C · 最小侵入：只修边界，不搬文件</h2>
+  <p class="lead">不调整目录结构，只做三件"止血"的事：把 IPC 调用集中到一个服务文件、把 <code>TableTab</code> 里的 UI 态拆出去、让子面板不再直连 api。目标是<b>用最小风险消掉 P1 问题</b>。</p>
+
+  <div class="figure" id="fig4">
+    <svg viewBox="0 0 1000 330" role="img" aria-label="方案 C 结构图">
+      <defs>
+        <marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0.5 L8 4.5 L0 8.5 z" fill="#9aa4b2"/>
+        </marker>
+      </defs>
+      <rect x="16" y="14" width="640" height="112" rx="10" fill="#f7f9fc" stroke="#dfe6f0"/>
+      <text x="32" y="36" font-size="12" fill="#7b8494" font-weight="600">视图层（基本不动）</text>
+      <g font-size="11" fill="#33404f">
+        <rect x="32" y="46" width="180" height="34" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="44" y="68">对象树 / 对象面板</text>
+        <rect x="224" y="46" width="180" height="34" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="236" y="68">表工作区 / 数据网格</text>
+        <rect x="416" y="46" width="220" height="34" rx="6" fill="#fff" stroke="#d9e0ea"/><text x="428" y="68">查询面板 / 设计器</text>
+        <rect x="32" y="88" width="604" height="26" rx="5" fill="#fdeeed" stroke="#f2dedb"/>
+        <text x="42" y="105" font-size="10.5" fill="#b3352f">子面板改为通过 props 调 service，不再 import api（3 处直连清除）</text>
+      </g>
+
+      <rect x="16" y="144" width="640" height="88" rx="10" fill="#eef4fd" stroke="#c9dbf3"/>
+      <text x="32" y="166" font-size="12" fill="#2f6fd0" font-weight="600">DatabaseWorkspace（仍是 1162 行，但只剩 UI 调用）</text>
+      <text x="32" y="190" font-size="11" fill="#22405f">内部把 26 处 api. 调用换成 db.xxx()；run() 统一移到 service 的包装器</text>
+      <text x="32" y="212" font-size="11" fill="#b3352f">● 上帝组件问题仍在（P1 只解决一半）</text>
+
+      <rect x="16" y="250" width="640" height="66" rx="10" fill="#eaf6f3" stroke="#c6e3db"/>
+      <text x="32" y="272" font-size="12" fill="#0f7b6c" font-weight="600">新增 services/databaseApi.ts（薄封装）</text>
+      <text x="32" y="296" font-size="11" fill="#3f6f66">统一 request(kind, fn)：loading 分槽 · 错误进 errorBus · 租约取消；仍是"一大文件"</text>
+
+      <rect x="676" y="14" width="308" height="302" rx="10" fill="#fdf4e6" stroke="#f0dcbd"/>
+      <text x="692" y="36" font-size="12" fill="#a4620a" font-weight="600">状态层（挪一处）</text>
+      <g font-size="11" fill="#5d4419">
+        <rect x="692" y="46" width="276" height="30" rx="5" fill="#fff" stroke="#f0dcbd"/><text x="702" y="66">databaseWorkspaceStore（保留）</text>
+        <rect x="692" y="84" width="276" height="56" rx="5" fill="#fff" stroke="#f0dcbd"/>
+        <text x="702" y="104">新增 tableViewStore</text>
+        <text x="702" y="122" font-size="10.5" fill="#8a6a2f">page/orders/filters/section/columnWidths</text>
+        <rect x="692" y="148" width="276" height="56" rx="5" fill="#fff" stroke="#f0dcbd"/>
+        <text x="702" y="168">TableTab 从 24 字段降到约 12</text>
+        <text x="702" y="186" font-size="10.5" fill="#8a6a2f">只留服务器数据 + 草稿</text>
+        <text x="702" y="222" font-size="10.5" fill="#b3352f">选择语义仍是 3 套（未处理）</text>
+        <text x="702" y="244" font-size="10.5" fill="#b3352f">持久化仍是 8 个键（未处理）</text>
+        <text x="702" y="266" font-size="10.5" fill="#b3352f">协议差异仍散落（未处理）</text>
+      </g>
+
+      <path d="M336 128 L336 140" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a4)"/>
+      <path d="M336 234 L336 246" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a4)"/>
+      <path d="M660 190 L672 190" stroke="#9aa4b2" stroke-width="1.3" marker-end="url(#a4)" stroke-dasharray="3 3"/>
+    </svg>
+    <div class="cap">图 4　方案 C：只加一层薄服务并搬走一部分状态，结构其余部分保持原样。</div>
+  </div>
+
+  <div class="cols2">
+    <div class="box good">
+      <h4>优点</h4>
+      <ul>
+        <li>改动小、可 2–3 天完成，回归面窄，界面零变化</li>
+        <li>立刻解决"三条请求路径、反馈不一致"这个最影响体验的问题</li>
+        <li>数据迁移可控（只动列宽/分页一类 UI 态）</li>
+      </ul>
+    </div>
+    <div class="box bad">
+      <h4>缺点 / 风险</h4>
+      <ul>
+        <li>1162 行容器仍在，后续加功能继续变胖</li>
+        <li>服务文件会变成新的"大杂烩"，只是换了个位置</li>
+        <li>P1 的"状态副本 / 三套选中"没有解决，问题会复发</li>
+      </ul>
+    </div>
+  </div>
+  <p><small class="note">适用场景：近期有发版压力，只想先稳一稳；或作为方案 A 的第一阶段。</small></p>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="card">
+  <h2><span class="num">5</span>三版横向对比</h2>
+  <table>
+    <thead><tr><th style="width:22%">维度</th><th>A · 纵向切分（推荐）</th><th>B · Feature 化</th><th>C · 最小侵入</th></tr></thead>
+    <tbody>
+      <tr><td><b>文件变化量</b></td><td>22 → 约 40，新增 15 个左右</td><td>22 → 约 50，多数文件被移动/重写</td><td>22 → 25，仅新增 3 个</td></tr>
+      <tr><td><b>代码改动量</b></td><td>大（约 60% 的 db 代码被重新归属）</td><td>极大（约 90% 重写）</td><td>小（约 15%）</td></tr>
+      <tr><td><b>容器行数</b></td><td>1162 → 约 200</td><td>1162 → 约 120</td><td>1162 → 约 1000</td></tr>
+      <tr><td><b>可测试性</b></td><td>服务层可单测</td><td>feature 命令可单测</td><td>仅薄服务可单测</td></tr>
+      <tr><td><b>新增协议成本</b></td><td>改 schema.ts + 少量能力判断</td><td>加一个 capability 配置</td><td>仍需各处 <code>if</code></td></tr>
+      <tr><td><b>新增页签类型成本</b></td><td>加一个控制器 + 视图</td><td>加一个 feature + 注册</td><td>继续改容器</td></tr>
+      <tr><td><b>界面变化</b></td><td>无</td><td>小幅（菜单/禁用态由能力驱动）</td><td>无</td></tr>
+      <tr><td><b>回归风险</b></td><td>中</td><td>高</td><td>低</td></tr>
+      <tr><td><b>数据迁移</b></td><td>需要（8 个键统一）</td><td>需要（全部状态重新分片）</td><td>需要（仅 UI 态）</td></tr>
+    </tbody>
+  </table>
+  <p><b>推荐路径：C（1 周内止血）→ A 的编排层拆分（1–2 周）→ 视需要再评估 B。</b> 三者不是互斥的，A 的第一阶段其实就是 C，前期投入不会浪费。</p>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="card">
+  <h2><span class="num">6</span>需要你先确认的取舍</h2>
+  <p class="lead">下面 8 项会直接改变实施方式，麻烦按编号回复（例如 <span class="mono">1B / 2A / 3A</span>），或直接说"按推荐来"。</p>
+
+  <div class="ask">
+    <div class="row"><div class="no">01</div><div class="body">
+      <b>选哪版方案？</b>
+      <p class="opt"><em>A</em> 纵向切分（推荐，界面零变化）　<em>B</em> Feature 化（重写）　<em>C</em> 最小侵入（止血）　<em>D</em> 先 C 再 A（推荐路径）</p>
+    </div></div>
+
+    <div class="row"><div class="no">02</div><div class="body">
+      <b>重构期间能否接受界面"零变化"作为硬约束？</b>
+      <p>若可以，方案 A 的每一步都能用现有截图做像素级回归；若允许顺手改交互（例如把三处表信息合并成一处），能顺带消掉一个 P1。</p>
+      <p class="opt"><em>A</em> 零变化　<em>B</em> 允许合并信息面板　<em>C</em> 允许调整工具栏/菜单</p>
+    </div></div>
+
+    <div class="row"><div class="no">03</div><div class="body">
+      <b><code>TableTab</code> 里的 UI 态（页码/排序/筛选/列宽/当前段）要不要挪出去？</b>
+      <p>挪出去：标签数据更"纯"，但切标签时要按 tabId 回填；不挪：改动小，但 24 字段的类型会继续膨胀。</p>
+      <p class="opt"><em>A</em> 挪到 <code>tableViewStore</code>　<em>B</em> 留在 TableTab，只做字段分组</p>
+    </div></div>
+
+    <div class="row"><div class="no">04</div><div class="body">
+      <b>错误与 loading 要怎么呈现？</b>
+      <p>现在是一条全局错误串 + 一个全局 loading 计数，后一次失败会覆盖前一次，任意请求都让整棵树显示"正在加载"。</p>
+      <p class="opt"><em>A</em> 每个页签/资源独立错误槽（页签内联）　<em>B</em> 全局 toast + 保留顶部错误条　<em>C</em> 维持现状，只按资源分 loading</p>
+    </div></div>
+
+    <div class="row"><div class="no">05</div><div class="body">
+      <b>是否要支持多个标签同时执行 SQL？</b>
+      <p>现在是单个 <code>runningTabId</code>，在 A 页签运行时会点亮 B 页签的按钮状态。改成集合可以并行，但"停止"要指定目标。</p>
+      <p class="opt"><em>A</em> 改为 <code>Set&lt;tabId&gt;</code>，支持并行　<em>B</em> 保持单任务（更简单，符合"一个连接一个会话"）</p>
+    </div></div>
+
+    <div class="row"><div class="no">06</div><div class="body">
+      <b>历史数据要不要迁移？</b>
+      <p>涉及 8 个 localStorage 键（列宽、冻结列、查询历史、收藏、编辑器高度、树宽、只读、偏好）。不迁移的话，用户升级后列宽和历史会"回到默认"。</p>
+      <p class="opt"><em>A</em> 写迁移函数 + 版本号（推荐）　<em>B</em> 不迁移，接受重置　<em>C</em> 只迁移查询历史与列宽</p>
+    </div></div>
+
+    <div class="row"><div class="no">07</div><div class="body">
+      <b>对象列表的搜索/排序，保持前端还是走后端？</b>
+      <p>现在对象列表在前端过滤排序（10 列比较器），表数据走后端。库很大（几千张表）时前端方案会卡。</p>
+      <p class="opt"><em>A</em> 保持前端（实现简单）　<em>B</em> 统一走后端分页（需要后端加接口）</p>
+    </div></div>
+
+    <div class="row"><div class="no">08</div><div class="body">
+      <b><code>api.ts</code> 里的 <code>mysql_*</code> / <code>postgres_*</code> 旧命令要不要一并清掉？</b>
+      <p>UI 已全部走 <code>database_*</code>，这两套是历史遗留；清理可减小类型面，但需确认没有外部脚本/测试在调用。</p>
+      <p class="opt"><em>A</em> 一并清理（含 Rust 侧命令）　<em>B</em> 只删前端封装，Rust 命令保留　<em>C</em> 暂不动</p>
+    </div></div>
+  </div>
+
+  <div class="verdict">
+    <span class="badge">下一步</span>
+    <p>你确认方案与上面几项取舍后，我会先产出<b>目标文件清单 + 分阶段任务拆分 + 迁移脚本设计</b>，再按阶段改代码；第一阶段完成后会给出同尺寸前后对比截图，确认视觉没有漂移再进第二阶段。</p>
+  </div>
+</section>
+
+<footer>
+  PortNest 数据库模块结构分析 · 2026-11-26 · 本页仅为方案评审材料，未修改任何代码
+</footer>
+
+</div>
+</body>
+</html>

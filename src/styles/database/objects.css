@@ -15,60 +15,288 @@
   height: var(--h-control);
   padding: 0 var(--space-4);
   border-bottom: 1px solid var(--line);
+  /* 左右分区：操作组可滚动，搜索/刷新/视图切换永远留在可视区内 */
+  overflow: hidden;
+}
+/* 容器查询基准：面板本身变窄时（收起对象树、打开信息栏、缩小窗口）
+   自动隐藏按钮文案，操作组退化成纯图标，右侧控件不会被挤出去 */
+.db-objects { container: objects / inline-size; }
+.db-objectbar-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
 }
-.db-objectbar::-webkit-scrollbar { height: 0; }
+.db-objectbar-scroll::-webkit-scrollbar { height: 0; }
+.db-objectbar-side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+.db-objectbar-side .db-search--inline { flex: 0 1 180px; min-width: 96px; }
+.db-btn-label { white-space: nowrap; }
+
+@container objects (max-width: 720px) {
+  .db-objectbar .db-btn-label { display: none; }
+  .db-objectbar .db-text-btn { padding: 0 var(--space-3); }
+  .db-objectbar-side .db-search--inline { flex: 0 1 132px; }
+}
 
 .db-object-icon { display: inline-flex; flex: none; color: var(--text-3); }
 
+/* ---------- 名称列表：多列宽表，放不下时左右滚动（样式见文件末尾 is-objects） */
+
+.db-obj-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-9) var(--space-4);
+  color: var(--text-3);
+  font-size: var(--fs-12);
+  text-align: center;
+}
+.db-obj-empty p { margin: 0; color: var(--text-2); }
+.db-obj-empty small { color: var(--text-3); font-size: var(--fs-11); }
+
+/* ---------- 属性面板（单击后滑出的覆盖式信息栏） --------------------------- */
+
+.db-object-props {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 22rem;
+  padding: var(--space-4) var(--space-4) var(--space-6);
+  border-left: 1px solid var(--line-strong);
+  background: var(--surface-base);
+  box-shadow: -12px 0 32px color-mix(in srgb, #000 12%, transparent);
+  overflow: auto;
+}
+.db-object-props-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-2);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  text-align: center;
+}
+.db-object-props-empty p { margin: 0; }
+.db-object-props-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.db-object-props-head .db-table-title { flex: 1; min-width: 0; }
+
+.db-detail-icon { display: inline-flex; flex: none; color: var(--accent); }
+.db-table-title { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.db-table-title strong { font-size: var(--fs-13); font-weight: 600; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-table-title span { color: var(--text-3); font-size: var(--fs-11); }
+
+/* 属性行：标签在上、值在下；缺失值用 `--` 已经由数据层兜住 */
+.db-props-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+.db-prop { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.db-prop dt { color: var(--text-3); font-size: var(--fs-11); }
+.db-prop dd {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+/* 详情页右栏的属性用两列网格，纵向更省空间 */
+.db-props-stack.is-detail {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+}
+.db-props-stack.is-detail .db-prop { display: contents; }
+.db-props-stack.is-detail .db-prop dt { align-self: center; }
+.db-props-stack.is-detail .db-prop dd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 图标视图 ------------------------------------------------------ */
+
 .db-object-icons {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: var(--space-4);
-  padding: var(--space-5);
+  flex: 1;
+  /* 卡片最小 15rem：窄面板下宁可变少列，也不把名字和注释挤成一条 */
+  grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  /* 行高给下限：任何环境下三行内容（名称 / 注释 / 行数）都不会压到相邻卡片上 */
+  grid-auto-rows: minmax(4.75rem, auto);
+  align-items: stretch;
+  gap: var(--space-3);
+  min-height: 0;
+  padding: var(--space-4);
   overflow: auto;
   align-content: start;
 }
 .db-object-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-4);
+  justify-content: flex-start;
+  gap: var(--space-1);
+  height: auto;
+  min-height: 4.75rem;
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--surface-base);
   color: var(--text-1);
   text-align: left;
+  overflow: hidden;
   cursor: pointer;
-  transition: border-color var(--dur-hover) ease, background var(--dur-hover) ease;
+  transition: border-color var(--dur-hover) ease, background var(--dur-hover) ease, box-shadow var(--dur-hover) ease;
 }
-.db-object-card:hover { border-color: var(--accent-line); background: var(--surface-hover); }
-.db-object-card strong { font-size: var(--fs-12); font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.db-object-card em { color: var(--text-3); font-size: var(--fs-11); font-style: normal; }
-.db-object-card-icon { display: inline-flex; color: var(--accent); }
+.db-object-card:hover { border-color: var(--accent-line); background: var(--surface-hover); box-shadow: 0 1px 3px color-mix(in srgb, #000 8%, transparent); }
+.db-object-card.is-selected { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: var(--surface-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.db-object-card-top { display: flex; flex: none; align-items: center; gap: var(--space-2); min-width: 0; }
+.db-object-card-top strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-12);
+  font-weight: 500;
+  line-height: 1.45;
+}
+/* 注释固定单行省略：多行截断在窄卡片里会顶到名称和行数，
+   一长串中文还会把卡片撑成三层，视觉上像和图标混在一起。完整注释看信息栏。 */
+.db-object-card-comment {
+  display: block;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 保险：卡片是 <button>，若被外层通用按钮规则（height/padding）命中，
+   高度会被压成一行、三行内容互相叠住。这里用更高权重钉死几何。 */
+.db-objects .db-object-icons > .db-object-card {
+  height: auto;
+  min-height: 4.75rem;
+  padding: var(--space-3);
+  overflow: hidden;
+}
 
-/* 详情视图 */
+.db-object-card-meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 
-.db-detail { flex: 1; min-height: 0; overflow: auto; }
-.db-detail-body { padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
-.db-detail-head { display: flex; align-items: center; gap: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--line); }
-.db-detail-head div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.db-detail-head strong { font-size: var(--fs-14); font-weight: 600; }
-.db-detail-head small { color: var(--text-3); font-size: var(--fs-11); }
+/* ---------- 详情页：左侧字段 + 右侧关系 ------------------------------------ */
 
-.db-detail .db-props { max-width: 420px; }
-.db-detail-title { margin: var(--space-2) 0 0; color: var(--text-2); font-size: var(--fs-12); font-weight: 500; }
-.db-detail-title em { margin-left: var(--space-2); color: var(--text-3); font-size: var(--fs-11); font-style: normal; }
-.db-detail-loading { color: var(--text-3); font-size: var(--fs-12); }
-.db-key-icon { color: var(--accent); margin-right: var(--space-2); }
+.db-detail { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: hidden; }
+.db-detail-body { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.db-detail-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+.db-detail-head .db-table-title strong { font-size: var(--fs-14); }
+.db-detail-badges { display: flex; align-items: center; gap: var(--space-2); }
+.db-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-6);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-full);
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  white-space: nowrap;
+}
+.db-badge.is-key { background: color-mix(in srgb, #d9a441 18%, transparent); color: #8a5a00; }
 
-/* 详情页的字段表按内容宽度排布，避免列被拉到整屏宽 */
-.db-detail .db-grid { width: auto; min-width: 60%; }
-.db-detail .db-grid th { white-space: nowrap; }
-.db-detail .db-grid td { white-space: nowrap; }
+.db-detail-cols { display: flex; flex: 1; min-height: 0; }
+.db-detail-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: var(--space-4) var(--space-5); overflow: hidden; }
+.db-detail-side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 22rem;
+  padding: var(--space-4) var(--space-5);
+  border-left: 1px solid var(--line);
+  overflow: auto;
+}
+.db-detail-title { margin: 0 0 var(--space-2); color: var(--text-2); font-size: var(--fs-11); font-weight: 600; letter-spacing: 0.04em; }
+.db-detail-title em { margin-left: var(--space-2); color: var(--text-3); font-size: var(--fs-11); font-style: normal; font-weight: 400; }
+.db-detail-loading { margin: 0; color: var(--text-3); font-size: var(--fs-12); }
+.db-side-block { display: flex; flex-direction: column; }
+.db-side-empty { margin: 0; color: var(--text-3); font-size: var(--fs-11); }
+.db-side-list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.db-side-list li { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+.db-side-list li:last-child { border-bottom: 0; }
+.db-side-list strong { color: var(--text-1); font-size: var(--fs-12); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-side-list span { color: var(--text-3); font-family: var(--font-mono); font-size: var(--fs-11); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 字段清单：行内四列，与设计稿的 # / 名称·类型 / 允许空 / 默认值·注释 对齐 */
+.db-field-cols,
+.db-field-row {
+  display: grid;
+  grid-template-columns: 2rem 16rem minmax(0, 1fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+.db-field-cols {
+  flex: none;
+  height: var(--h-row);
+  padding: 0 var(--space-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: var(--fs-11);
+  font-weight: 500;
+}
+.db-field-rows { flex: 1; min-height: 0; overflow: auto; }
+.db-field-row { height: var(--h-row-lg); padding: 0 var(--space-2); border-bottom: 1px solid var(--line); font-size: var(--fs-12); }
+.db-field-row .is-idx { color: var(--text-3); font-size: var(--fs-11); font-variant-numeric: tabular-nums; }
+.db-field-row .is-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-weight: 500; }
+.db-field-row .is-name em {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-style: normal;
+  font-weight: 400;
+}
+.db-field-row .is-null { color: var(--text-2); font-size: var(--fs-11); }
+.db-field-row .is-rest { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--text-3); font-size: var(--fs-11); }
+.db-field-row .is-rest code { padding: 0 var(--space-1); border-radius: var(--r-xs); background: var(--surface-sunken); font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-2); }
+.db-field-row .is-rest code + span,
+.db-field-row .is-rest code { flex: none; }
+.db-field-row .is-rest { overflow: hidden; white-space: nowrap; }
 
 /* 结构页 */
 
@@ -88,3 +316,32 @@
 .db-structure-head strong { font-weight: 500; }
 .db-structure-head em { color: var(--text-3); font-size: var(--fs-11); font-style: normal; }
 .db-structure .db-grid-wrap { flex: none; max-height: 50%; }
+/* 结构页名称前的钥匙 / 链接角标：没有样式时会直接贴着文字，看起来像乱码 */
+.db-structure .db-key-icon { display: inline-flex; vertical-align: -2px; margin-right: var(--space-2); color: #b07d14; }
+:root[data-theme="dark"] .db-structure .db-key-icon { color: #e7b45c; }
+
+/* 详情视图：表头加粗、全部左对齐（数字列不再右对齐，避免和名称列错位） */
+.db-grid.is-objects.is-objects thead th { font-weight: 600; }
+.db-grid.is-objects .db-cell.is-numeric,
+.db-grid.is-objects thead th.is-numeric { text-align: left; }
+.db-grid.is-objects thead th.is-numeric .db-th-inner { justify-content: flex-start; }
+
+/* 对象列表（详情视图）：表头之间加发丝线，横向读数时列边界更清楚 */
+.db-grid.is-objects thead th + th { border-left: 1px solid var(--line); }
+.db-grid.is-objects thead th:hover { background: var(--surface-hover); color: var(--text-1); }
+.db-grid.is-objects .db-th-inner { gap: var(--space-1); }
+.db-grid.is-objects .db-th-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.db-grid.is-objects .db-th.is-sorted .db-sort { opacity: 1; }
+/* 详情视图里数字列表头也靠左，和上方那条保持同一方向（这里不能写 flex-end） */
+
+/* 对象表格（表/视图列表）：名称列按内容收缩，多出来的宽度交给注释列。
+   否则宽屏下 table-layout 会把富余宽度摊给内容最长的名称列，
+   名称与注释之间就出现一条空白的「无人区」。 */
+.db-grid.is-objects thead th:first-child,
+.db-grid.is-objects .db-cell.is-object-name {
+  width: 1%;
+}
+.db-grid.is-objects thead th:nth-child(2),
+.db-grid.is-objects .db-cell:nth-child(2) {
+  min-width: 8rem;
+}

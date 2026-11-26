@@ -360,6 +360,16 @@ pub struct MysqlTableInfo {
     pub collation: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    /// MySQL 专有：行格式（Dynamic / Compact …），PostgreSQL 恒为 None
+    pub row_format: Option<String>,
+    /// 最近一次 CHECK TABLE 的时间；非 MyISAM 通常为空
+    pub checked_at: Option<String>,
+    /// 数据文件中未使用的字节数
+    pub data_free: Option<u64>,
+    /// 表的最大数据容量（InnoDB 常为 0）
+    pub max_data_length: Option<u64>,
+    /// 建表时附带的选项（如 partitioned）
+    pub create_options: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -447,25 +457,50 @@ pub async fn mysql_list_tables(
 ) -> Result<Vec<MysqlTableInfo>, String> {
     let pool = pool_for(&state, &connection_id).await?;
     let mut conn = pool.get_conn().await.map_err(|e| e.to_string())?;
-    let rows: Vec<(String, String, Option<String>, Option<u64>, String, Option<u64>, Option<u64>, Option<u64>, Option<String>, Option<String>, Option<String>)> = conn.exec(
-        "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, TABLE_COMMENT, DATA_LENGTH, INDEX_LENGTH, AUTO_INCREMENT, TABLE_COLLATION, CAST(CREATE_TIME AS CHAR), CAST(UPDATE_TIME AS CHAR) FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME", (database,)
-    ).await.map_err(|e| e.to_string())?;
+    // 按列名取值而不是元组解构：字段已经超过 mysql_async 元组上限，且后续加列不必再动下标
+    let rows: Vec<Row> = conn
+        .exec(
+            "SELECT TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, TABLE_COMMENT, DATA_LENGTH, \
+                    INDEX_LENGTH, AUTO_INCREMENT, TABLE_COLLATION, CAST(CREATE_TIME AS CHAR) AS CREATE_TIME, \
+                    CAST(UPDATE_TIME AS CHAR) AS UPDATE_TIME, ROW_FORMAT, CAST(CHECK_TIME AS CHAR) AS CHECK_TIME, \
+                    DATA_FREE, MAX_DATA_LENGTH, CREATE_OPTIONS \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
+            (database,),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(rows
         .into_iter()
-        .map(|r| MysqlTableInfo {
-            name: r.0,
-            kind: r.1,
-            engine: r.2,
-            rows: r.3,
-            comment: r.4,
-            data_length: r.5,
-            index_length: r.6,
-            auto_increment: r.7,
-            collation: r.8,
-            created_at: r.9,
-            updated_at: r.10,
+        .map(|row| MysqlTableInfo {
+            name: row_text(&row, "TABLE_NAME").unwrap_or_default(),
+            kind: row_text(&row, "TABLE_TYPE").unwrap_or_else(|| "BASE TABLE".to_string()),
+            engine: row_text(&row, "ENGINE"),
+            rows: row_u64(&row, "TABLE_ROWS"),
+            comment: row_text(&row, "TABLE_COMMENT").unwrap_or_default(),
+            data_length: row_u64(&row, "DATA_LENGTH"),
+            index_length: row_u64(&row, "INDEX_LENGTH"),
+            auto_increment: row_u64(&row, "AUTO_INCREMENT"),
+            collation: row_text(&row, "TABLE_COLLATION"),
+            created_at: row_text(&row, "CREATE_TIME"),
+            updated_at: row_text(&row, "UPDATE_TIME"),
+            row_format: row_text(&row, "ROW_FORMAT"),
+            checked_at: row_text(&row, "CHECK_TIME"),
+            data_free: row_u64(&row, "DATA_FREE"),
+            max_data_length: row_u64(&row, "MAX_DATA_LENGTH"),
+            create_options: row_text(&row, "CREATE_OPTIONS"),
         })
         .collect())
+}
+
+/// NULL 安全的字符串取值：`Row::get::<String,_>()` 遇到 NULL 会 panic
+fn row_text(row: &Row, column: &str) -> Option<String> {
+    row.get_opt::<String, _>(column)
+        .and_then(Result::ok)
+        .filter(|value| !value.is_empty())
+}
+
+fn row_u64(row: &Row, column: &str) -> Option<u64> {
+    row.get_opt::<u64, _>(column).and_then(Result::ok)
 }
 
 #[tauri::command]
@@ -2042,7 +2077,10 @@ pub async fn mysql_execute_sql_batch(
     connection_id: String,
     sql: String,
     database: Option<String>,
+    stop_on_error: Option<bool>,
 ) -> Result<super::BatchExecutionResult, String> {
+    // 「失败即停」默认开启；关闭时遇错继续执行剩余语句，并把已成功的语句提交。
+    let stop_on_error = stop_on_error.unwrap_or(true);
     let statements = super::split_statements(&sql)?;
     let manager = state.mysql_manager.clone();
     let query = async move {
@@ -2079,7 +2117,9 @@ pub async fn mysql_execute_sql_batch(
                         duration_ms: started.elapsed().as_millis() as u64,
                     });
                     failure = Some(error);
-                    break;
+                    if stop_on_error {
+                        break;
+                    }
                 }
             }
         }
@@ -2092,15 +2132,21 @@ pub async fn mysql_execute_sql_batch(
             "none".to_string()
         };
 
-        match (&failure, wrap) {
-            (Some(_), true) => match conn.query_drop("ROLLBACK").await {
+        match (&failure, wrap, stop_on_error) {
+            // 继续执行模式：错误只记录，成功的语句照常提交，避免用户白跑一遍
+            (Some(_), true, false) => {
+                conn.query_drop("COMMIT")
+                    .await
+                    .map_err(|e| format!("提交事务失败: {e}"))?;
+            }
+            (Some(_), true, true) => match conn.query_drop("ROLLBACK").await {
                 Ok(_) => transaction = "rolled_back".to_string(),
                 Err(rollback) => {
                     transaction = "rollback_failed".to_string();
                     failure = failure.map(|error| format!("{error}\n回滚失败: {rollback}"));
                 }
             },
-            (None, true) => {
+            (None, true, _) => {
                 conn.query_drop("COMMIT")
                     .await
                     .map_err(|e| format!("提交事务失败: {e}"))?;
@@ -2111,7 +2157,7 @@ pub async fn mysql_execute_sql_batch(
         Ok::<super::BatchExecutionResult, String>(super::BatchExecutionResult {
             statements: outcomes,
             transaction,
-            partial: partial && failure.is_some(),
+            partial: failure.is_some() && (partial || !stop_on_error),
             error: failure,
         })
     };
@@ -2497,6 +2543,9 @@ pub struct MysqlSqlImportResult {
 pub struct MysqlSqlExportOptions {
     pub path: String,
     pub database: String,
+    /// 只导出单表（表结构 + 数据）；为空时导出整库
+    #[serde(default)]
+    pub table: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2813,6 +2862,29 @@ pub async fn mysql_export_sql(
         "SELECT EVENT_NAME FROM information_schema.EVENTS WHERE EVENT_SCHEMA=? ORDER BY EVENT_NAME",
         (&options.database,),
     ).await.map_err(|e| e.to_string())?;
+
+    // 单表导出：只保留这一张表，视图 / 存储过程 / 触发器 / 事件都不带
+    let single_table = options
+        .table
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let (table_names, view_names, routines, triggers, events) = match &single_table {
+        Some(table) => {
+            if !table_names.iter().any(|name| name == table) {
+                return Err(format!("表不存在或不是基表: {table}"));
+            }
+            (
+                vec![table.clone()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+        }
+        None => (table_names, view_names, routines, triggers, events),
+    };
 
     let tmp_path = format!("{}.portnest-{}.tmp", options.path, Uuid::new_v4());
     let mut file = tokio::fs::File::create(&tmp_path)
