@@ -1,11 +1,11 @@
 {
-  "version": "0.6.2",
-  "notes": "全新品牌图标；资产树扁平化与文件夹拖拽；完整路径面包屑；文件双击编辑；路径联动与关闭行为设置修复。",
-  "pub_date": "2026-10-31T14:27:02Z",
+  "version": "0.7.0",
+  "notes": "数据库工作区按 Navicat 交互重做：对象树、表数据页、表设计器、SQL 查询与结果区；表节点右键导入/导出 SQL、CSV、Excel；右键菜单自动回弹与点空白关闭；数据库设置分组并新增显示编码、单击展开信息栏；新增霜白皮肤与全局界面缩放。",
+  "pub_date": "2026-11-26T09:20:07Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeGFyL2pDMVM2OE9tV1dnNldTMUJ4SmZlS2VheUpVbmM4eTQ5ZXJOS0VQT3RjVFBsUUgrUHZPRjZGZHpGY0VGZ25MMjkzejJiYjBuTTZZblg1MGU1amd3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDU2ODE2CWZpbGU6UG9ydE5lc3RfMC42LjJfeDY0LXNldHVwLmV4ZQp5K2pkOWxMR1diQ01RN0hMVnBlOWFJVVFUemd0aUxVSVVzVTJEK3liWUFOb1JBZkJTWWpqL1ExVnNlQ01BWTE2Y3orS3VpVWJMTllTN3RWZThpY1hBdz09Cg==",
-      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.6.2/PortNest_0.6.2_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUVlByRFRrV0cxeFNqSkVWbkw5ejhiTTJSL1NENUNjeWVsaVZwdFhVN3RtR2ZXWm1VSmxKWktuREpMaHlaSWc5VllPNzhIVzY0aFVCTUlWWVFYZklZY1NpRm1GVTc5NEFZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1Njg0NzgwCWZpbGU6UG9ydE5lc3RfMC43LjBfeDY0LXNldHVwLmV4ZQp2YkN6MjRUd3A1MGZTVGplVDBqZWNmUTRTSjN2RzFjKzFQMU5HMEJzVHZPZHdqRWgycjRsdHJGdWRWaCtHYnluaXRhVU1vS0pWaTNvejRjTTlEdmREZz09Cg==",
+      "url": "https://github.com/biyuzhuang/PortNest/releases/download/v0.7.0/PortNest_0.7.0_x64-setup.exe"
     }
   }
 }
